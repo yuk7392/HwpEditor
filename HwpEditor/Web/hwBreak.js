@@ -1,0 +1,198 @@
+﻿/* 문단 → 줄 배열. 1단계 완료 판정의 핵심(오라클 일치율 ≥90%)이 여기서 갈린다.
+
+   한글의 줄 나눔 규칙 중 이번에 넣는 것:
+     - 한글은 글자 단위로 자른다(문단모양이 어절 단위면 어절 단위).
+     - 라틴은 문단모양의 latinBreak 대로 word / hyphen / letter.
+     - 금칙: 여는 괄호류는 줄 끝에 못 오고, 닫는 괄호·마침표류는 줄 머리에 못 온다.
+     - 첫 줄 들여쓰기(음수면 내어쓰기), 문단 좌우 여백.
+     - 탭은 다음 탭 자리로 건너뛴다.
+
+   ★ 아직 안 넣은 것: 문단별 탭 정의(tabdef), 양쪽 정렬의 글자 늘림, 하이픈 자동 넣기.
+     탭은 기본 간격으로 근사한다 — 이것이 tabdef.hwp 의 일치율에 영향을 준다. */
+
+var hwBreak = (function () {
+  'use strict';
+
+  /* 기본 탭 간격(HWPUNIT). 한글 기본값은 문단모양의 tabdef 를 따르지만 1단계에서는 근사한다. */
+  var cTabHu = 4000;
+
+  /* 줄 머리에 못 오는 글자 */
+  var cNoLineStart = '.,)]}?!:;’”）］｝」』】〕%…';
+  /* 줄 끝에 못 오는 글자 */
+  var cNoLineEnd = '([{‘“（［｛「『【〔¥￦';
+
+  function isLatin(ch) {
+    var c = ch.charCodeAt(0);
+    return (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
+        || c === 0x27 || c === 0x2d;
+  }
+
+  function isSpace(ch) { return ch === ' ' || ch === ' '; }
+
+  /* 줄 나눌 자리를 금칙에 맞게 물린다. at 은 "다음 줄의 첫 글자" 인덱스다. */
+  function applyForbidden(text, at, min) {
+    var guard = 0;
+    while (at > min && guard++ < 8) {
+      var prev = text.charAt(at - 1);
+      var cur = at < text.length ? text.charAt(at) : '';
+      if (cur && cNoLineStart.indexOf(cur) >= 0) { at--; continue; }
+      if (prev && cNoLineEnd.indexOf(prev) >= 0) { at--; continue; }
+      break;
+    }
+    return at;
+  }
+
+  /* 라틴 낱말 단위로 물린다 — at 이 낱말 한가운데면 낱말 시작으로 당긴다. */
+  function applyWordBreak(text, at, min) {
+    if (at <= min || at >= text.length) return at;
+    if (!isLatin(text.charAt(at)) || !isLatin(text.charAt(at - 1))) return at;
+    var i = at;
+    while (i > min && isLatin(text.charAt(i - 1))) i--;
+    return i > min ? i : at;
+  }
+
+  /* 한글을 어절 단위로 자를 때: 공백 뒤로 당긴다. */
+  function applyWordBreakHangul(text, at, min) {
+    var i = at;
+    while (i > min && !isSpace(text.charAt(i - 1))) i--;
+    return i > min ? i : at;
+  }
+
+  /*
+    한 문단을 줄로 쪼갠다.
+      para      : 문단 모델
+      widthHu   : 본문 단 폭
+    반환: [{ s, e, wHu, hHu, baseHu, xHu, availHu }]
+      s,e     : 편집 인덱스(끝 제외)
+      xHu     : 단 왼쪽에서 이 줄이 시작하는 위치(들여쓰기·여백 포함)
+      availHu : 이 줄이 쓸 수 있는 폭
+  */
+  function breakPara(para, widthHu) {
+    var ps = hwModel.paraShape(para.ps);
+    var text = hwModel.text(para);
+    var lines = [];
+
+    var left = ps.mlHu || 0, right = ps.mrHu || 0;
+    var indent = ps.indentHu || 0;
+
+    var i = 0, first = true;
+    var n = text.length;
+
+    /* 빈 문단도 줄 하나를 차지한다 — 안 그러면 문단 수만큼 줄이 모자란다. */
+    if (n === 0) {
+      lines.push(makeLine(para, 0, 0, left + Math.max(0, indent),
+                          widthHu - left - right - Math.max(0, indent), 0));
+      return lines;
+    }
+
+    while (i < n) {
+      var xHu = left + (first ? Math.max(0, indent) : Math.max(0, -indent));
+      var avail = widthHu - xHu - right;
+      if (avail <= 0) avail = widthHu;
+
+      var end = fitOne(para, text, i, avail);
+      if (end <= i) end = i + 1;                 /* 한 글자도 못 넣으면 강제로 한 글자 */
+
+      lines.push(makeLine(para, i, end, xHu, avail, 0));
+      i = end;
+      first = false;
+    }
+
+    return lines;
+  }
+
+  /* i 에서 시작해 avail 폭에 들어가는 마지막 위치(끝 제외)를 찾는다. */
+  function fitOne(para, text, i, avail) {
+    var ps = hwModel.paraShape(para.ps);
+    var w = 0;
+    var j = i;
+
+    while (j < text.length) {
+      var ch = text.charAt(j);
+
+      if (ch === '\n') return j + 1;             /* 문단 안 줄바꿈은 그 자리에서 끊는다 */
+
+      var cw;
+      if (ch === '\t') {
+        var next = (Math.floor(w / cTabHu) + 1) * cTabHu;
+        cw = next - w;
+      } else if (ch === '￼') {
+        cw = objWidth(para, j);
+      } else {
+        cw = hwMeasure.charHu(ch, hwModel.charShape(hwModel.shapeAt(para, j)));
+      }
+
+      if (w + cw > avail && j > i) break;
+      w += cw;
+      j++;
+    }
+
+    if (j >= text.length) return text.length;
+
+    var at = j;
+    if (isLatin(text.charAt(at)) && ps.latinBreak === 'word') at = applyWordBreak(text, at, i);
+    else if (ps.hangulByWord) at = applyWordBreakHangul(text, at, i);
+    at = applyForbidden(text, at, i + 1);
+    return at;
+  }
+
+  /* 개체 하나. 못 찾으면 null. */
+  function objAt(para, pos) {
+    if (!para.objs) return null;
+    for (var k = 0; k < para.objs.length; k++) if (para.objs[k].pos === pos) return para.objs[k];
+    return null;
+  }
+
+  /* ★ 떠 있는 개체(글자처럼 취급이 아닌 것)는 줄의 폭을 안 먹는다. 인라인인 것만 자리를 차지한다. */
+  function objWidth(para, pos) {
+    var o = objAt(para, pos);
+    return (o && o.inline) ? (o.wHu || 0) : 0;
+  }
+
+  /* 줄 높이에 얹히는 개체 높이. 역시 인라인만이다. */
+  function objHeight(para, pos) {
+    var o = objAt(para, pos);
+    return (o && o.inline) ? (o.hHu || 0) : 0;
+  }
+
+  /* 줄 하나의 높이·기준선. 줄간격 방식(lsType)에 따라 갈린다. */
+  function makeLine(para, s, e, xHu, availHu, unusedW) {
+    var ps = hwModel.paraShape(para.ps);
+    var maxSize = 0, wHu = 0;
+    var text = hwModel.text(para);
+
+    for (var k = s; k < e; k++) {
+      var ch = text.charAt(k);
+      if (ch === '\n') continue;
+      var cs = hwModel.charShape(hwModel.shapeAt(para, k));
+      if (cs.sizeHu > maxSize) maxSize = cs.sizeHu;
+      if (ch === '\t') { wHu = (Math.floor(wHu / cTabHu) + 1) * cTabHu; }
+      else if (ch === '￼') {
+        wHu += objWidth(para, k);
+        var oh = objHeight(para, k);
+        if (oh > maxSize) maxSize = oh;
+      }
+      else wHu += hwMeasure.charHu(ch, cs);
+    }
+
+    if (maxSize === 0) {
+      var csEmpty = hwModel.charShape(hwModel.shapeAt(para, s));
+      maxSize = csEmpty.sizeHu;
+    }
+
+    var hHu;
+    if (ps.lsType === 'fixed') hHu = ps.ls;
+    else if (ps.lsType === 'atLeast') hHu = Math.max(maxSize, ps.ls);
+    else if (ps.lsType === 'margin') hHu = maxSize + ps.ls;
+    else hHu = maxSize * (ps.ls || 100) / 100;
+
+    return { s: s, e: e, wHu: wHu, hHu: hHu, baseHu: maxSize * 0.85, xHu: xHu, availHu: availHu };
+  }
+
+  return {
+    breakPara: breakPara,
+    tabHu: function (v) { if (v !== undefined) cTabHu = v; return cTabHu; }
+  };
+})();
+
+function hwBreakPara(para, widthHu) { return hwBreak.breakPara(para, widthHu); }

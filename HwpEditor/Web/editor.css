@@ -1,0 +1,146 @@
+﻿/* HwpEditor 편집기 화면. 메뉴·본문·상태줄이 전부 이 문서 안이다. */
+
+/* ★ 패밀리 이름에 HW 접미사를 붙인다. 설치 글꼴과 같은 이름을 쓰면 @font-face 가 실패해도
+   브라우저가 조용히 설치 글꼴로 넘어가서, 폭 측정으로도 그 사실이 안 보인다. */
+@font-face {
+  font-family: "NanumGothicHW";
+  src: url("NanumGothic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "NanumGothicHW";
+  src: url("NanumGothic-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "NanumMyeongjoHW";
+  src: url("NanumMyeongjo.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "NanumMyeongjoHW";
+  src: url("NanumMyeongjo-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f0f0f0;
+  font: 12px "Malgun Gothic", "맑은 고딕", sans-serif;
+  color: #202020;
+  /* 본문은 우리가 캐럿을 직접 그린다 — 브라우저 선택을 끈다(G-4). */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─ 메뉴 ─ */
+.hw-menu {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 6px;
+  background: #fafafa;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.hw-menu-gap { flex: 1 1 auto; }
+
+.hw-menu-item {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+.hw-menu-item:hover { background: #e8e8e8; border-color: #d0d0d0; }
+.hw-menu-item:active { background: #dcdcdc; }
+
+/* ─ 본문 ─ */
+.hw-canvas {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 0;
+}
+
+/* 쪽. 크기는 문서의 용지 정의대로 JS 가 넣는다. 아래 값은 문서가 없을 때의 A4 이다
+   (59528x84188 HWPUNIT ÷ 75). */
+.hw-page {
+  position: relative;
+  width: 793.7067px;
+  height: 1122.5067px;
+  margin: 0 auto 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+/* 본문 영역 — 여백을 뺀 사각형. 줄은 이 안에 절대 좌표로 놓인다. */
+.hw-body {
+  position: absolute;
+}
+
+.hw-line {
+  position: absolute;
+  white-space: pre;
+  line-height: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.hw-run { white-space: pre; }
+
+/* 개체는 1단계에서 크기만 잡은 회색 상자다. */
+.hw-obj {
+  display: inline-block;
+  vertical-align: bottom;
+  background: #eeeeee;
+  border: 1px solid #cccccc;
+  position: relative;
+}
+
+.hw-obj-image { background: #e8eef5; border-color: #b9c9dc; }
+.hw-obj-table { background: #eef5ee; border-color: #c2d8c2; }
+
+.hw-obj[data-label]::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  font-size: 9px;
+  color: #808080;
+  white-space: nowrap;
+}
+
+/* ─ 상태줄 ─ */
+.hw-status {
+  flex: 0 0 auto;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 8px;
+  background: #fafafa;
+  border-top: 1px solid #d0d0d0;
+  color: #505050;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

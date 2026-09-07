@@ -1,0 +1,36 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>HwpEditor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+
+<div id="hwMenu" class="hw-menu">
+  <button class="hw-menu-item" data-cmd="open">열기</button>
+  <button class="hw-menu-item" data-cmd="save">저장</button>
+  <button class="hw-menu-item" data-cmd="saveAs">다른 이름으로</button>
+  <button class="hw-menu-item" data-cmd="insertImage">그림</button>
+  <span class="hw-menu-gap"></span>
+  <button class="hw-menu-item" id="hwBtnOracle">오라클</button>
+  <button class="hw-menu-item" id="hwBtnPing">테스트</button>
+</div>
+
+<div id="hwCanvas" class="hw-canvas">
+  <!-- 문서를 열기 전에는 빈 A4 한 쪽. 문서가 오면 hwRender 가 통째로 다시 채운다. -->
+  <div class="hw-page" id="hwPage0"></div>
+</div>
+
+<div id="hwStatus" class="hw-status">시작 중…</div>
+
+<script src="hwUnit.js"></script>
+<script src="hwModel.js"></script>
+<script src="hwMeasure.js"></script>
+<script src="hwBreak.js"></script>
+<script src="hwPage.js"></script>
+<script src="hwRender.js"></script>
+<script src="hwOracle.js"></script>
+<script src="hwBridge.js"></script>
+</body>
+</html>

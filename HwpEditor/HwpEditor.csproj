@@ -1,0 +1,155 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7C3A9E14-2B5D-4F86-9A31-8D64E2F0B517}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>HwpEditor</RootNamespace>
+    <AssemblyName>HwpEditor</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <!-- ★ 서드파티는 전부 ..\DLL\ 에서 참조하고 Private=False 로 복사를 막는다.
+       같은 파일을 아래 EmbeddedResource 로 exe 안에 넣고 Program.AssemblyResolve 가 꺼내 쓴다(단일 exe). -->
+  <ItemGroup>
+    <Reference Include="hwplibsharp">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLL\hwplibsharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLL\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Web.WebView2.Core">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLL\Microsoft.Web.WebView2.Core.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Web.WebView2.WinForms">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLL\Microsoft.Web.WebView2.WinForms.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="cCli.cs" />
+    <Compile Include="cRenderOracle.cs" />
+    <Compile Include="cSelfTest.cs" />
+    <Compile Include="cWebHost.cs" />
+    <Compile Include="Files\cDocument.cs" />
+    <Compile Include="Files\cHwpDocument.cs" />
+    <Compile Include="Files\cHwpReader.cs" />
+    <Compile Include="Files\cHwpxReader.cs" />
+    <Compile Include="Models\cDocModel.cs" />
+    <Compile Include="Models\cFontMap.cs" />
+    <Compile Include="Models\cJson.cs" />
+    <Compile Include="Models\cShapeModels.cs" />
+    <Compile Include="Global\cLog.cs" />
+    <Compile Include="mdiHwpEditor.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="mdiHwpEditor.Designer.cs">
+      <DependentUpon>mdiHwpEditor.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <!-- ★ exe 안에 넣는 서드파티 DLL. hwplibsharp 의 실행시 의존(OpenMcdf 계열)은 컴파일 참조는 없지만
+       여기 없으면 런타임에 못 찾는다 — 목록에서 빼지 마라. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\DLL\hwplibsharp.dll">
+      <Link>DLL\hwplibsharp.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\OpenMcdf.dll">
+      <Link>DLL\OpenMcdf.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\Microsoft.Bcl.HashCode.dll">
+      <Link>DLL\Microsoft.Bcl.HashCode.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\System.Memory.dll">
+      <Link>DLL\System.Memory.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\System.Buffers.dll">
+      <Link>DLL\System.Buffers.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\System.Runtime.CompilerServices.Unsafe.dll">
+      <Link>DLL\System.Runtime.CompilerServices.Unsafe.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\System.Numerics.Vectors.dll">
+      <Link>DLL\System.Numerics.Vectors.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\Newtonsoft.Json.dll">
+      <Link>DLL\Newtonsoft.Json.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\Microsoft.Web.WebView2.Core.dll">
+      <Link>DLL\Microsoft.Web.WebView2.Core.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\Microsoft.Web.WebView2.WinForms.dll">
+      <Link>DLL\Microsoft.Web.WebView2.WinForms.dll</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\DLL\WebView2Loader.dll">
+      <Link>DLL\WebView2Loader.dll</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+  <!-- ★ 화면 자산. csproj 에 넣는 것만으로는 안 풀린다 — cWebHost.cWebAssets 배열에도 이름을 넣어야 한다. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\editor.html" />
+    <EmbeddedResource Include="Web\editor.css" />
+    <EmbeddedResource Include="Web\hwBridge.js" />
+    <EmbeddedResource Include="Web\hwUnit.js" />
+    <EmbeddedResource Include="Web\hwModel.js" />
+    <EmbeddedResource Include="Web\hwMeasure.js" />
+    <EmbeddedResource Include="Web\hwBreak.js" />
+    <EmbeddedResource Include="Web\hwPage.js" />
+    <EmbeddedResource Include="Web\hwRender.js" />
+    <EmbeddedResource Include="Web\hwOracle.js" />
+    <EmbeddedResource Include="Fonts\NanumGothic.ttf" />
+    <EmbeddedResource Include="Fonts\NanumGothic-Bold.ttf" />
+    <EmbeddedResource Include="Fonts\NanumMyeongjo.ttf" />
+    <EmbeddedResource Include="Fonts\NanumMyeongjo-Bold.ttf" />
+    <EmbeddedResource Include="Fonts\OFL.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+    <None Include="app.manifest" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

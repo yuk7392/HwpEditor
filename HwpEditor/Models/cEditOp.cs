@@ -1,0 +1,133 @@
+﻿using System.Collections.Generic;
+using Newtonsoft.Json;
+
+namespace HwpEditor.Models
+{
+    /// <summary>
+    /// 저장 요청 하나(계획 6절). 편집마다 보내지 않고 <b>저장할 때</b> dirty 문단과 구조 변경만 모아 보낸다 —
+    /// 편집마다 왕복하면 IME 조합 중 화면이 깨지고(G-4) 모델이 두 벌이 된다.
+    /// </summary>
+    public sealed class SaveRequest
+    {
+        [JsonProperty("t")] public string T;
+        [JsonProperty("rev")] public int Rev;
+        [JsonProperty("saveAs")] public bool SaveAs;
+
+        /// <summary>
+        /// 화면이 들고 있는 <b>글자모양·문단모양 전체 목록</b>. 원본 뒤에 화면이 새로 만든 것이 붙어 있다.
+        ///
+        /// ★ 번호를 화면이 정하고 문서는 그대로 받는 구조가 아니다 — 문서에 이미 똑같은 모양이 있으면
+        ///   그것을 다시 쓴다(G-10). 그래서 저장이 끝나면 번호가 바뀔 수 있고, 바뀐 번호는 응답으로 돌려준다.
+        /// </summary>
+        [JsonProperty("charShapes")] public List<CharShapeModel> CharShapes;
+        [JsonProperty("paraShapes")] public List<ParaShapeModel> ParaShapes;
+
+        [JsonProperty("ops")] public List<EditOp> Ops = new List<EditOp>();
+    }
+
+    /// <summary>
+    /// 문단 하나에 대한 변경. <c>op</c> 로 갈린다.
+    ///
+    /// ★ 한 클래스로 다 받는다 — 계약이 화면(JS)과 여기 두 곳에만 있어서, 형을 나누면
+    ///   JSON 이름이 세 곳(JS·기반형·파생형)으로 흩어진다.
+    /// </summary>
+    public sealed class EditOp
+    {
+        /// <summary>"replace" | "insertAfter" | "delete" | "addImage"</summary>
+        [JsonProperty("op")] public string Op;
+
+        /// <summary>대상 문단 id. insertAfter 면 <b>새로 붙일</b> 문단의 id 다.</summary>
+        [JsonProperty("id")] public string Id;
+
+        /// <summary>insertAfter 에서 이 문단 <b>뒤에</b> 붙인다. 원본 id 일 수도, 앞서 넣은 새 id 일 수도 있다.</summary>
+        [JsonProperty("ref")] public string Ref;
+
+        [JsonProperty("ps")] public int Ps;
+
+        /// <summary>
+        /// 이 문단 앞의 강제 나눔. "page" | "column" | "section" | null.
+        /// ★ 안 보내면 문단을 나눌 때 <b>새 문단이 기준 문단의 쪽 나눔을 물려받는다</b> —
+        ///   화면에는 나눔이 하나인데 파일에는 두 개가 된다.
+        /// </summary>
+        [JsonProperty("brk")] public string Brk;
+
+        [JsonProperty("runs")] public List<RunModel> Runs;
+
+        /// <summary>
+        /// 문단 안 개체. ★ 원본 개체는 <c>oid</c> 만 온다 — 원본 Control 을 그대로 다시 쓰라는 뜻이다.
+        /// 새 그림은 <c>tmpId</c> 가 붙고 별도의 addImage op 가 실물을 들고 온다.
+        /// </summary>
+        [JsonProperty("objs")] public List<EditObj> Objs;
+
+        /// <summary>
+        /// 화면이 계산한 줄 배치. ★ 이걸 안 받으면 저장본의 줄 정보가 비어 외부 변환기가 줄 0 으로 읽는다
+        /// (2단계 판정 ④ 가 바로 그 자리다).
+        /// </summary>
+        [JsonProperty("seg")] public List<SegModel> Seg;
+
+        #region addImage
+
+        /// <summary>삽입 위치(편집 인덱스).</summary>
+        [JsonProperty("pos")] public int Pos;
+
+        /// <summary>표 구조를 바꾸는 요청(addRow·delRow·addCol·delCol)이 가리키는 표 개체.</summary>
+        [JsonProperty("oid")] public string Oid;
+
+        /// <summary>
+        /// 행·열을 넣을 때 <b>본뜰</b> 행·열 번호. ★ Pos 로 대신 쓰면 안 된다 — 아래쪽에 넣을 때
+        /// Pos 는 이미 밀린 자리라, 그것을 본뜨면 방금 넣으려는 빈 칸을 본뜨거나 표 밖을 가리킨다.
+        /// </summary>
+        [JsonProperty("from")] public int From = -1;
+
+        /// <summary>이 op 가 만드는 개체의 임시 id. 같은 저장 요청 안의 objs[].tmpId 와 맞춘다.</summary>
+        [JsonProperty("tmpId")] public string TmpId;
+
+        /// <summary>읽어 넣을 그림 파일 경로.</summary>
+        [JsonProperty("file")] public string File;
+
+        [JsonProperty("wHu")] public long WHu;
+        [JsonProperty("hHu")] public long HHu;
+
+        #endregion
+    }
+
+    /// <summary>replace·insertAfter 가 들고 오는 개체 자리. 실물은 원본이거나(oid) 새 그림이다(tmpId).</summary>
+    public sealed class EditObj
+    {
+        [JsonProperty("pos")] public int Pos;
+        [JsonProperty("oid")] public string Oid;
+        [JsonProperty("tmpId")] public string TmpId;
+    }
+
+    /// <summary>저장 결과. 화면은 ok 를 보고 dirty 집합을 비운다.</summary>
+    public sealed class SaveResult
+    {
+        [JsonProperty("ok")] public bool Ok;
+        [JsonProperty("path")] public string Path;
+        [JsonProperty("rev")] public int Rev;
+        [JsonProperty("msg")] public string Msg;
+
+        /// <summary>
+        /// 저장하면서 문서 구조가 통째로 다시 세워졌다(표 행·열 변경). 화면은 이걸 보면 다시 읽어야 한다 —
+        /// ★ 문단 객체가 전부 새것이라 화면이 들고 있던 id 표가 더는 안 맞는다.
+        /// </summary>
+        [JsonProperty("reload")] public bool Reload;
+
+        /// <summary>
+        /// 새로 만든 개체의 <c>tmpId → oid</c>. 화면은 이걸로 개체를 원본 개체로 바꿔 달아
+        /// 다음 저장 때 같은 그림을 두 번 넣지 않는다.
+        /// </summary>
+        [JsonProperty("newOids")] public Dictionary<string, string> NewOids = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 화면 번호 → 문서 번호. 화면은 이걸로 자기 runs 의 <c>cs</c> 와 문단의 <c>ps</c> 를 다시 매긴다.
+        /// ★ 이 왕복이 없으면 같은 서식을 다시 적용할 때마다 모양이 하나씩 늘어난다(G-10).
+        /// </summary>
+        [JsonProperty("csMap", NullValueHandling = NullValueHandling.Ignore)] public int[] CsMap;
+        [JsonProperty("psMap", NullValueHandling = NullValueHandling.Ignore)] public int[] PsMap;
+
+        /// <summary>저장 뒤 문서가 실제로 들고 있는 목록. 화면은 자기 목록을 이것으로 갈아 끼운다.</summary>
+        [JsonProperty("charShapes", NullValueHandling = NullValueHandling.Ignore)] public List<CharShapeModel> CharShapes;
+        [JsonProperty("paraShapes", NullValueHandling = NullValueHandling.Ignore)] public List<ParaShapeModel> ParaShapes;
+    }
+}

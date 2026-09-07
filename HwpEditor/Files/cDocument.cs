@@ -1,5 +1,5 @@
 ﻿using System;
-using System.IO;
+using System.Collections.Generic;
 using HwpEditor.Models;
 
 namespace HwpEditor.Files
@@ -10,19 +10,19 @@ namespace HwpEditor.Files
     /// </summary>
     public sealed class cDocument
     {
-        private readonly cHwpDocument cHwp;   // hwp5 일 때만
-        private readonly DocModel cModel;     // hwpx 일 때만 (hwp 는 cHwp 가 들고 있다)
+        private readonly cHwpDocument cHwp;     // hwp5 일 때만
+        private readonly cHwpxDocument cHwpx;   // hwpx 일 때만
 
         private cDocument(cHwpDocument pHwp) { cHwp = pHwp; }
-        private cDocument(DocModel pModel, string pPath) { cModel = pModel; Path = pPath; }
+        private cDocument(cHwpxDocument pHwpx) { cHwpx = pHwpx; }
 
-        public string Path { get; private set; }
+        public string Path { get { return cHwp != null ? cHwp.Path : cHwpx.Path; } }
 
         public string Format { get { return cHwp != null ? "hwp5" : "hwpx"; } }
 
-        public DocModel Model { get { return cHwp != null ? cHwp.Model : cModel; } }
+        public DocModel Model { get { return cHwp != null ? cHwp.Model : cHwpx.Model; } }
 
-        /// <summary>hwp5 일 때만. hwpx 는 아직 없다(2단계).</summary>
+        /// <summary>hwp5 일 때만. 왕복 검사가 원본 <c>HWPFile</c> 지표를 잰다.</summary>
         public cHwpDocument Hwp { get { return cHwp; } }
 
         public static cDocument Open(string pPath)
@@ -31,22 +31,43 @@ namespace HwpEditor.Files
 
             string ext = System.IO.Path.GetExtension(pPath);
             if (string.Equals(ext, ".hwpx", StringComparison.OrdinalIgnoreCase))
-            {
-                cDocument d = new cDocument(cHwpxReader.Read(pPath), pPath);
-                return d;
-            }
+                return new cDocument(cHwpxDocument.Open(pPath));
 
-            cDocument h = new cDocument(cHwpDocument.Open(pPath));
-            h.Path = pPath;
-            return h;
+            return new cDocument(cHwpDocument.Open(pPath));
         }
 
-        public void Save(string pPath)
+        /// <summary>
+        /// 편집분을 메모리의 원본에 반영하고 저장한다(계획 6절).
+        ///
+        /// ★ 반영과 저장을 한 문으로 묶는다 — 반영만 하고 저장을 못 하면 메모리와 파일이 갈라지는데,
+        ///   화면은 저장 결과만 보고 dirty 를 비우므로 그 사실을 영영 모른다.
+        /// </summary>
+        public SaveResult Save(string pPath, SaveRequest pReq)
         {
-            if (cHwp == null)
-                throw new NotSupportedException("hwpx 저장은 2단계에서 붙인다 — 지금은 읽기만 된다.");
-            cHwp.Save(pPath);
-            Path = pPath;
+            SaveResult r = new SaveResult();
+
+            if (cHwp != null)
+            {
+                cHwp.Apply(pReq, r);
+                cHwp.Save(pPath);
+            }
+            else
+            {
+                cHwpx.Apply(pReq, r);
+                cHwpx.Save(pPath);
+            }
+
+            r.Ok = true;
+            r.Path = Path;
+            return r;
+        }
+
+        /// <summary>편집분 없이 저장만. 검사 통로가 쓴다.</summary>
+        public SaveResult Save(string pPath, IList<EditOp> pOps)
+        {
+            SaveRequest req = new SaveRequest();
+            req.Ops = pOps == null ? new List<EditOp>() : new List<EditOp>(pOps);
+            return Save(pPath, req);
         }
     }
 }

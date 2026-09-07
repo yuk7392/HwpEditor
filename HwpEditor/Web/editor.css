@@ -75,6 +75,42 @@ body {
 .hw-menu-item:hover { background: #e8e8e8; border-color: #d0d0d0; }
 .hw-menu-item:active { background: #dcdcdc; }
 
+/* ─ 서식 도구줄 ─ */
+.hw-tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 6px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.hw-tool {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+.hw-tool:hover { background: #e4e4e4; border-color: #cccccc; }
+.hw-tool.on { background: #d8e6f6; border-color: #9dbfe4; }
+
+/* ★ 이름을 hw-sel 로 두면 안 된다 — 선택 강조 사각형과 같은 이름이라,
+   캐럿을 그릴 때 도는 querySelectorAll('.hw-sel') 이 도구줄 콤보를 <b>DOM 에서 지운다</b>
+   (실측 — 문서를 여는 순간 글꼴·크기·줄간격 콤보가 사라졌고 예외도 안 났다). */
+/* ★ min-width 를 준다 — 항목이 없는 콤보는 폭이 화살표만 남아 고장 난 것처럼 보인다. */
+.hw-pick { height: 22px; min-width: 120px; font: inherit; }
+.hw-pick-sm { width: 68px; min-width: 68px; }
+.hw-color { width: 28px; height: 22px; padding: 0; border: 1px solid #cccccc; background: none; }
+.hw-bar { width: 1px; height: 16px; margin: 0 4px; background: #d0d0d0; }
+
 /* ─ 본문 ─ */
 .hw-canvas {
   flex: 1 1 auto;
@@ -107,7 +143,32 @@ body {
   align-items: flex-end;
 }
 
+/* ★ flex 항목은 자리가 모자라면 <b>줄어든다</b>. 그러면 우리가 잡은 폭이 무너져 캐럿이 어긋난다.
+   줄 폭이 반올림으로 몇 분의 1픽셀만 넘쳐도 걸리므로 아예 못 줄이게 못 박는다. */
+.hw-run, .hw-gap, .hw-obj { flex: none; }
+
 .hw-run { white-space: pre; }
+
+/* 탭·안 그리는 개체의 자리. 폭만 차지하고 아무것도 안 그린다. */
+.hw-gap {
+  display: inline-block;
+  height: 1px;
+  vertical-align: bottom;
+}
+
+/* ─ 표(5단계) ─
+   ★ 칸 테두리만 그린다. 글자는 보통 줄로 따로 놓이므로 여기에 안 넣는다 —
+     칸 안에 다시 흘려 넣으면 우리 배치와 화면이 갈라진다. */
+.hw-table {
+  position: absolute;
+  z-index: 0;
+}
+
+.hw-cell {
+  position: absolute;
+  border: 1px solid #808080;
+  background: transparent;
+}
 
 /* 개체는 1단계에서 크기만 잡은 회색 상자다. */
 .hw-obj {
@@ -121,6 +182,13 @@ body {
 .hw-obj-image { background: #e8eef5; border-color: #b9c9dc; }
 .hw-obj-table { background: #eef5ee; border-color: #c2d8c2; }
 
+/* 실제로 그려지는 그림(3단계). 회색 상자와 달리 테두리를 두지 않는다. */
+.hw-obj-img {
+  border: 0;
+  background: transparent;
+  object-fit: fill;
+}
+
 .hw-obj[data-label]::after {
   content: attr(data-label);
   position: absolute;
@@ -129,6 +197,89 @@ body {
   font-size: 9px;
   color: #808080;
   white-space: nowrap;
+}
+
+/* ─ 캐럿·선택·조합(2단계) ─
+   ★ 셋 다 본문 위에 얹는 층이다. 글자 사이에 끼워 넣으면 그 줄이 다시 흐르면서
+     우리가 계산한 배치와 화면이 갈라진다. */
+.hw-caret {
+  position: absolute;
+  width: 1px;
+  background: #202020;
+  animation: hw-blink 1.06s steps(1) infinite;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes hw-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.hw-sel {
+  position: absolute;
+  background: rgba(51, 122, 204, 0.28);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 조합 중인 글자. 모델에는 아직 안 들어간 상태다(계획 G-4). */
+.hw-composing {
+  position: absolute;
+  white-space: pre;
+  line-height: 1;
+  background: #ffffff;
+  border-bottom: 2px solid #337acc;
+  color: #202020;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* IME 수신기. 눈에 안 보이되 화면 안에 있어야 후보 창이 캐럿 옆에 뜬다. */
+#hwIme {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  opacity: 0;
+  overflow: hidden;
+  white-space: pre;
+  z-index: 10;
+}
+
+/* ─ PDF 내보내기(7단계) ─
+   ★ 쪽 상자가 곧 용지다 — 여백은 이미 본문 배치 안에 들어 있으므로 인쇄 여백을 0 으로 두고
+     쪽마다 강제로 넘긴다. 안 그러면 브라우저가 자기 여백을 얹어 한 쪽이 두 쪽으로 쪼개진다. */
+@media print {
+  html, body {
+    height: auto;
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  .hw-menu, .hw-tools, .hw-status, #hwIme,
+  .hw-caret, .hw-sel, .hw-composing { display: none !important; }
+
+  .hw-canvas {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .hw-page {
+    margin: 0;
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .hw-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 }
 
 /* ─ 상태줄 ─ */

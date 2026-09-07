@@ -123,6 +123,13 @@ var hwMeasure = (function () {
     /* 글자 크기(HWPUNIT). 줄 높이 계산의 바탕이다. */
     sizeHu: function (cs) { return cs.sizeHu; },
 
+    /* ★ <b>브라우저가 실제로 그릴</b> 폭(HWPUNIT). 장평·자간을 안 얹은 날 것이다.
+       charHu 와 이 값의 차이가 곧 화면에 자간으로 메워야 할 양이다 — 그래야 우리가 계산한
+       캐럿 자리와 눈에 보이는 글자 자리가 같아진다. */
+    naturalHu: function (ch, cs) {
+      return width100(fontKey(cs), ch) * cs.sizeHu / 100;
+    },
+
     /* 진단용 — 캐시에 든 패밀리와 글자 수. */
     stats: function () {
       var out = {};

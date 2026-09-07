@@ -109,8 +109,19 @@ namespace HwpEditor.Models
         [JsonProperty("pos")] public int Pos;
         [JsonProperty("oid")] public string Oid;
 
-        /// <summary>"image" | "table" | "opaque"</summary>
+        /// <summary>"image" | "table" | "opaque" | "ctrl"</summary>
         [JsonProperty("kind")] public string Kind;
+
+        /// <summary>
+        /// 화면에 아무것도 그리지 않는 자리다. 용지·단 정의(secd·cold)와 필드 같은 인라인 컨트롤이
+        /// 여기 든다.
+        ///
+        /// ★ 그래도 <b>개체 한 자리를 차지한다</b> — 안 그러면 저장할 때 이 컨트롤이 통째로 사라진다.
+        ///   문단을 되쓸 때는 runs·objs 만 보고 원시 글자열을 다시 만드는데, 목록에 없는 컨트롤은
+        ///   다시 쓸 방법이 없기 때문이다(첫 문단을 한 번 고치면 그 구역의 용지 정의가 날아간다).
+        /// </summary>
+        [JsonProperty("hidden", NullValueHandling = NullValueHandling.Ignore)]
+        public bool? Hidden;
 
         [JsonProperty("wHu")] public long WHu;
         [JsonProperty("hHu")] public long HHu;
@@ -159,6 +170,13 @@ namespace HwpEditor.Models
         [JsonProperty("cs")] public int Cs = 1;
         [JsonProperty("wHu")] public long WHu;
         [JsonProperty("hHu")] public long HHu;
+
+        /// <summary>칸 안쪽 여백(HWPUNIT). 글은 이만큼 들어가서 시작한다.</summary>
+        [JsonProperty("mlHu")] public long MlHu;
+        [JsonProperty("mrHu")] public long MrHu;
+        [JsonProperty("mtHu")] public long MtHu;
+        [JsonProperty("mbHu")] public long MbHu;
+
         [JsonProperty("paras")] public List<ParagraphModel> Paras = new List<ParagraphModel>();
     }
 
@@ -170,7 +188,12 @@ namespace HwpEditor.Models
     {
         [JsonProperty("s")] public int S;
         [JsonProperty("y")] public long Y;
+
+        /// <summary>줄 높이. 읽을 때는 파일의 글자 높이, 저장 요청에서는 <b>다음 줄까지의 거리</b>다.</summary>
         [JsonProperty("h")] public long H;
+
+        /// <summary>글자 높이. 저장할 때 줄 높이와 줄 사이 여분을 가르는 데 쓴다(h - th = 여분).</summary>
+        [JsonProperty("th")] public long Th;
         [JsonProperty("b")] public long B;
         [JsonProperty("x")] public long X;
         [JsonProperty("w")] public long W;

@@ -24,17 +24,28 @@ namespace HwpEditor.Files
     {
         public static DocModel Read(HWPFile pFile, string pPath)
         {
+            return Read(pFile, pPath, null);
+        }
+
+        /// <summary>
+        /// <paramref name="pIndex"/> 를 주면 화면 id → 원본 객체 표를 같이 채운다(편집·저장이 쓴다).
+        /// null 이면 읽기만 한다 — 오라클 통로는 표가 필요 없다.
+        /// </summary>
+        public static DocModel Read(HWPFile pFile, string pPath, cHwpIndex pIndex)
+        {
             DocModel doc = new DocModel();
             doc.Format = "hwp5";
             doc.Path = pPath;
             doc.Rev = 1;
+
+            if (pIndex != null) pIndex.Clear();
 
             ReadFaceNames(pFile.DocInfo, doc);
             ReadCharShapes(pFile.DocInfo, doc);
             ReadParaShapes(pFile.DocInfo, doc);
 
             for (int i = 0; i < pFile.BodyText.SectionList.Count; i++)
-                doc.Sections.Add(ReadSection(pFile.BodyText.SectionList[i], i));
+                doc.Sections.Add(ReadSection(pFile.BodyText.SectionList[i], i, pIndex));
 
             // ★ 쪽 넘김은 문서 전체로 이어서 센다. 섹션마다 기준을 리셋하면 섹션 경계의 쪽 넘김을
             //   놓친다(실측 — lists.hwp 는 2섹션이라 3쪽인데 2쪽으로 셌다).
@@ -55,6 +66,21 @@ namespace HwpEditor.Files
                 m.Sub = cFontMap.Substitute(list[i].Name);
                 pDoc.FaceNames.Add(m);
             }
+        }
+
+        /// <summary>글자모양 목록만 따로. 저장 뒤 화면에 최종 목록을 돌려줄 때 쓴다(4단계).</summary>
+        public static List<CharShapeModel> CharShapesOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadCharShapes(pInfo, tmp);
+            return tmp.CharShapes;
+        }
+
+        public static List<ParaShapeModel> ParaShapesOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadParaShapes(pInfo, tmp);
+            return tmp.ParaShapes;
         }
 
         private static void ReadCharShapes(DocInfo pInfo, DocModel pDoc)
@@ -113,7 +139,10 @@ namespace HwpEditor.Files
             if (pSort == null) return null;
             if (pSort.IsDivideSection) return "section";
             if (pSort.IsDividePage) return "page";
-            if (pSort.IsDivideColumn || pSort.IsDivideMultiColumn) return "column";
+            // ★ 단 나눔과 다단 나눔을 한 이름으로 묶으면 안 된다 — 되쓸 때 다단 나눔이 단 나눔으로
+            //   바뀌어 그 문단부터 단 구성이 달라진다(고친 적 없는 성질이 조용히 바뀌는 자리다).
+            if (pSort.IsDivideMultiColumn) return "multicolumn";
+            if (pSort.IsDivideColumn) return "column";
             return null;
         }
 
@@ -181,7 +210,7 @@ namespace HwpEditor.Files
 
         #region 섹션 · 문단
 
-        private static SectionModel ReadSection(Section pSection, int pIdx)
+        private static SectionModel ReadSection(Section pSection, int pIdx, cHwpIndex pIndex)
         {
             SectionModel sec = new SectionModel();
             sec.Idx = pIdx;
@@ -190,7 +219,7 @@ namespace HwpEditor.Files
             {
                 Paragraph p = pSection.GetParagraph(i);
                 ApplySectionDefine(p, sec);
-                sec.Paras.Add(ReadParagraph(p, "s" + pIdx + "p" + i));
+                sec.Paras.Add(ReadParagraph(p, "s" + pIdx + "p" + i, pSection, pIndex));
             }
 
             return sec;
@@ -233,19 +262,27 @@ namespace HwpEditor.Files
             }
         }
 
-        private static ParagraphModel ReadParagraph(Paragraph pPara, string pId)
+        private static ParagraphModel ReadParagraph(Paragraph pPara, string pId, Section pSec, cHwpIndex pIndex)
+        {
+            return ReadParagraph(pPara, pId, pSec, pSec, pIndex);
+        }
+
+        private static ParagraphModel ReadParagraph(Paragraph pPara, string pId, Section pSec,
+                                                    IParagraphList pList, cHwpIndex pIndex)
         {
             ParagraphModel m = new ParagraphModel();
             m.Id = pId;
             m.Ps = pPara.Header.ParaShapeId;
             m.Brk = DivideName(pPara.Header.DivideSort);
 
+            if (pIndex != null) pIndex.Paras[pId] = new cParaRef(pPara, pSec, pList);
+
             int[] rawToEdit;
             int editLen;
             BuildRuns(pPara, m, out rawToEdit, out editLen);
             m.Len = editLen;
 
-            ReadObjects(pPara, m, rawToEdit);
+            ReadObjects(pPara, m, rawToEdit, pIndex);
             m.Seg = ReadLineSeg(pPara, rawToEdit);
             return m;
         }
@@ -311,7 +348,13 @@ namespace HwpEditor.Files
 
                 for (int k = 0; k < ch.CharSize; k++) pRawToEdit[raw + k] = edit;
 
-                switch (ch.Type)
+                // ★ 탭은 ControlChar 가 아니라 <b>ControlInline(8글자)</b> 로 올라온다
+                //   (실측 tabdef.hwp — type=ControlInline code=9 size=8).
+                //   이걸 안 걸러 내면 아래 default 로 빠져 폭 0 인 숨은 개체가 되고, 화면에서 탭이
+                //   통째로 사라진 채 그 뒤 글자가 탭 폭만큼 왼쪽으로 당겨진다.
+                bool isTab = ch.Type == HWPCharType.ControlInline && ch.Code == 9;
+
+                switch (isTab ? HWPCharType.ControlChar : ch.Type)
                 {
                     case HWPCharType.Normal:
                         buf.Append((char)ch.Code);
@@ -319,7 +362,7 @@ namespace HwpEditor.Files
                         break;
 
                     case HWPCharType.ControlChar:
-                        // 9=탭, 10=줄바꿈, 13=문단 끝. 문단 끝은 모델에 담지 않는다.
+                        // 9=탭(위에서 접어 온 것), 10=줄바꿈, 13=문단 끝. 문단 끝은 모델에 담지 않는다.
                         if (ch.Code == 9) { buf.Append('\t'); edit++; }
                         else if (ch.Code == 10) { buf.Append('\n'); edit++; }
                         else if (ch.Code != 13) { edit++; buf.Append(' '); }
@@ -363,37 +406,71 @@ namespace HwpEditor.Files
 
         #region 개체 · lineseg
 
-        private static void ReadObjects(Paragraph pPara, ParagraphModel pModel, int[] pRawToEdit)
+        /// <summary>
+        /// 문단 안의 개체 자리를 전부 훑는다.
+        ///
+        /// ★ 화면에 안 보이는 것(용지·단 정의, 필드 같은 인라인 제어문자)도 <b>빠짐없이 목록에 넣는다</b>.
+        ///   되쓰기가 runs·objs 만 보고 원시 글자열을 다시 만들기 때문에, 목록에 없는 컨트롤은
+        ///   그 문단을 한 번 고치는 순간 사라진다(첫 문단이면 그 구역의 용지 정의가 통째로 날아간다).
+        ///   화면 쪽은 <c>hidden</c> 을 보고 아무것도 그리지 않는다.
+        /// </summary>
+        private static void ReadObjects(Paragraph pPara, ParagraphModel pModel, int[] pRawToEdit, cHwpIndex pIndex)
         {
-            if (pPara.ControlList == null || pPara.ControlList.Count == 0) return;
             if (pPara.Text == null) return;
 
             IReadOnlyList<HWPChar> chars = pPara.Text.CharList;
-            int raw = 0, ctlIdx = 0;
+            int raw = 0, ctlIdx = 0, objIdx = 0;
 
             for (int i = 0; i < chars.Count; i++)
             {
                 HWPChar ch = chars[i];
+                InlineObjModel o = null;
+                Control ctl = null;
+
                 if (ch.Type == HWPCharType.ControlExtend)
                 {
-                    if (ctlIdx < pPara.ControlList.Count)
-                    {
-                        Control c = pPara.ControlList[ctlIdx];
-                        InlineObjModel o = ToObject(c, pModel.Id, ctlIdx, ToEdit(pRawToEdit, raw));
-                        if (o != null) pModel.Objs.Add(o);
-                    }
+                    if (pPara.ControlList != null && ctlIdx < pPara.ControlList.Count) ctl = pPara.ControlList[ctlIdx];
                     ctlIdx++;
+                    o = ToObject(ctl, pModel.Id, objIdx, ToEdit(pRawToEdit, raw), pIndex);
                 }
+                else if (ch.Type == HWPCharType.ControlInline && ch.Code != 9)
+                {
+                    // 탭(9)은 BuildRuns 가 이미 글자로 담았다 — 여기서 또 담으면 한 자리를 두 번 센다.
+                    o = Hidden(pModel.Id, objIdx, ToEdit(pRawToEdit, raw), "inline", "인라인");
+                }
+
+                if (o != null)
+                {
+                    pModel.Objs.Add(o);
+                    if (pIndex != null) pIndex.Objs[o.Oid] = new cObjRef(ch, ctl);
+                    objIdx++;
+                }
+
                 raw += ch.CharSize;
             }
         }
 
-        private static InlineObjModel ToObject(Control pControl, string pParaId, int pIndex, int pPos)
+        /// <summary>자리는 차지하지만 화면에는 아무것도 없는 개체.</summary>
+        private static InlineObjModel Hidden(string pParaId, int pIndex, int pPos, string pCtrl, string pLabel)
         {
-            if (pControl == null) return null;
+            InlineObjModel o = new InlineObjModel();
+            o.Pos = pPos;
+            o.Oid = pParaId + "#" + pIndex;
+            o.Kind = "ctrl";
+            o.Ctrl = pCtrl;
+            o.Label = pLabel;
+            o.Hidden = true;
+            o.Inline = true;
+            return o;
+        }
 
+        private static InlineObjModel ToObject(Control pControl, string pParaId, int pIndex, int pPos, cHwpIndex pMap)
+        {
             // 용지·단 정의는 화면에 그릴 개체가 아니다 — 섹션 속성으로 이미 흡수했다.
-            if (pControl is ControlSectionDefine || pControl is ControlColumnDefine) return null;
+            // 컨트롤을 못 찾은 확장 제어문자도 같은 자리에 둔다(원본 글자를 그대로 되쓴다).
+            if (pControl == null) return Hidden(pParaId, pIndex, pPos, "unknown", "컨트롤");
+            if (pControl is ControlSectionDefine) return Hidden(pParaId, pIndex, pPos, "secd", "구역 정의");
+            if (pControl is ControlColumnDefine) return Hidden(pParaId, pIndex, pPos, "cold", "단 정의");
 
             InlineObjModel o = new InlineObjModel();
             o.Pos = pPos;
@@ -404,8 +481,13 @@ namespace HwpEditor.Files
             {
                 o.WHu = gso.Width;
                 o.HHu = gso.Height;
-                o.XOffHu = gso.XOffset;
-                o.YOffHu = gso.YOffset;
+
+                // ★ 오프셋은 <b>부호 있는</b> 값이다. HwpLibSharp 이 UInt32 로 주므로 그대로 쓰면
+                //   -2835 가 4,294,964,461 이 된다 — 화면에서는 그 개체가 3,300만 픽셀 밖으로 나가고
+                //   PDF 로 뽑으면 그 자리까지 쪽을 채워 <b>19,926쪽</b>이 나온다(실측 aligns.hwp).
+                //   크기(Width·Height)는 진짜 부호 없는 값이라 그대로 둔다.
+                o.XOffHu = unchecked((int)gso.XOffset);
+                o.YOffHu = unchecked((int)gso.YOffset);
                 if (gso.Property != null)
                 {
                     o.Inline = gso.Property.IsLikeWord();
@@ -431,7 +513,7 @@ namespace HwpEditor.Files
             if (tbl != null)
             {
                 o.Kind = "table";
-                o.Table = ToTable(tbl, o.Oid);
+                o.Table = ToTable(tbl, o.Oid, pMap);
                 return o;
             }
 
@@ -493,19 +575,16 @@ namespace HwpEditor.Files
             }
         }
 
-        private static TableModel ToTable(ControlTable pTable, string pOid)
+        private static TableModel ToTable(ControlTable pTable, string pOid, cHwpIndex pMap)
         {
             TableModel t = new TableModel();
 
             // ★ 행 목록은 Table 이 아니라 ControlTable 이 들고 있다. Table 은 칸 여백·테두리 같은 속성만이다.
             IReadOnlyList<Row> rows = pTable.RowList;
             if (rows == null) return t;
-            t.Rows = rows.Count;
-
             for (int r = 0; r < rows.Count; r++)
             {
                 Row row = rows[r];
-                if (row.CellList.Count > t.Cols) t.Cols = row.CellList.Count;
 
                 for (int c = 0; c < row.CellList.Count; c++)
                 {
@@ -516,10 +595,18 @@ namespace HwpEditor.Files
                     {
                         cm.R = h.RowIndex;
                         cm.C = h.ColIndex;
-                        cm.Rs = h.RowSpan;
-                        cm.Cs = h.ColSpan;
+
+                        // ★ 1 아래로 두지 않는다. 0 이 하나라도 있으면 화면 쪽 격자 계산이 그 칸을
+                        //   통째로 빠뜨리고(행 수·씨앗·행 높이 전부), 저장하는 쪽은 1 로 봐서
+                        //   같은 요청에 <b>다른 격자</b>가 나온다.
+                        cm.Rs = Math.Max(1, h.RowSpan);
+                        cm.Cs = Math.Max(1, h.ColSpan);
                         cm.WHu = h.Width;
                         cm.HHu = h.Height;
+                        cm.MlHu = h.LeftMargin;
+                        cm.MrHu = h.RightMargin;
+                        cm.MtHu = h.TopMargin;
+                        cm.MbHu = h.BottomMargin;
                     }
                     else { cm.R = r; cm.C = c; }
 
@@ -527,11 +614,20 @@ namespace HwpEditor.Files
                     {
                         Paragraph[] ps = cell.ParagraphList.GetParagraphs();
                         for (int k = 0; k < ps.Length; k++)
-                            cm.Paras.Add(ReadParagraph(ps[k], pOid + "r" + cm.R + "c" + cm.C + "p" + k));
+                            cm.Paras.Add(ReadParagraph(ps[k], pOid + "r" + cm.R + "c" + cm.C + "p" + k,
+                                                        null, cell.ParagraphList, pMap));
                     }
 
                     t.Cells.Add(cm);
                 }
+            }
+
+            // ★ 행·열 수는 <b>격자</b>에서 낸다. 행의 칸 개수로 세면 병합된 표에서 늘 작게 나온다
+            //   (걸쳐 있는 칸은 시작 행에만 들어 있다).
+            foreach (CellModel cc in t.Cells)
+            {
+                if (cc.R + cc.Rs > t.Rows) t.Rows = cc.R + cc.Rs;
+                if (cc.C + cc.Cs > t.Cols) t.Cols = cc.C + cc.Cs;
             }
             return t;
         }
@@ -553,6 +649,7 @@ namespace HwpEditor.Files
                 m.S = ToEdit(pRawToEdit, it.TextStartPosition);
                 m.Y = it.LineVerticalPosition;
                 m.H = it.LineHeight;
+                m.Th = it.TextPartHeight;
                 m.B = it.DistanceBaseLineToLineVerticalPosition;
                 m.X = it.StartPositionFromColumn;
                 m.W = it.SegmentWidth;

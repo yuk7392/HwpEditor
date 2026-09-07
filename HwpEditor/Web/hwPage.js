@@ -42,11 +42,11 @@ var hwPage = (function () {
     for (var pi = 0; pi < sec.paras.length; pi++) {
       var para = sec.paras[pi];
       var ps = hwModel.paraShape(para.ps);
-      var lines = hwBreak.breakPara(para, colW);
+      var lines = hwBreak.linesOf(para, colW);
 
       /* ★ 문단에 걸린 강제 나눔. 이걸 안 보면 쪽이 모자라고 그 뒤 y 가 통째로 밀린다. */
       if (para.brk && !(cur.lines.length === 0 && col === 0)) {
-        if (para.brk === 'column' && col + 1 < cols) { col++; y = 0; }
+        if ((para.brk === 'column' || para.brk === 'multicolumn') && col + 1 < cols) { col++; y = 0; }
         else { cur = newPage(sec, si); col = 0; y = 0; }
       }
 
@@ -74,6 +74,28 @@ var hwPage = (function () {
         y += ln.hHu;
       }
 
+      /* ★ 표는 칸까지 배치한다(5단계). 표 안 문단의 줄도 <b>본문 기준 절대 좌표</b>로 같은
+         줄 목록에 들어간다 — 그래야 캐럿·선택·hit test 가 표를 따로 알 필요가 없다. */
+      var tbl = tableObjs(para);
+      for (var ti = 0; ti < tbl.length; ti++) {
+        var to = tbl[ti];
+        var grid = hwTable.measure(to);
+        var tx = col * (colW + gap) + (to.inline ? 0 : (to.xOffHu || 0));
+        var ty = paraTop + (to.yOffHu || 0);
+
+        /* 남은 자리에 안 들어가면 통째로 다음 쪽으로 넘긴다(행 단위로 쪼개 넘기는 것은 잔여). */
+        if (ty + grid.hHu > textH && !(paraTop === 0 && y === 0)) {
+          col++;
+          if (col >= cols) { cur = newPage(sec, si); col = 0; }
+          y = 0; paraTop = 0;
+          tx = col * (colW + gap) + (to.inline ? 0 : (to.xOffHu || 0));
+          ty = to.yOffHu || 0;
+        }
+
+        hwTable.place(to, tx, ty, cur.lines, hwPages.length - 1, cur);
+        if (ty + grid.hHu > y) y = ty + grid.hHu;
+      }
+
       /* ★ 문단에 매달린 "자리 차지" 개체는 본문을 아래로 밀어낸다. 이걸 안 하면 표·그림이 큰
          문서에서 쪽이 통째로 모자란다(실측 — basicsReport.hwp 는 6쪽인데 4쪽으로 나왔고,
          모자란 높이가 그 문서의 떠 있는 표 높이 합과 맞았다). */
@@ -91,11 +113,21 @@ var hwPage = (function () {
 
   /* 문단에 매달려 자리를 차지하는 떠 있는 개체가 잡아먹는 세로 높이.
      쪽·용지 기준으로 붙은 개체(relV=page/paper)는 본문 흐름과 무관하므로 세지 않는다. */
+  /* 이 문단에 매달린 표 개체들. */
+  function tableObjs(para) {
+    var out = [];
+    for (var i = 0; i < (para.objs || []).length; i++)
+      if (para.objs[i].table) out.push(para.objs[i]);
+    return out;
+  }
+
   function floatReserve(para) {
     if (!para.objs) return 0;
     var max = 0;
     for (var i = 0; i < para.objs.length; i++) {
       var o = para.objs[i];
+      /* 표는 위에서 이미 자리를 잡았다 — 여기서 또 세면 그만큼 빈 자리가 두 번 생긴다. */
+      if (o.table) continue;
       if (o.inline) continue;
       if (o.relV !== 'para') continue;
       if (o.flow === 'behind' || o.flow === 'front') continue;
@@ -106,13 +138,62 @@ var hwPage = (function () {
   }
 
   function newPage(sec, si) {
-    var p = { secIdx: si, page: sec.page, lines: [] };
+    var p = { secIdx: si, page: sec.page, lines: [], tables: [] };
     hwPages.push(p);
     return p;
   }
 
-  return { layout: layout };
+  /* 문단 id → 그 문단이 차지한 줄들. 캐럿이 좌표를 찾을 때 쓴다.
+     ★ 배치가 끝난 뒤에 한 번만 만든다 — 캐럿을 옮길 때마다 전 쪽을 훑으면 긴 문서에서 눌린다. */
+  function buildIndex() {
+    hwLineIndex = {};
+    for (var pg = 0; pg < hwPages.length; pg++) {
+      var lines = hwPages[pg].lines;
+      for (var i = 0; i < lines.length; i++) {
+        var id = lines[i].para.id;
+        if (!hwLineIndex[id]) hwLineIndex[id] = [];
+        lines[i].pageIdx = pg;
+        hwLineIndex[id].push(lines[i]);
+      }
+    }
+  }
+
+  return { layout: layout, buildIndex: buildIndex };
 })();
 
-function hwLayout() { return hwPage.layout(); }
+/* 문단 id → 배치된 줄 목록. hwLayout 이 채운다. */
+var hwLineIndex = {};
+
+function hwLayout() {
+  var r = hwPage.layout();
+  hwPage.buildIndex();
+  return r;
+}
+
 function hwPageCount() { return hwPages.length; }
+
+/* 저장 요청에 실을 줄 정보(계획 6절). ★ 이걸 안 보내면 저장본의 줄 정보가 비어
+   외부 변환기가 줄 0 으로 읽는다 — 2단계 판정 ④ 가 그 자리다.
+   h 는 <b>다음 줄까지의 거리</b>, th 는 글자 높이다. C# 이 둘의 차를 줄 사이 여분으로 쓴다. */
+function hwSegOf(paraId) {
+  var lines = hwLineIndex[paraId];
+  if (!lines || !lines.length) return null;
+
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var it = lines[i], ln = it.line;
+    out.push({
+      s: ln.s,
+      /* ★ 표 칸 안의 문단은 <b>칸 기준</b> 좌표로 적는다(실측 — table.hwp 의 칸 첫 줄이 전부 y=0,
+         x=0 이고 w 는 칸 폭에서 여백을 뺀 값이다). 본문 절대 좌표를 그대로 적으면 저장본을 여는
+         쪽이 칸 안의 글을 쪽 아래쪽으로 밀어 그린다. 본문 문단은 base 가 0 이라 그대로다. */
+      y: Math.round(it.yHu - (it.baseYHu || 0)),
+      h: Math.round(ln.hHu),
+      th: Math.round(ln.thHu),
+      b: Math.round(ln.baseHu),
+      x: Math.round(it.xHu - (it.baseXHu || 0)),
+      w: Math.round(ln.availHu)
+    });
+  }
+  return out;
+}

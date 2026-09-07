@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -28,8 +29,8 @@ namespace HwpEditor
         private static readonly string[] cWebAssets =
         {
             "editor.css",
-            "hwUnit.js", "hwModel.js", "hwMeasure.js", "hwBreak.js", "hwPage.js", "hwRender.js", "hwOracle.js",
-            "hwBridge.js",
+            "hwUnit.js", "hwModel.js", "hwMeasure.js", "hwBreak.js", "hwTable.js", "hwPage.js", "hwRender.js",
+            "hwCaret.js", "hwUndo.js", "hwFormat.js", "hwInput.js", "hwUi.js", "hwOracle.js", "hwBridge.js",
             "NanumGothic.ttf", "NanumGothic-Bold.ttf", "NanumMyeongjo.ttf", "NanumMyeongjo-Bold.ttf"
         };
 
@@ -37,6 +38,7 @@ namespace HwpEditor
         private readonly List<string> cPendingScripts = new List<string>();
         private bool cReady;
         private bool cFailed;
+        private bool cTriedFile;
 
         /// <summary>디버그·로그가 읽는 한 줄 상태. 초기화는 조용히 실패할 수 있어서 남긴다.</summary>
         public string Status { get; private set; }
@@ -86,10 +88,33 @@ namespace HwpEditor
 
             // ★ 문서(cPage)보다 자산을 먼저 푼다. 문서가 이것들을 곧바로 요청하므로,
             //   순서가 뒤바뀌면 첫 기동에서만 스타일 없는 화면이 한 번 스친다.
+            long token = 0;
             for (int i = 0; i < cWebAssets.Length; i++)
-                WriteIfChanged(Path.Combine(pDir, cWebAssets[i]), ReadEmbedded(cWebAssets[i]));
+            {
+                byte[] bytes = ReadEmbedded(cWebAssets[i]);
+                WriteIfChanged(Path.Combine(pDir, cWebAssets[i]), bytes);
+                token = token * 31 + (bytes == null ? 0 : bytes.Length);
+            }
 
-            WriteIfChanged(Path.Combine(pDir, cPage), ReadEmbedded(cPage));
+            WriteIfChanged(Path.Combine(pDir, cPage), Versioned(ReadEmbedded(cPage), token));
+        }
+
+        /// <summary>
+        /// 문서가 끌어가는 자산 주소에 판 번호를 붙인다.
+        ///
+        /// ★ 이게 없으면 <b>고친 스크립트가 안 먹는다</b>. 브라우저가 지난 판을 캐시에서 그대로 내주고
+        ///   파일은 새것이라 눈으로는 구분이 안 된다(실측 — 고친 줄이 화면에 안 나타나서 같은 자리를
+        ///   두 번 고쳤다). 자산 크기 합을 판 번호로 쓰면 내용이 바뀔 때만 주소가 바뀐다.
+        /// </summary>
+        private static byte[] Versioned(byte[] pHtml, long pToken)
+        {
+            if (pHtml == null) return null;
+
+            string v = "?v=" + pToken.ToString("X", System.Globalization.CultureInfo.InvariantCulture);
+            string html = Encoding.UTF8.GetString(pHtml)
+                .Replace(".js\"", ".js" + v + "\"")
+                .Replace(".css\"", ".css" + v + "\"");
+            return Encoding.UTF8.GetBytes(html);
         }
 
         public static string WebDir
@@ -191,7 +216,24 @@ namespace HwpEditor
         {
             if (!e.IsSuccess)
             {
-                Fail("문서 로드 실패: " + e.WebErrorStatus);
+                // ★ WebErrorStatus 만으로는 자리를 못 찾는다 — 404 인지(자산이 안 풀렸다) 아예 못 붙은
+                //   것인지(호스트 매핑이 안 걸렸다) 가리려면 HTTP 상태와 최종 주소가 같이 있어야 한다.
+                string url = "";
+                try { url = cView.CoreWebView2.Source; } catch { }
+                string why = e.WebErrorStatus + " http=" + e.HttpStatusCode + " url=" + url;
+
+                // ★ 가상 호스트가 안 서는 PC 가 있다(응답 자체가 없고 http=0 으로 온다).
+                //   같은 폴더를 file:// 로 다시 연다 — 문서와 자산이 한 폴더라 상대 경로가 그대로 맞는다.
+                if (!cTriedFile)
+                {
+                    cTriedFile = true;
+                    cLog.Write("가상 호스트 실패(" + why + ") — file:// 로 다시 붙는다");
+                    Status = "가상 호스트 실패, file:// 재시도";
+                    try { cView.CoreWebView2.Navigate(new Uri(Path.Combine(WebDir, cPage)).AbsoluteUri); return; }
+                    catch (Exception ex) { cLog.Write(ex); }
+                }
+
+                Fail("문서 로드 실패: " + why);
                 return;
             }
 
@@ -234,6 +276,32 @@ namespace HwpEditor
         {
             try { cView.CoreWebView2.ExecuteScriptAsync(pScript); }
             catch (Exception ex) { cLog.Write(ex); }
+        }
+
+        /// <summary>
+        /// 지금 떠 있는 문서를 PDF 로 찍는다(7단계).
+        ///
+        /// ★ 용지 크기를 <b>인치</b>로 준다(HWPUNIT / 7200). 여백은 0 이다 — 우리 쪽 상자가 곧 용지이고
+        ///   본문 여백은 이미 그 안의 배치에 들어 있다. 여백을 또 주면 한 쪽이 두 쪽으로 쪼개진다.
+        /// ★ 배경을 찍게 켠다. 안 켜면 표 채우기·글자 배경이 통째로 빠진다.
+        /// </summary>
+        public async System.Threading.Tasks.Task<bool> PrintToPdfAsync(string pPath, double pWidthIn, double pHeightIn)
+        {
+            if (cView == null || cView.CoreWebView2 == null) return false;
+
+            CoreWebView2Environment env = await SharedEnvAsync();
+            CoreWebView2PrintSettings s = env.CreatePrintSettings();
+            s.PageWidth = pWidthIn;
+            s.PageHeight = pHeightIn;
+            s.MarginTop = 0;
+            s.MarginBottom = 0;
+            s.MarginLeft = 0;
+            s.MarginRight = 0;
+            s.ShouldPrintBackgrounds = true;
+            s.ShouldPrintHeaderAndFooter = false;
+            s.ScaleFactor = 1;
+
+            return await cView.CoreWebView2.PrintToPdfAsync(pPath, s);
         }
 
         private void Fail(string pReason)

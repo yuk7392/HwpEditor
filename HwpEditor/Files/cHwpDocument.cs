@@ -36,17 +36,55 @@ namespace HwpEditor.Files
 
         public HWPFile File { get { return cFile; } }
 
-        /// <summary>화면에 보내는 문서 모델. 처음 쓸 때 만들고 그대로 들고 있는다.</summary>
+        /// <summary>
+        /// 화면에 보내는 문서 모델. 처음 쓸 때 만들고 그대로 들고 있는다.
+        ///
+        /// ★ 만들면서 <see cref="Index"/>(화면 id → 원본 객체)도 같이 채우고 그림을 파일로 푼다 —
+        ///   둘 다 이 모델과 같은 순간의 문서를 봐야 짝이 맞는다.
+        /// </summary>
         public DocModel Model
         {
             get
             {
-                if (cModel == null) cModel = cHwpReader.Read(cFile, Path);
+                if (cModel == null)
+                {
+                    cModel = cHwpReader.Read(cFile, Path, cIndex);
+                    cImageStore.Extract(cFile, cModel, cIndex, cImageStore.DocKey(Path));
+                }
                 return cModel;
             }
         }
 
         private DocModel cModel;
+
+        private readonly cHwpIndex cIndex = new cHwpIndex();
+
+        /// <summary>편집분을 되쓸 때 쓰는 id 표. <see cref="Model"/> 을 한 번은 읽어야 채워진다.</summary>
+        public cHwpIndex Index
+        {
+            get
+            {
+                if (cModel == null) { DocModel unused = Model; }
+                return cIndex;
+            }
+        }
+
+        /// <summary>
+        /// 편집분을 메모리의 원본에 반영한다. ★ 반영 뒤에도 <b>다시 읽지 않는다</b> —
+        /// 다시 읽으면 문단 id 가 새로 매겨져 화면이 들고 있는 id 와 어긋난다.
+        /// 대신 <see cref="Index"/> 를 그 자리에서 갱신해 id 를 계속 유효하게 둔다.
+        /// </summary>
+        public void Apply(SaveRequest pReq, SaveResult pResult)
+        {
+            if (pReq == null) return;
+            cHwpWriter.Apply(cFile, Index, pReq, pResult);
+
+            if (pResult != null)
+            {
+                pResult.CharShapes = cHwpReader.CharShapesOf(cFile.DocInfo);
+                pResult.ParaShapes = cHwpReader.ParaShapesOf(cFile.DocInfo);
+            }
+        }
 
         public static cHwpDocument Open(string pPath)
         {

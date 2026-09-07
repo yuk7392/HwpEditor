@@ -12,9 +12,35 @@
   <button class="hw-menu-item" data-cmd="save">저장</button>
   <button class="hw-menu-item" data-cmd="saveAs">다른 이름으로</button>
   <button class="hw-menu-item" data-cmd="insertImage">그림</button>
+  <button class="hw-menu-item" data-cmd="pdf">PDF</button>
   <span class="hw-menu-gap"></span>
   <button class="hw-menu-item" id="hwBtnOracle">오라클</button>
   <button class="hw-menu-item" id="hwBtnPing">테스트</button>
+</div>
+
+<!-- 서식 도구줄(4단계). 누를 때 캐럿 초점을 안 뺏는다 — hwUi 가 mousedown 을 막는다. -->
+<div id="hwTools" class="hw-tools">
+  <select id="hwFont" class="hw-pick" title="글꼴"></select>
+  <select id="hwSize" class="hw-pick hw-pick-sm" title="글자 크기"></select>
+  <button class="hw-tool" data-fmt="bold" title="굵게 (Ctrl+B)"><b>가</b></button>
+  <button class="hw-tool" data-fmt="italic" title="기울임 (Ctrl+I)"><i>가</i></button>
+  <button class="hw-tool" data-fmt="underline" title="밑줄 (Ctrl+U)"><u>가</u></button>
+  <button class="hw-tool" data-fmt="strike" title="취소선"><s>가</s></button>
+  <input type="color" id="hwColor" class="hw-color" value="#000000" title="글자색">
+  <span class="hw-bar"></span>
+  <button class="hw-tool" data-align="left" title="왼쪽 정렬">◧</button>
+  <button class="hw-tool" data-align="center" title="가운데 정렬">▣</button>
+  <button class="hw-tool" data-align="right" title="오른쪽 정렬">◨</button>
+  <button class="hw-tool" data-align="justify" title="양쪽 정렬">▤</button>
+  <span class="hw-bar"></span>
+  <button class="hw-tool" data-indent="-1" title="내어쓰기">◀</button>
+  <button class="hw-tool" data-indent="1" title="들여쓰기">▶</button>
+  <select id="hwLine" class="hw-pick hw-pick-sm" title="줄 간격"></select>
+  <span class="hw-bar"></span>
+  <button class="hw-tool" data-tbl="addRow" title="아래에 행 넣기">행+</button>
+  <button class="hw-tool" data-tbl="delRow" title="이 행 지우기">행−</button>
+  <button class="hw-tool" data-tbl="addCol" title="오른쪽에 열 넣기">열+</button>
+  <button class="hw-tool" data-tbl="delCol" title="이 열 지우기">열−</button>
 </div>
 
 <div id="hwCanvas" class="hw-canvas">
@@ -22,14 +48,25 @@
   <div class="hw-page" id="hwPage0"></div>
 </div>
 
+<!-- IME 수신기. 본문은 contenteditable 이 아니고 이 상자 하나가 글자와 조합을 받는다(계획 G-4).
+     ★ 화면 밖으로 밀어 두지 않는다 — 캐럿 옆에 있어야 한글 후보 창이 문서 위에 뜬다.
+       대신 1픽셀 크기에 투명이라 눈에는 안 보인다. -->
+<div id="hwIme" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+
 <div id="hwStatus" class="hw-status">시작 중…</div>
 
 <script src="hwUnit.js"></script>
 <script src="hwModel.js"></script>
 <script src="hwMeasure.js"></script>
 <script src="hwBreak.js"></script>
+<script src="hwTable.js"></script>
 <script src="hwPage.js"></script>
 <script src="hwRender.js"></script>
+<script src="hwCaret.js"></script>
+<script src="hwUndo.js"></script>
+<script src="hwFormat.js"></script>
+<script src="hwInput.js"></script>
+<script src="hwUi.js"></script>
 <script src="hwOracle.js"></script>
 <script src="hwBridge.js"></script>
 </body>

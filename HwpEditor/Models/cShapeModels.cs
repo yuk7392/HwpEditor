@@ -16,6 +16,15 @@ namespace HwpEditor.Models
     {
         [JsonProperty("id")] public int Id;
 
+        /// <summary>
+        /// 화면이 서식을 바꿔 새로 만든 글자모양이면, 그것이 갈라져 나온 <b>원본 글자모양</b> 번호.
+        /// 원본이면 -1 이다.
+        ///
+        /// ★ 이게 있어야 되쓰기가 원본을 복제한 뒤 바뀐 것만 덮어쓸 수 있다. 새로 만들어 채우면
+        ///   우리가 모델에 안 담은 필드(그림자·외곽선·밑줄색·글자 테두리)가 통째로 기본값이 된다.
+        /// </summary>
+        [JsonProperty("base")] public int Base = -1;
+
         /// <summary>한글 FaceName 인덱스. 라틴은 따로 두지 않는다(1단계 범위).</summary>
         [JsonProperty("face")] public int Face;
 
@@ -41,6 +50,9 @@ namespace HwpEditor.Models
     public sealed class ParaShapeModel
     {
         [JsonProperty("id")] public int Id;
+
+        /// <summary>갈라져 나온 원본 문단모양 번호. 원본이면 -1(<see cref="CharShapeModel.Base"/> 와 같은 규칙).</summary>
+        [JsonProperty("base")] public int Base = -1;
 
         /// <summary>"justify" | "left" | "right" | "center" | "distribute" | "divide"</summary>
         [JsonProperty("align")] public string Align = "justify";

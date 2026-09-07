@@ -112,15 +112,7 @@ var hwBreak = (function () {
 
       if (ch === '\n') return j + 1;             /* 문단 안 줄바꿈은 그 자리에서 끊는다 */
 
-      var cw;
-      if (ch === '\t') {
-        var next = (Math.floor(w / cTabHu) + 1) * cTabHu;
-        cw = next - w;
-      } else if (ch === '￼') {
-        cw = objWidth(para, j);
-      } else {
-        cw = hwMeasure.charHu(ch, hwModel.charShape(hwModel.shapeAt(para, j)));
-      }
+      var cw = charWidth(para, j, w);
 
       if (w + cw > avail && j > i) break;
       w += cw;
@@ -134,6 +126,18 @@ var hwBreak = (function () {
     else if (ps.hangulByWord) at = applyWordBreakHangul(text, at, i);
     at = applyForbidden(text, at, i + 1);
     return at;
+  }
+
+  /* 글자 하나가 줄에서 먹는 폭. 탭은 지금까지의 폭에 따라 달라지므로 그 값을 같이 받는다.
+     ★ 줄 나눔·줄 폭·캐럿 좌표가 <b>전부 이 함수 하나</b>를 쓴다 — 셋이 각자 재면 캐럿이
+       글자 사이가 아니라 엉뚱한 자리에 선다. */
+  function charWidth(para, k, wSoFar) {
+    var text = hwModel.text(para);
+    var ch = text.charAt(k);
+    if (ch === '' || ch === '\n') return 0;
+    if (ch === '\t') return (Math.floor(wSoFar / cTabHu) + 1) * cTabHu - wSoFar;
+    if (ch === '￼') return objWidth(para, k);
+    return hwMeasure.charHu(ch, hwModel.charShape(hwModel.shapeAt(para, k)));
   }
 
   /* 개체 하나. 못 찾으면 null. */
@@ -166,13 +170,11 @@ var hwBreak = (function () {
       if (ch === '\n') continue;
       var cs = hwModel.charShape(hwModel.shapeAt(para, k));
       if (cs.sizeHu > maxSize) maxSize = cs.sizeHu;
-      if (ch === '\t') { wHu = (Math.floor(wHu / cTabHu) + 1) * cTabHu; }
-      else if (ch === '￼') {
-        wHu += objWidth(para, k);
+      if (ch === '￼') {
         var oh = objHeight(para, k);
         if (oh > maxSize) maxSize = oh;
       }
-      else wHu += hwMeasure.charHu(ch, cs);
+      wHu += charWidth(para, k, wHu);
     }
 
     if (maxSize === 0) {
@@ -186,11 +188,26 @@ var hwBreak = (function () {
     else if (ps.lsType === 'margin') hHu = maxSize + ps.ls;
     else hHu = maxSize * (ps.ls || 100) / 100;
 
-    return { s: s, e: e, wHu: wHu, hHu: hHu, baseHu: maxSize * 0.85, xHu: xHu, availHu: availHu };
+    return {
+      s: s, e: e, wHu: wHu, hHu: hHu, thHu: maxSize,
+      baseHu: maxSize * 0.85, xHu: xHu, availHu: availHu
+    };
+  }
+
+  /* 같은 폭으로 다시 물으면 지난번 결과를 그대로 준다.
+     ★ 글자 하나를 칠 때마다 문서 전체를 다시 쪼개면 3,000문단 문서에서 입력이 눈에 띄게 늦는다(G-5).
+       고친 문단은 hwModel.markDirty 가 이 표를 지우므로 그 문단만 다시 쪼개진다. */
+  function linesOf(para, widthHu) {
+    if (para._lines && para._linesW === widthHu) return para._lines;
+    para._lines = breakPara(para, widthHu);
+    para._linesW = widthHu;
+    return para._lines;
   }
 
   return {
     breakPara: breakPara,
+    linesOf: linesOf,
+    charWidth: charWidth,
     tabHu: function (v) { if (v !== undefined) cTabHu = v; return cTabHu; }
   };
 })();

@@ -21,30 +21,50 @@ namespace HwpEditor.Files
     {
         public static DocModel Read(string pPath)
         {
-            DocModel doc = new DocModel();
-            doc.Format = "hwpx";
-            doc.Path = pPath;
-            doc.Rev = 1;
-
             using (ZipArchive zip = ZipFile.OpenRead(pPath))
             {
                 XmlDocument header = LoadXml(zip, "Contents/header.xml");
                 if (header == null) throw new InvalidDataException("hwpx 에 Contents/header.xml 이 없다");
 
-                ReadFaceNames(header, doc);
-                ReadCharShapes(header, doc);
-                ReadParaShapes(header, doc);
-
-                List<string> sections = SectionNames(zip);
-                for (int i = 0; i < sections.Count; i++)
+                List<XmlDocument> sections = new List<XmlDocument>();
+                foreach (string name in SectionNames(zip))
                 {
-                    XmlDocument sec = LoadXml(zip, sections[i]);
-                    if (sec != null) doc.Sections.Add(ReadSection(sec, i));
+                    XmlDocument sec = LoadXml(zip, name);
+                    if (sec != null) sections.Add(sec);
                 }
+
+                return ReadOpened(header, sections, pPath, null);
             }
+        }
+
+        /// <summary>
+        /// 이미 읽어 둔 XML 로 모델을 만든다. 편집·저장 통로(<see cref="cHwpxDocument"/>)는
+        /// <b>같은 XmlDocument 를 계속 들고 있어야</b> 편집분을 그 자리에 되쓸 수 있어서 이 문으로 들어온다.
+        /// </summary>
+        public static DocModel ReadOpened(XmlDocument pHeader, IList<XmlDocument> pSections, string pPath, cHwpxIndex pIndex)
+        {
+            DocModel doc = new DocModel();
+            doc.Format = "hwpx";
+            doc.Path = pPath;
+            doc.Rev = 1;
+
+            if (pIndex != null) pIndex.Clear();
+
+            ReadFaceNames(pHeader, doc);
+            ReadCharShapes(pHeader, doc);
+            ReadParaShapes(pHeader, doc);
+
+            for (int i = 0; i < pSections.Count; i++)
+                doc.Sections.Add(ReadSection(pSections[i], i, pIndex));
 
             MarkPageBreaks(doc);
             return doc;
+        }
+
+        /// <summary>Contents/section0.xml, section1.xml … 을 번호 순으로. 저장할 때도 같은 순서를 쓴다.</summary>
+        public static List<string> SectionEntryNames(ZipArchive pZip)
+        {
+            return SectionNames(pZip);
         }
 
         #region zip · xml 유틸
@@ -60,6 +80,12 @@ namespace HwpEditor.Files
             {
                 XmlDocument d = new XmlDocument();
                 d.XmlResolver = null;   // 외부 참조를 타지 않는다
+
+                // ★ 이걸 켜지 않으면 <hp:t> </hp:t> 처럼 <b>공백뿐인 글자 마디가 통째로 사라진다</b>.
+                //   XmlDocument 는 기본값에서 공백만 든 텍스트 노드를 버린다 — 읽기에서는 그 문단이
+                //   빈 줄로 보이고, 저장에서는 원본에 있던 공백이 파일에서 없어진다(실측 —
+                //   complaint-form.hwpx 를 그냥 다시 저장했더니 변환기가 세는 줄이 67 에서 64 로 줄었다).
+                d.PreserveWhitespace = true;
                 using (StreamReader r = new StreamReader(s, Encoding.UTF8)) d.LoadXml(r.ReadToEnd());
                 return d;
             }
@@ -102,6 +128,17 @@ namespace HwpEditor.Files
         }
 
         /// <summary>깊이 상관없이 LocalName 이 맞는 첫 요소.</summary>
+        /// <summary>바로 아래 자식만 본다. 자손까지 뒤지는 <see cref="Find"/> 와 다르다.</summary>
+        private static XmlElement Kid(XmlNode pNode, string pLocal)
+        {
+            foreach (XmlNode n in pNode.ChildNodes)
+            {
+                XmlElement e = n as XmlElement;
+                if (e != null && e.LocalName == pLocal) return e;
+            }
+            return null;
+        }
+
         private static XmlElement Find(XmlNode pNode, string pLocal)
         {
             if (pNode == null) return null;
@@ -194,6 +231,21 @@ namespace HwpEditor.Files
                 while (pDoc.FaceNames.Count <= m.Id) pDoc.FaceNames.Add(new FaceNameModel { Id = pDoc.FaceNames.Count, Name = "", Sub = cFontMap.cGothic });
                 pDoc.FaceNames[m.Id] = m;
             }
+        }
+
+        /// <summary>글자모양 목록만 따로. 저장 뒤 화면에 최종 목록을 돌려줄 때 쓴다(4단계).</summary>
+        public static List<CharShapeModel> CharShapesOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadCharShapes(pHeader, tmp);
+            return tmp.CharShapes;
+        }
+
+        public static List<ParaShapeModel> ParaShapesOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadParaShapes(pHeader, tmp);
+            return tmp.ParaShapes;
         }
 
         private static void ReadCharShapes(XmlDocument pHeader, DocModel pDoc)
@@ -313,7 +365,7 @@ namespace HwpEditor.Files
 
         #region section*.xml
 
-        private static SectionModel ReadSection(XmlDocument pSec, int pIdx)
+        private static SectionModel ReadSection(XmlDocument pSec, int pIdx, cHwpxIndex pIndex)
         {
             SectionModel sec = new SectionModel();
             sec.Idx = pIdx;
@@ -357,17 +409,19 @@ namespace HwpEditor.Files
             {
                 XmlElement e = n as XmlElement;
                 if (e == null || e.LocalName != "p") continue;
-                sec.Paras.Add(ReadParagraph(e, "s" + pIdx + "p" + pi));
+                sec.Paras.Add(ReadParagraph(e, "s" + pIdx + "p" + pi, pIndex));
                 pi++;
             }
 
             return sec;
         }
 
-        private static ParagraphModel ReadParagraph(XmlElement pP, string pId)
+        private static ParagraphModel ReadParagraph(XmlElement pP, string pId, cHwpxIndex pIndex)
         {
             ParagraphModel m = new ParagraphModel();
             m.Id = pId;
+
+            if (pIndex != null) pIndex.Paras[pId] = pP;
             m.Ps = NumI(pP, "paraPrIDRef", 0);
 
             if (Flag(pP, "pageBreak")) m.Brk = "page";
@@ -414,7 +468,7 @@ namespace HwpEditor.Files
 
                         default:
                             {
-                                InlineObjModel o = ToObject(c, pId, objIdx, pos);
+                                InlineObjModel o = ToObject(c, pId, objIdx, pos, pIndex);
                                 if (o != null)
                                 {
                                     if (buf.Length > 0) { m.Runs.Add(NewRun(cs, buf)); }
@@ -445,7 +499,7 @@ namespace HwpEditor.Files
         }
 
         /// <summary>hwpx 의 개체. 표·그림만 갈라 보고 나머지는 opaque 로 둔다(계획 B-4).</summary>
-        private static InlineObjModel ToObject(XmlElement pEl, string pParaId, int pIndex, int pPos)
+        private static InlineObjModel ToObject(XmlElement pEl, string pParaId, int pIndex, int pPos, cHwpxIndex pMap)
         {
             string local = pEl.LocalName;
             if (local == "linesegarray") return null;
@@ -476,8 +530,10 @@ namespace HwpEditor.Files
                 o.Inline = true;
             }
 
+            if (pMap != null) pMap.Objs[o.Oid] = pEl;
+
             if (local == "pic") { o.Kind = "image"; return o; }
-            if (local == "tbl") { o.Kind = "table"; o.Table = ToTable(pEl, o.Oid); return o; }
+            if (local == "tbl") { o.Kind = "table"; o.Table = ToTable(pEl, o.Oid, pMap); return o; }
 
             o.Kind = "opaque";
             o.Ctrl = local;
@@ -532,7 +588,7 @@ namespace HwpEditor.Files
             }
         }
 
-        private static TableModel ToTable(XmlElement pTbl, string pOid)
+        private static TableModel ToTable(XmlElement pTbl, string pOid, cHwpxIndex pMap)
         {
             TableModel t = new TableModel();
             t.Rows = NumI(pTbl, "rowCnt", 0);
@@ -555,18 +611,33 @@ namespace HwpEditor.Files
                     if (tc == null || tc.LocalName != "tc") continue;
 
                     CellModel cm = new CellModel();
-                    XmlElement addr = Find(tc, "cellAddr");
+
+                    // ★ 여기서 Find(자손까지 뒤짐)를 쓰면 안 된다. tc 안에서 subList 가 cellAddr 보다
+                    //   <b>앞</b>이라, 칸 안에 표가 또 있으면 <b>안쪽 표 첫 칸의 번호·크기</b>를 집어 온다.
+                    //   그러면 화면이 보는 격자와 저장하는 쪽이 보는 격자가 갈리고, 문단 id 까지
+                    //   r0c0 으로 겹쳐 <b>엉뚱한 칸의 글이 덮어써진다</b>(되쓰기 쪽은 이미 Kid 로 고쳐 뒀다).
+                    XmlElement addr = Kid(tc, "cellAddr");
                     cm.R = addr != null ? NumI(addr, "rowAddr", r) : r;
                     cm.C = addr != null ? NumI(addr, "colAddr", c) : c;
 
-                    XmlElement span = Find(tc, "cellSpan");
+                    XmlElement span = Kid(tc, "cellSpan");
                     cm.Rs = span != null ? Math.Max(1, NumI(span, "rowSpan", 1)) : 1;
                     cm.Cs = span != null ? Math.Max(1, NumI(span, "colSpan", 1)) : 1;
 
-                    XmlElement csz = Find(tc, "cellSz");
+                    XmlElement csz = Kid(tc, "cellSz");
                     if (csz != null) { cm.WHu = Num(csz, "width", 0); cm.HHu = Num(csz, "height", 0); }
 
-                    XmlElement sub = Find(tc, "subList");
+                    // 칸 안쪽 여백. 속성으로 오는 문서와 자식 요소로 오는 문서가 둘 다 있어 양쪽을 본다.
+                    XmlElement cmg = Kid(tc, "cellMargin");
+                    if (cmg != null)
+                    {
+                        cm.MlHu = Num(cmg, "left", ValueOf(cmg, "left", 0));
+                        cm.MrHu = Num(cmg, "right", ValueOf(cmg, "right", 0));
+                        cm.MtHu = Num(cmg, "top", ValueOf(cmg, "top", 0));
+                        cm.MbHu = Num(cmg, "bottom", ValueOf(cmg, "bottom", 0));
+                    }
+
+                    XmlElement sub = Kid(tc, "subList");
                     if (sub != null)
                     {
                         int k = 0;
@@ -574,7 +645,7 @@ namespace HwpEditor.Files
                         {
                             XmlElement sp = sn as XmlElement;
                             if (sp == null || sp.LocalName != "p") continue;
-                            cm.Paras.Add(ReadParagraph(sp, pOid + "r" + cm.R + "c" + cm.C + "p" + k));
+                            cm.Paras.Add(ReadParagraph(sp, pOid + "r" + cm.R + "c" + cm.C + "p" + k, pMap));
                             k++;
                         }
                     }
@@ -615,6 +686,7 @@ namespace HwpEditor.Files
                 m.S = NumI(e, "textpos", 0);
                 m.Y = Num(e, "vertpos", 0);
                 m.H = Num(e, "textheight", 0);
+                m.Th = m.H;
                 m.B = Num(e, "baseline", 0);
                 m.X = Num(e, "horzpos", 0);
                 m.W = Num(e, "horzsize", 0);

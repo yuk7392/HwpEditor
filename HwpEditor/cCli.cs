@@ -73,7 +73,9 @@ namespace HwpEditor
             string cmd = pArgs[0];
             if (cmd != "--roundtrip" && cmd != "--roundtrip-all"
              && cmd != "--dump-assets" && cmd != "--selftest"
-             && cmd != "--oracle" && cmd != "--model" && cmd != "--render-oracle") return -1;
+             && cmd != "--oracle" && cmd != "--model" && cmd != "--render-oracle"
+             && cmd != "--edit-test" && cmd != "--image-test" && cmd != "--apply"
+             && cmd != "--ui-test" && cmd != "--pdf" && cmd != "--grid-test") return -1;
 
             EnsureConsole();
             try
@@ -88,6 +90,12 @@ namespace HwpEditor
                     case "--oracle": return RunOracle(pArgs);
                     case "--model": return RunModel(pArgs);
                     case "--render-oracle": return RunRenderOracle(pArgs);
+                    case "--edit-test": return cEditTest.RunEdit(pArgs);
+                    case "--image-test": return cEditTest.RunImage(pArgs);
+                    case "--apply": return cEditTest.RunApply(pArgs);
+                    case "--ui-test": return cUiTestRunner.Run(pArgs);
+                    case "--pdf": return cPdfRunner.Run(pArgs);
+                    case "--grid-test": return cGridTest.Run(pArgs);
                 }
                 return -1;
             }
@@ -220,7 +228,10 @@ namespace HwpEditor
 
                 try
                 {
-                    cHwpDocument doc = cHwpDocument.Open(path);
+                    // ★ 형식을 가리지 않는 문으로 연다. 예전에는 hwp 전용 문으로 열어서 .hwpx 를
+                    //   "Invalid header signature" 로 떨어뜨렸고, 그래서 hwpx 는 이 검사를
+                    //   <b>한 번도 안 지났다</b>(실측 — 폴더를 바꿔 돌려 보고서야 드러났다).
+                    cDocument doc = cDocument.Open(path);
                     DocModel m = doc.Model;
 
                     int paras = 0, segParas = 0, lines = 0, pages = 1;
@@ -243,11 +254,16 @@ namespace HwpEditor
                             }
                         }
 
-                    textBad = CountTextMismatch(doc, m);
+                    // 글자 대조는 hwp 에만 있다 — HwpLibSharp 의 GetNormalString() 이 그 오라클이다.
+                    string textCol = "대조없음";
+                    if (doc.Hwp != null)
+                    {
+                        textBad = CountTextMismatch(doc.Hwp, m);
+                        textCol = textBad == 0 ? "일치" : ("불일치 " + textBad);
+                    }
 
                     Console.WriteLine("| {0} | {1} | {2} | {3} | {4} | {5} | {6} |",
-                        name, paras, segParas, lines, pages,
-                        textBad == 0 ? "일치" : ("불일치 " + textBad),
+                        name, paras, segParas, lines, pages, textCol,
                         idxBad == 0 ? "OK" : ("범위밖 " + idxBad));
 
                     if (textBad != 0 || idxBad != 0) bad++;
@@ -339,8 +355,10 @@ namespace HwpEditor
             string[] skip = { "password-12345.hwp", "viewtext.hwp" };
 
             int ok = 0, diff = 0, err = 0;
-            string[] files = Directory.GetFiles(src, "*.hwp");
-            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+
+            // ★ hwpx 도 같이 돈다. 그전에는 hwpx 가 <b>한 번도 왕복 검사를 안 받았다</b> —
+            //   "*.hwp" 로 훑고 HWPFile 로 열어 "Invalid header signature" 로 끝나고 있었다(실측).
+            string[] files = DocFiles(src);
 
             foreach (string path in files)
             {
@@ -378,6 +396,22 @@ namespace HwpEditor
         /// <summary>pRounds 회 연속 저장한다 — 누적 오차가 있으면 여기서 드러난다.</summary>
         private static bool RoundTripOne(string pSrc, string pDst, int pRounds, out cMetrics pBefore, out cMetrics pAfter)
         {
+            // ★ hwpx 는 HWPFile 이 아니다. 우리 모델로 견준다 — 지표가 약해지지만 "안 재는 것" 보다 낫다.
+            if (Path.GetExtension(pSrc).Equals(".hwpx", StringComparison.OrdinalIgnoreCase))
+            {
+                cDocument x = cDocument.Open(pSrc);
+                pBefore = cMetrics.OfModel(x.Model);
+
+                for (int k = 0; k < pRounds; k++)
+                {
+                    x.Save(pDst, new List<EditOp>());       // 무편집 저장 — 고친 것 없이 다시 쓰기만 한다
+                    x = cDocument.Open(pDst);
+                }
+
+                pAfter = cMetrics.OfModel(x.Model);
+                return pBefore.Equals(pAfter);
+            }
+
             cHwpDocument doc = cHwpDocument.Open(pSrc);
             pBefore = cMetrics.Of(doc.File);
 
@@ -431,6 +465,47 @@ namespace HwpEditor
                     m.TextHash = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(text ?? "")))
                                              .Replace("-", "").Substring(0, 12);
                 return m;
+            }
+
+            /// <summary>모델로 재는 지표(hwpx). 표 칸 안의 문단까지 센다.</summary>
+            public static cMetrics OfModel(DocModel pModel)
+            {
+                cMetrics m = new cMetrics();
+                m.Sections = pModel.Sections.Count;
+                m.CharShapes = pModel.CharShapes.Count;
+                m.ParaShapes = pModel.ParaShapes.Count;
+                m.FaceNames = pModel.FaceNames.Count;
+
+                StringBuilder text = new StringBuilder();
+                foreach (SectionModel sec in pModel.Sections)
+                    foreach (ParagraphModel p in sec.Paras) CountPara(p, m, text);
+
+                StringBuilder sig = new StringBuilder();
+                foreach (SectionModel sec in pModel.Sections)
+                    foreach (ParagraphModel p in sec.Paras) sig.Append(p.Ps).Append(';');
+                m.StyleSig = sig.ToString();
+
+                using (SHA1 sha = SHA1.Create())
+                    m.TextHash = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(text.ToString())))
+                                             .Replace("-", "").Substring(0, 12);
+                return m;
+            }
+
+            private static void CountPara(ParagraphModel pPara, cMetrics pM, StringBuilder pText)
+            {
+                pM.Paras++;
+                pM.Chars += pPara.Len;
+                foreach (RunModel r in pPara.Runs) if (r.Text != null) pText.Append(r.Text);
+                pText.Append('\n');
+
+                if (pPara.Objs == null) return;
+                foreach (InlineObjModel o in pPara.Objs)
+                {
+                    pM.Controls++;
+                    if (o.Table == null) continue;
+                    foreach (CellModel c in o.Table.Cells)
+                        foreach (ParagraphModel q in c.Paras) CountPara(q, pM, pText);
+                }
             }
 
             public bool Equals(cMetrics pOther)

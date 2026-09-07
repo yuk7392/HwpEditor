@@ -71,14 +71,36 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="cCli.cs" />
-    <Compile Include="cRenderOracle.cs" />
-    <Compile Include="cSelfTest.cs" />
+    <Compile Include="cEditTest.cs" />
+    <Compile Include="cGridTest.cs" />
+    <Compile Include="cUiTest.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="cPdfTest.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="cRenderOracle.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="cSelfTest.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="cWebHost.cs" />
     <Compile Include="Files\cDocument.cs" />
     <Compile Include="Files\cHwpDocument.cs" />
+    <Compile Include="Files\cHwpIndex.cs" />
     <Compile Include="Files\cHwpReader.cs" />
+    <Compile Include="Files\cHwpWriter.cs" />
+    <Compile Include="Files\cHwpxDocument.cs" />
     <Compile Include="Files\cHwpxReader.cs" />
+    <Compile Include="Files\cHwpxWriter.cs" />
+    <Compile Include="Files\cImageStore.cs" />
+    <Compile Include="Files\cShapeWriter.cs" />
+    <Compile Include="Files\cTableWriter.cs" />
+    <Compile Include="Files\cHwpxShapeWriter.cs" />
+    <Compile Include="Files\cZipWriter.cs" />
     <Compile Include="Models\cDocModel.cs" />
+    <Compile Include="Models\cEditOp.cs" />
     <Compile Include="Models\cFontMap.cs" />
     <Compile Include="Models\cJson.cs" />
     <Compile Include="Models\cShapeModels.cs" />
@@ -131,6 +153,9 @@
   </ItemGroup>
   <!-- ★ 화면 자산. csproj 에 넣는 것만으로는 안 풀린다 — cWebHost.cWebAssets 배열에도 이름을 넣어야 한다. -->
   <ItemGroup>
+    <EmbeddedResource Include="mdiHwpEditor.resx">
+      <DependentUpon>mdiHwpEditor.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Web\editor.html" />
     <EmbeddedResource Include="Web\editor.css" />
     <EmbeddedResource Include="Web\hwBridge.js" />
@@ -138,8 +163,14 @@
     <EmbeddedResource Include="Web\hwModel.js" />
     <EmbeddedResource Include="Web\hwMeasure.js" />
     <EmbeddedResource Include="Web\hwBreak.js" />
+    <EmbeddedResource Include="Web\hwTable.js" />
     <EmbeddedResource Include="Web\hwPage.js" />
     <EmbeddedResource Include="Web\hwRender.js" />
+    <EmbeddedResource Include="Web\hwCaret.js" />
+    <EmbeddedResource Include="Web\hwUndo.js" />
+    <EmbeddedResource Include="Web\hwFormat.js" />
+    <EmbeddedResource Include="Web\hwInput.js" />
+    <EmbeddedResource Include="Web\hwUi.js" />
     <EmbeddedResource Include="Web\hwOracle.js" />
     <EmbeddedResource Include="Fonts\NanumGothic.ttf" />
     <EmbeddedResource Include="Fonts\NanumGothic-Bold.ttf" />

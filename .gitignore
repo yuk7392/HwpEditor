@@ -4,6 +4,9 @@ obj/
 *.user
 *.suo
 
+# Visual Studio 로컬 캐시
+.vs/
+
 # 실행 로그
 log/
 

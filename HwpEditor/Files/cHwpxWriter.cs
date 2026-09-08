@@ -277,12 +277,17 @@ namespace HwpEditor.Files
                                                 EditObj pObj, Dictionary<string, EditOp> pImages, SaveResult pResult)
         {
             XmlElement el;
-            if (!string.IsNullOrEmpty(pObj.Oid) && pIndex.Objs.TryGetValue(pObj.Oid, out el)) return el;
+            if (!string.IsNullOrEmpty(pObj.Oid) && pIndex.Objs.TryGetValue(pObj.Oid, out el))
+            {
+                ApplyGeom(el, pObj);
+                return el;
+            }
 
             EditOp img;
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
                 XmlElement pic = MakePicture(pDoc, pP, img);
+                ApplyGeom(pic, pObj);   // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다)
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
                 pIndex.Objs[oid] = pic;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;
@@ -652,6 +657,61 @@ namespace HwpEditor.Files
             run.SetAttribute("charPrIDRef", cs);
             keep.AppendChild(run);
             WriteLineSeg(keep, new EditOp());
+        }
+
+        /// <summary>
+        /// 화면이 옮기거나 크기를 바꾼 개체를 원본 요소에 반영한다(8단계).
+        ///
+        /// ★ <b>직계 자식만</b> 본다. <see cref="Find"/> 는 재귀라, 표나 묶음 개체에 걸면 안쪽 자식의
+        ///   <c>sz</c> 를 고쳐 엉뚱한 개체가 늘어난다(3차 검토 U3 이 리더에서 겪은 함정과 같은 자리다).
+        /// ★ 원본에 없는 요소는 <b>만들지 않는다</b>. OWPML 은 자식 차례가 정해져 있어서 아무 데나
+        ///   끼워 넣으면 저장은 되고 여는 쪽에서만 깨진다(T14 와 같다).
+        /// ★ 원본 그림의 사각형(<c>orgSz</c>·<c>imgRect</c>·<c>imgClip</c>·<c>imgDim</c>)은 그대로 둔다 —
+        ///   같이 바꾸면 그림이 늘어난 게 아니라 잘린다.
+        /// </summary>
+        private static void ApplyGeom(XmlElement pEl, EditObj pObj)
+        {
+            if (pEl == null || pObj == null || !pObj.HasGeom) return;
+
+            XmlElement sz = Kid(pEl, "sz");
+            if (sz != null)
+            {
+                // 크기 기준이 RELATIVE 로 남아 있으면 우리가 적은 숫자가 무시된다.
+                if (pObj.WHu.HasValue) { sz.SetAttribute("width", Str(pObj.WHu.Value)); sz.SetAttribute("widthRelTo", "ABSOLUTE"); }
+                if (pObj.HHu.HasValue) { sz.SetAttribute("height", Str(pObj.HHu.Value)); sz.SetAttribute("heightRelTo", "ABSOLUTE"); }
+            }
+
+            XmlElement pos = Kid(pEl, "pos");
+            if (pos != null)
+            {
+                if (pObj.XOffHu.HasValue) pos.SetAttribute("horzOffset", Str(pObj.XOffHu.Value));
+                if (pObj.YOffHu.HasValue) pos.SetAttribute("vertOffset", Str(pObj.YOffHu.Value));
+
+                // ★ 글자처럼 취급하는가. 기준(relTo)까지 같이 못 박는다 — 하나만 바꾸면
+                //   저장은 되고 여는 쪽에서만 깨진다(MakePicture 가 새로 만들 때와 같은 조합).
+                if (pObj.Inline.HasValue)
+                {
+                    pos.SetAttribute("treatAsChar", pObj.Inline.Value ? "1" : "0");
+                    pos.SetAttribute("horzRelTo", "COLUMN");
+                    pos.SetAttribute("vertRelTo", "PARA");
+                }
+            }
+
+            if (!pObj.WHu.HasValue && !pObj.HHu.HasValue) return;
+
+            XmlElement cur = Kid(pEl, "curSz");
+            if (cur != null)
+            {
+                if (pObj.WHu.HasValue) cur.SetAttribute("width", Str(pObj.WHu.Value));
+                if (pObj.HHu.HasValue) cur.SetAttribute("height", Str(pObj.HHu.Value));
+            }
+
+            XmlElement rot = Kid(pEl, "rotationInfo");
+            if (rot != null)
+            {
+                if (pObj.WHu.HasValue) rot.SetAttribute("centerX", Str(pObj.WHu.Value / 2));
+                if (pObj.HHu.HasValue) rot.SetAttribute("centerY", Str(pObj.HHu.Value / 2));
+            }
         }
 
         private static XmlElement Find(XmlNode pNode, string pLocal)

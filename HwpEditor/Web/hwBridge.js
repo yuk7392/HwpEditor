@@ -85,6 +85,35 @@ function hwUiTest() {
     ime.dispatchEvent(new InputEvent('input', { bubbles: true }));
   }
 
+  /* 마우스 — 개체 다루기(8단계) 검사용. ★ 누르기는 <b>그 요소</b>에 보낸다(target 으로 되짚으므로),
+     움직임·놓기는 문서에 보낸다(끌기 수신기가 거기 걸려 있다). */
+  function down(el, x, y) {
+    el.dispatchEvent(new MouseEvent('mousedown',
+      { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: x, clientY: y }));
+  }
+  function move(x, y) {
+    document.dispatchEvent(new MouseEvent('mousemove',
+      { bubbles: true, cancelable: true, buttons: 1, clientX: x, clientY: y }));
+  }
+  function up() {
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  }
+
+  /* 그 문단의 그 자리에 개체가 있는가. 되돌리기가 개체를 제자리에 돌려놨는지 볼 때 쓴다. */
+  function objAtPos(id, pos) {
+    var p = hwModel.byId(id);
+    var objs = (p && p.objs) || [];
+    for (var i = 0; i < objs.length; i++) if (objs[i].pos === pos) return true;
+    return false;
+  }
+
+  /* 고른 개체가 그 문단의 objs 에서 몇 번째인가. 되돌린 뒤에는 개체 객체가 새것이라 번호로 찾는다. */
+  function objIdx(sel) {
+    var objs = hwModel.byId(sel.para.id).objs || [];
+    for (var i = 0; i < objs.length; i++) if (objs[i].pos === sel.obj.pos) return i;
+    return 0;
+  }
+
   var p0 = hwDoc.sections[0].paras[0];
   var target = hwDoc.sections[0].paras.length > 1 ? hwDoc.sections[0].paras[1] : p0;
 
@@ -342,6 +371,279 @@ function hwUiTest() {
   ok('38 서식 단추는 캐럿 초점을 안 뺏는다', !!bbtn && bev.defaultPrevented,
      bbtn ? (bev.defaultPrevented ? '기본 동작을 막는다' : '안 막는다') : '단추가 없다');
 
+  /* ── 개체 다루기(8단계) — 눌러 봐야만 나오는 자리다 ──
+     ★ 함수를 직접 부르지 않고 <b>마우스 이벤트</b>로 태운다. hwObj 를 직접 부르면 hwInput 의
+       갈래(캐럿보다 먼저 개체를 보는가)를 한 번도 안 지나서, 그림을 눌러도 안 골라지는 상태가
+       그대로 통과한다 — T0 이 같은 방식으로 새어 나갔다. */
+  /* ★ <b>원본</b> 개체만 고른다. 이 검사 앞에서 accept() 를 부르므로(26-1 자리), 화면이 만든
+     새 문단에 붙은 개체를 고치면 그 문단이 다시 dirty 가 되면서 저장 요청에 <b>문서에 없는 id</b> 로
+     replace 가 실린다 — 그 ops.json 을 --apply 로 원본에 먹이면 "고칠 문단을 못 찾았다" 로 끝난다. */
+  var oel = null;
+  var cands = document.querySelectorAll('.hw-obj[data-para]');
+  for (var oi = 0; oi < cands.length; oi++) {
+    var opara = hwModel.byId(cands[oi].getAttribute('data-para'));
+    if (!opara) continue;
+    var opos = parseInt(cands[oi].getAttribute('data-pos'), 10);
+    for (var oj = 0; oj < (opara.objs || []).length; oj++) {
+      var oo = opara.objs[oj];
+      if (oo.pos === opos && oo.oid && !oo.tmpId) { oel = cands[oi]; break; }
+    }
+    if (oel) break;
+  }
+
+  /* ★ 그 개체를 화면 안으로 끌어온다. 앞 단계들이 캐럿을 문서 아래로 옮겨 놓아서 첫 문단의
+     개체는 뷰포트 위쪽 밖에 있다(실측 top=-443) — 그 자리에서는 elementFromPoint 가 null 이라
+     끌기 검사가 "옮겨지지 않았다" 로 잘못 찍힌다. 사람은 보이는 것만 끄니까 제품 문제는 아니다. */
+  if (oel) {
+    var oPara = oel.getAttribute('data-para'), oPos = oel.getAttribute('data-pos');
+    if (oel.scrollIntoView) oel.scrollIntoView({ block: 'center' });
+    hwRenderRefresh();
+    oel = document.querySelector('.hw-obj[data-para="' + oPara + '"][data-pos="' + oPos + '"]') || oel;
+  }
+
+  if (!oel) {
+    ok('39 개체 고르기', true, '고를 수 있는 원본 개체가 없다(안 보이는 컨트롤뿐) — 건너뜀');
+  } else {
+    var orc = oel.getBoundingClientRect();
+    down(oel, orc.left + orc.width / 2, orc.top + orc.height / 2);
+
+    var sel39 = hwObj.current();
+    /* ★ 조절점 개수로 판정하지 않는다 — 크기를 바꿀 수 있는 것은 그림뿐이고, 도형·수식은
+       테두리만 두르고 자리만 옮긴다(hwObj.canResize). 개수로 재면 그 설계가 실패로 찍힌다. */
+    ok('39 개체를 누르면 골라진다', !!sel39 && !!document.querySelector('.hw-objsel'),
+       sel39 ? (sel39.para.id + ':' + sel39.obj.pos + ' ' + (sel39.obj.kind || '?')
+                + ' 조절점 ' + document.querySelectorAll('.hw-handle').length + '개') : '안 골라짐');
+    ok('40 개체를 고른 동안 캐럿은 안 그린다', !document.querySelector('.hw-caret'),
+       document.querySelector('.hw-caret') ? '캐럿이 남아 있다' : '없음');
+
+    if (sel39 && !sel39.obj.inline) {
+      var x0 = sel39.obj.xOffHu || 0;
+      move(orc.left + orc.width / 2 + 40, orc.top + orc.height / 2);
+      up();
+      ok('41 끌어서 옮기기', (sel39.obj.xOffHu || 0) > x0,
+         'xOffHu ' + x0 + '→' + (sel39.obj.xOffHu || 0));
+
+      key('z', { ctrl: true });
+      ok('42 옮긴 것을 Ctrl+Z 로 되돌림',
+         (hwModel.byId(sel39.para.id).objs[objIdx(sel39)].xOffHu || 0) === x0,
+         'xOffHu ' + (hwModel.byId(sel39.para.id).objs[objIdx(sel39)].xOffHu || 0));
+    } else if (sel39) {
+      /* 글자처럼 취급하는 개체는 offset 이 없다 — 놓은 자리의 <b>글자 사이</b>로 옮겨져야 한다.
+         여기를 안 태우면 "그림이 안 움직인다" 는 상태가 그대로 통과한다(사용자 보고로 잡힌 자리). */
+      var pos0 = sel39.obj.pos;
+      var rc2 = oel.getBoundingClientRect();
+
+      /* ★ 줄 <b>맨 앞</b>으로 끈다. 오른쪽으로 조금 끌면 "개체 바로 다음 자리" 가 잡히는데,
+         그 자리는 개체를 빼고 나면 원래 자리와 같아서 제자리로 판정된다 — 검사가 아무것도 안 본다. */
+      var lineEl = oel.closest ? oel.closest('.hw-line') : null;
+      var lrc = lineEl ? lineEl.getBoundingClientRect() : rc2;
+      var dropY = rc2.top + rc2.height / 2;
+
+      /* ★ 놓을 자리는 <b>개체 자리와 다른 곳</b>이어야 한다. 개체 바로 앞뒤 자리는 개체를 빼고 나면
+         원래 자리와 같아져 제자리가 된다 — 개체가 줄 첫 글자인 문서(noori)에서는 줄 맨 앞이 곧
+         그 자리다. 앞이 제자리면 줄 끝을 보고, 그것도 같으면 옮길 자리가 없는 문서다. */
+      var stay = function (h) {
+        return !h || (h.id === sel39.para.id && (h.pos === pos0 || h.pos === pos0 + 1));
+      };
+
+      var dropX = lrc.left + 2;
+      var probe = hwCaret.hitTest(dropX, dropY);
+      if (stay(probe)) { dropX = lrc.right - 2; probe = hwCaret.hitTest(dropX, dropY); }
+
+      if (stay(probe)) {
+        up();   /* 끌기를 끝내 둔다 — 안 끝내면 뒤 단계가 끌리는 중에 돈다 */
+        ok('41 끌어서 글자 사이 자리 옮기기', true,
+           '그 줄에 개체 말고 옮겨 갈 자리가 없다(놓은 자리 '
+             + (probe ? probe.id + ':' + probe.pos : '쪽 밖') + ') — 건너뜀');
+        ok('42 옮긴 것을 Ctrl+Z 로 되돌림', true, '건너뜀');
+      } else {
+        move(dropX, dropY);
+        up();
+
+        var now41 = hwObj.current();
+        ok('41 끌어서 글자 사이 자리 옮기기', !!now41 && now41.obj.pos !== pos0,
+           'pos ' + pos0 + '→' + (now41 ? now41.obj.pos : '개체를 잃었다')
+             + ' (놓은 자리 ' + probe.id + ':' + probe.pos + ')');
+
+        key('z', { ctrl: true });
+        var now42 = hwObj.current();
+        ok('42 옮긴 것을 Ctrl+Z 로 되돌림',
+           !!hwModel.byId(sel39.para.id) && objAtPos(sel39.para.id, pos0),
+           '원래 자리(' + pos0 + ')에 ' + (objAtPos(sel39.para.id, pos0) ? '있다' : '없다')
+             + (now42 ? '' : ', 고르기는 풀렸다'));
+      }
+
+      /* 되돌린 뒤 다시 골라 둔다 — 43(크기 조절)이 이어서 돈다. */
+      hwObj.select(sel39.para.id, pos0);
+    } else {
+      ok('41 끌어서 옮기기', true, '건너뜀');
+      ok('42 옮긴 것을 Ctrl+Z 로 되돌림', true, '건너뜀');
+    }
+
+    /* 크기 조절 — 오른쪽 아래 조절점을 잡아 끈다. */
+    var cur43 = hwObj.current();
+    var hse = document.querySelector('.hw-handle[data-dir="se"]');
+    if (cur43 && hse) {
+      var w0 = cur43.obj.wHu || 0;
+      var hrc = hse.getBoundingClientRect();
+      down(hse, hrc.left + 4, hrc.top + 4);
+      move(hrc.left + 44, hrc.top + 44);
+      up();
+      ok('43 모서리로 크기 조절', (cur43.obj.wHu || 0) > w0,
+         'wHu ' + w0 + '→' + (cur43.obj.wHu || 0));
+    } else if (cur43 && cur43.obj.kind !== 'image') {
+      ok('43 모서리로 크기 조절', true,
+         (cur43.obj.kind || '?') + ' 는 크기를 안 바꾼다 — 바깥 크기만 늘리면 안쪽이 안 따라온다(건너뜀)');
+    } else {
+      ok('43 모서리로 크기 조절', false, '그림인데 조절점을 못 찾았다');
+    }
+
+    /* 재배치를 한 번 더 태워도 조절점이 살아 있어야 한다 — 가상 스크롤이 쪽을 다시 채우면
+       개체 요소가 새것이 되므로, 선택을 요소 참조로 들고 있으면 여기서 사라진다. */
+    hwRelayout();
+    hwCaret.paint();
+    ok('44 재배치 뒤에도 고르기가 살아 있다', !!document.querySelector('.hw-objsel'),
+       document.querySelector('.hw-objsel')
+         ? ('테두리 있음, 조절점 ' + document.querySelectorAll('.hw-handle').length + '개')
+         : '테두리가 사라졌다');
+
+    /* ★ 저장 요청을 재기 전에 한 번 더 고쳐 둔다 — 42 의 Ctrl+Z 가 개체 값과 함께
+       "고쳤다" 표시(_edited)까지 되돌리기 때문이다. 키로 미는 것도 같은 경로를 지난다. */
+    var cur45 = hwObj.current();
+    var movable = !!cur45 && (!cur45.obj.inline || cur45.obj.kind === 'image');
+    if (movable) key('ArrowRight', { shift: cur45.obj.inline });   /* 글자처럼 취급이면 크기, 아니면 자리 */
+
+    /* ★ <b>고친 개체만</b> 크기를 싣는지 본다. 전부 실으면 안 보이는 컨트롤(용지 정의·단 정의)까지
+       매 저장마다 화면 값으로 덮여, 글자 하나만 쳐도 그 구역의 용지 정의가 망가진다. */
+    var opsG = hwBuildOps();
+    var sent = 0, bare = 0;
+    for (var g = 0; g < opsG.length; g++) {
+      var gobjs = opsG[g].objs || [];
+      for (var gi = 0; gi < gobjs.length; gi++) {
+        if (gobjs[gi].wHu === undefined && gobjs[gi].xOffHu === undefined) bare++;
+        else sent++;
+      }
+    }
+    ok('45 고친 개체만 크기를 싣는다', movable ? sent >= 1 : true,
+       '크기 실림 ' + sent + '개 / 자리만 ' + bare + '개'
+       + (movable ? '' : ' (글자처럼 취급하는 그림 아닌 개체 — 고칠 것이 없다)'));
+
+    /* ★ 글자처럼 취급 <-> 어울림. 자유 이동을 켜는 스위치이고, 이 값 하나가 파일에서는
+       네 설정을 한 벌로 움직인다. 도구줄 단추를 <b>눌러서</b> 태운다(hwUi 분기까지 지난다). */
+    var cur46 = hwObj.current();
+    var tbtn = document.querySelector('[data-obj="inline"]');
+    if (cur46 && tbtn) {
+      var was = !!cur46.obj.inline;
+      tbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+      var now46 = hwObj.current();
+      var sentFlow = false;
+      var opsF = hwBuildOps();
+      for (var fi = 0; fi < opsF.length; fi++) {
+        var fobjs = opsF[fi].objs || [];
+        for (var fj = 0; fj < fobjs.length; fj++) if (fobjs[fj].inline !== undefined) sentFlow = true;
+      }
+
+      ok('46-1 글자처럼 취급 토글', !!now46 && !!now46.obj.inline !== was && sentFlow,
+         '취급 ' + (was ? '글자처럼' : '어울림') + '→'
+           + (now46 ? (now46.obj.inline ? '글자처럼' : '어울림') : '개체를 잃었다')
+           + ', 저장 요청에 ' + (sentFlow ? '실림' : '안 실림'));
+
+      /* 원래대로 돌려 둔다 — 뒤 단계와 저장 요청 검사가 원본 상태를 본다. */
+      tbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    } else {
+      ok('46-1 글자처럼 취급 토글', true, tbtn ? '고른 개체가 없다 — 건너뜀' : '단추가 없다');
+    }
+
+    hwObj.clear();
+    ok('46 빈 곳을 누르면 고르기가 풀린다', !hwObj.current() && !document.querySelector('.hw-objsel'),
+       hwObj.current() ? '아직 골라져 있다' : '풀림');
+  }
+
+  /* ── 찾기·바꾸기(8단계) ──
+     ★ 핵심 판정은 49-50 이다: 모두 바꾸기가 <b>되돌리기 한 칸</b>으로 원상 복구되는가.
+       고칠 문단을 직접 넘기지 않으면 캐럿 둘레만 스냅샷에 들어가 Ctrl+Z 가 반만 되돌리는데,
+       되돌아오지 않은 문단은 dirty 로 남아 저장 요청에 실린다 — 화면과 파일이 갈라지고 신호가 없다. */
+  var text0 = hwDocText();
+  key('f', { ctrl: true });
+  ok('47 Ctrl+F 로 찾기 패널이 열린다', hwFind.isOpen(), hwFind.isOpen() ? '열림' : '안 열림');
+
+  /* ★ 원문에서 <b>붙어 있는</b> 두 글자를 고른다. 탭·개체·공백을 지우고 앞 두 글자를 떼면
+     원문에서는 떨어져 있는 조합이 나와("첫 페이지" → "첫페") 있지도 않은 말을 찾게 된다. */
+  var probe = '';
+  var allP = hwModel.allParas();
+  for (var fp = 0; fp < allP.length && !probe; fp++) {
+    var ft = hwModel.text(allP[fp]);
+    for (var fc = 0; fc + 1 < ft.length; fc++) {
+      var c1 = ft.charAt(fc), c2 = ft.charAt(fc + 1);
+      if ('\t\n￼ '.indexOf(c1) >= 0 || '\t\n￼ '.indexOf(c2) >= 0) continue;
+      probe = c1 + c2;
+      break;
+    }
+  }
+
+  if (!probe) {
+    ok('48 다음 찾기로 그 말이 골라진다', true, '글자가 없는 문서 — 건너뜀');
+    ok('49 모두 바꾸기', true, '건너뜀');
+    ok('50 모두 바꾸기를 Ctrl+Z 한 번으로 되돌린다', true, '건너뜀');
+  } else {
+    document.getElementById('hwFindText').value = probe;
+    var found = hwFind.search(+1);
+    var fsel = hwCaret.selection();
+    ok('48 다음 찾기로 그 말이 골라진다',
+       found && !!fsel && (fsel.toPos - fsel.fromPos) === probe.length,
+       '"' + probe + '" ' + (fsel ? (fsel.fromId + ' ' + fsel.fromPos + '~' + fsel.toPos) : '못 찾음'));
+
+    document.getElementById('hwReplText').value = 'ZZ';
+    hwFind.replaceAll();
+    var text1 = hwDocText();
+    ok('49 모두 바꾸기', text1 !== text0 && text1.indexOf('ZZ') >= 0,
+       (document.getElementById('hwFindInfo') || {}).textContent || '');
+
+    key('z', { ctrl: true });
+    var text2 = hwDocText();
+    ok('50 모두 바꾸기를 Ctrl+Z 한 번으로 되돌린다', text2 === text0,
+       text2 === text0 ? '전부 원래대로'
+         : ('ZZ 가 ' + (text2.split('ZZ').length - 1) + '군데 남았다 (바꾼 뒤 '
+            + (text1.split('ZZ').length - 1) + '군데, 글자 수 ' + text0.length + '→' + text2.length + ')'));
+  }
+  hwFind.close();
+
+  /* ── 고친 것을 C# 에 알리는가(8단계) ──
+     ★ 창을 닫을 때 "저장할까요" 를 물을 <b>유일한</b> 근거다. 화면만 아는 값이라 미리 안 보내면
+       C# 은 늘 "고친 것 없음" 으로 알고 그냥 닫는다. */
+  var sawDirty = -1;
+  var realPost = window.hwPost;
+  window.hwPost = function (o) { if (o && o.t === 'dirty') sawDirty = o.n; return realPost(o); };
+  window.hwDirtySent = -1;          /* 값이 같으면 안 보내므로 한 번은 나가게 한다 */
+  typeIn('점');
+  window.hwPost = realPost;
+  ok('51 고친 것을 C# 에 알린다', sawDirty > 0, 'dirty=' + sawDirty);
+
+  /* ── 최근 문서 목록(8단계) ── */
+  var rsel = document.getElementById('hwRecent');
+  hwSetRecent([]);
+  var emptyOk = !!rsel && rsel.disabled && rsel.options.length === 1;
+
+  hwSetRecent(['C:\\가\\첫째.hwp', 'C:\\나\\둘째.hwpx']);
+  ok('52 최근 문서 목록을 그린다',
+     emptyOk && !!rsel && !rsel.disabled && rsel.options.length === 3
+       && rsel.options[1].value === 'C:\\가\\첫째.hwp' && rsel.options[1].textContent === '첫째.hwp',
+     rsel ? (rsel.options.length + '개, 첫 항목 "' + (rsel.options[1] ? rsel.options[1].textContent : '') + '"'
+             + (emptyOk ? ', 빈 목록이면 못 누름' : ', 빈 목록인데 눌린다')) : '콤보가 없다');
+
+  /* ★ 콤보 위에서 mousedown 기본 동작을 막으면 목록이 안 펼쳐진다 — 메뉴줄도 도구줄과 같은
+     함정을 갖고 있다(T0). 단추는 반대로 막아야 하므로 둘 다 본다. */
+  var rev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  if (rsel) rsel.dispatchEvent(rev);
+  var mbtn = document.querySelector('.hw-menu-item[data-cmd="open"]');
+  var mev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  if (mbtn) mbtn.dispatchEvent(mev);
+  ok('53 최근 목록은 펼쳐지고 메뉴 단추는 초점을 안 뺏는다',
+     !!rsel && !rev.defaultPrevented && !!mbtn && mev.defaultPrevented,
+     '콤보 ' + (rev.defaultPrevented ? '막힘(문제)' : '열림') + ' / 단추 '
+       + (mev.defaultPrevented ? '초점 지킴' : '초점 뺏김(문제)'));
+
   /* ★ 그림은 늦게 온다 — 그린 직후에 재면 아직 안 받아 온 것까지 "실패" 로 찍힌다.
      다 붙거나 실패할 때까지 기다렸다가 판정한다. */
   hwWaitImages().then(function (r) {
@@ -355,6 +657,51 @@ function hwUiTest() {
   });
 }
 
+/* 고친 것이 몇 개인지 C# 에 밀어 준다(8단계).
+
+   ★ C# 이 물어볼 방법이 없다 — 스크립트 실행은 비동기인데 창을 닫는 순간에는 기다릴 수가 없다.
+     그래서 바뀔 때마다 미리 보낸다.
+   ★ 표 구조 요청도 같이 센다. 문단 dirty 만 보면 <b>행을 넣고 그냥 닫아도</b> 아무것도 안 묻는다 —
+     표 편집은 hwInput.status() 를 안 지나가므로 알림을 그 한 곳에만 걸면 통째로 샌다. */
+var hwDirtySent = -1;
+
+function hwPostDirty() {
+  if (!window.hwModel || !hwDoc) return;
+  var n = hwModel.dirtyCount() + hwModel.tableOpCount();
+  if (n === hwDirtySent) return;
+  hwDirtySent = n;
+  hwPost({ t: 'dirty', n: n });
+}
+
+/* C# 이 최근 연 문서 목록을 밀어 준다(8단계). 메뉴는 문서 안에 있으므로 목록도 여기서 그린다. */
+function hwSetRecent(list) {
+  var sel = document.getElementById('hwRecent');
+  if (!sel) return;
+
+  sel.innerHTML = '';
+  var head = document.createElement('option');
+  head.value = '';
+  head.textContent = (list && list.length) ? '최근 문서' : '최근 문서 없음';
+  sel.appendChild(head);
+
+  for (var i = 0; i < (list || []).length; i++) {
+    var o = document.createElement('option');
+    o.value = list[i];
+    o.textContent = list[i].replace(/^.*[\\/]/, '');   /* 파일 이름만 */
+    o.title = list[i];
+    sel.appendChild(o);
+  }
+  sel.selectedIndex = 0;
+  sel.disabled = !(list && list.length);
+}
+
+/* 문서 전체 글자(표 칸까지). 되돌리기가 <b>전부</b> 되돌렸는지 보는 데 쓴다. */
+function hwDocText() {
+  var ps = hwModel.allParas(), out = [];
+  for (var i = 0; i < ps.length; i++) out.push(hwModel.text(ps[i]));
+  return out.join('');
+}
+
 /* 쪽 상자 밖으로 가장 많이 삐져나간 요소. PDF 쪽 수가 터질 때 범인을 지목한다. */
 function hwWorstBox() {
   var pages = document.querySelectorAll('.hw-page');
@@ -364,6 +711,11 @@ function hwWorstBox() {
     var pr = pages[i].getBoundingClientRect();
     var kids = pages[i].querySelectorAll('*');
     for (var k = 0; k < kids.length; k++) {
+      /* ★ 개체 조절점은 개체 모서리에 <b>걸쳐</b> 놓이므로 쪽 가장자리 개체에서는 반쯤 밖으로 나간다.
+         인쇄에는 안 나가는 것(@media print 에서 숨긴다)이라 여기서 세면 없는 범인을 지목한다. */
+      var kc = String(kids[k].className || '');
+      if (kc.indexOf('hw-handle') >= 0 || kc.indexOf('hw-objsel') >= 0) continue;
+
       var r = kids[k].getBoundingClientRect();
       var over = Math.max(r.bottom - pr.bottom, r.right - pr.right, pr.top - r.top, pr.left - r.left);
       if (over > worstOver) {
@@ -644,6 +996,7 @@ function hwSaved(r) {
        (mdiHwpEditor 가 예외를 잡고 알림만 띄운다) 화면에는 그 요청이 그대로 남아 다음 Ctrl+S 가
        같은 행을 <b>한 번 더</b> 넣는다 — 실패 하나가 문서를 더 망가뜨리는 쪽으로 번진다. */
     hwModel.accept(r);
+    hwPostDirty();
     hwSetStatus({ text: '저장함(표 구조가 바뀌어 다시 읽습니다) — ' + (r.path || '') });
     return;
   }
@@ -653,6 +1006,7 @@ function hwSaved(r) {
   if (r.rev) hwDoc.rev = r.rev;
 
   hwSetStatus({ text: '저장함 — ' + (r.path || '') });
+  hwPostDirty();
   hwRelayout();
   hwCaret.paint();
 }
@@ -664,7 +1018,21 @@ var hwPingSeq = 0;
 document.addEventListener('DOMContentLoaded', function () {
   var menu = document.getElementById('hwMenu');
   if (menu) {
-    menu.addEventListener('mousedown', function (e) { e.preventDefault(); });   /* 캐럿 초점을 안 뺏는다 */
+    /* 캐럿 초점을 안 뺏는다. ★ 단 콤보 위에서는 막으면 안 된다 — Chromium 은 mousedown 의
+       기본 동작으로 목록을 펼치므로, 막으면 눌러도 아무 일이 안 일어난다(T0 과 같은 자리다). */
+    menu.addEventListener('mousedown', function (e) {
+      var tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
+      if (tag === 'SELECT' || tag === 'OPTION') return;
+      e.preventDefault();
+    });
+
+    var rec = document.getElementById('hwRecent');
+    if (rec) rec.addEventListener('change', function () {
+      var path = rec.value;
+      rec.selectedIndex = 0;              /* 다음에도 고를 수 있게 머리로 되돌린다 */
+      hwInput.focus();
+      if (path) hwPost({ t: 'menu', cmd: 'openRecent', path: path });
+    });
     menu.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('.hw-menu-item') : null;
       if (!btn) return;
@@ -691,12 +1059,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       if (cmd === 'saveAs') { hwSave(true); return; }
+      if (cmd === 'find') { hwFind.open(true); return; }
       if (cmd) hwPost({ t: 'menu', cmd: cmd });
     });
   }
 
   hwInput.init();
   hwUi.init();
+  hwFind.init();
   hwBridge.flush();
   hwPost({ t: 'ready', ver: '0.4' });
 });

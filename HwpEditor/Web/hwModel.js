@@ -399,13 +399,25 @@ var hwModel = (function () {
     }
   }
 
-  /* 개체는 자리와 정체만 보낸다 — 원본은 C# 이 들고 있다(계획 6절). */
+  /* 개체는 자리와 정체만 보낸다 — 원본은 C# 이 들고 있다(계획 6절).
+
+     ★ 예외가 있다: 화면에서 실제로 만진 것만 그 값을 싣는다 — 크기는 `_resized`, 자리는 `_moved`,
+       글자처럼 취급은 `_flowed` 다(<b>셋을 따로 본다</b>). 전부 싣지 않는 이유는 두 가지다 —
+       손 안 댄 개체까지 화면이 반올림한 값으로 원본을 덮어써서 조금씩 움직이고, 무엇보다 이 목록에는
+       <b>안 보이는 컨트롤</b>(용지 정의·단 정의)도 들어 있어서 글자 하나만 쳐도 그것들의 크기가
+       통째로 덮인다. */
   function objRefs(para) {
     var out = [];
     var objs = para.objs || [];
     for (var i = 0; i < objs.length; i++) {
-      if (objs[i].tmpId) out.push({ pos: objs[i].pos, tmpId: objs[i].tmpId });
-      else out.push({ pos: objs[i].pos, oid: objs[i].oid });
+      var o = objs[i];
+      var r = o.tmpId ? { pos: o.pos, tmpId: o.tmpId } : { pos: o.pos, oid: o.oid };
+      /* ★ 크기와 자리를 따로 싣는다. 옮기기만 한 개체에 크기까지 실으면, 리더가 안쪽 자식에서
+         읽어 온 값이 바깥 개체에 써질 수 있다(hwpx 리더는 크기를 재귀로 찾는다). */
+      if (o._resized) { r.wHu = o.wHu; r.hHu = o.hHu; }
+      if (o._moved) { r.xOffHu = o.xOffHu || 0; r.yOffHu = o.yOffHu || 0; }
+      if (o._flowed) { r.inline = !!o.inline; }
+      out.push(r);
     }
     return out;
   }
@@ -435,6 +447,11 @@ var hwModel = (function () {
     for (var i = 0; i < all.length; i++) {
       var objs = all[i].objs || [];
       for (var j = 0; j < objs.length; j++) {
+        /* 저장이 끝나면 문서 값이 곧 화면 값이다 — 다음 저장에 또 실어 보낼 이유가 없다. */
+        delete objs[j]._resized;
+        delete objs[j]._moved;
+        delete objs[j]._flowed;
+
         if (!objs[j].tmpId) continue;
         var oid = result && result.newOids ? result.newOids[objs[j].tmpId] : null;
         if (!oid) continue;
@@ -480,7 +497,6 @@ var hwModel = (function () {
       return doc;
     },
     pushTableOp: function (op) { cTableOps.push(op); },
-    tableOpCount: function () { return cTableOps.length; },
     isFresh: function (id) { return !!cFresh[id]; },
     allParas: allParas,
     allCells: allCells,
@@ -501,6 +517,10 @@ var hwModel = (function () {
     },
     isDirty: function (id) { return !!cDirty[id]; },
     dirtyCount: function () { return Object.keys(cDirty).length + cDeleted.length; },
+
+    /* 아직 안 보낸 표 구조 요청 수. 창을 닫을 때 물어야 할지 판정하는 데 쓴다 —
+       문단 dirty 만 세면 행을 넣고 그냥 닫아도 아무것도 안 묻는다. */
+    tableOpCount: function () { return cTableOps.length; },
 
     /* 실행취소가 되돌려야 하는 것은 문단 내용만이 아니다 — 무엇이 dirty 이고 무엇을 지웠는지도
        같이 돌려놔야 저장 요청이 되살아난 문단을 다시 지우려 들지 않는다. */
@@ -552,11 +572,22 @@ function hwLoadDoc(doc) {
     hwRender();
     if (window.hwCaret) hwCaret.reset();
     if (window.hwUndo) hwUndo.clear();
+
+    /* ★ 개체 고르기도 푼다. 문단 id 는 문서마다 새로 나는 값이 아니라 s0p3 같은 결정적 이름이라,
+       그림을 고른 채 다른 문서를 열면 <b>엉뚱한 개체가 골라진 채로 되살아난다</b> — 그러면
+       hwCaret.paint 가 캐럿을 안 그려서 새 문서에 캐럿이 아예 안 보이고, 방향키가 그 개체를
+       옮겨 아무것도 안 고쳤는데 "저장할까요" 가 뜬다. */
+    if (window.hwObj) hwObj.clear();
     var ms = t0 ? Math.round((window.performance ? performance.now() : 0) - t0) : 0;
 
     hwSetStatus({
       text: (doc.path || '새 문서') + ' — ' + hwPageCount() + '쪽 (' + ms + 'ms)'
     });
+    /* 새 문서를 받았으니 고친 것은 0 이다. ★ 지난 문서의 값이 남아 있으면 방금 연 문서를
+       그냥 닫을 때도 "저장할까요" 가 뜬다. */
+    if (window.hwDirtySent !== undefined) window.hwDirtySent = -1;
+    if (window.hwPostDirty) hwPostDirty();
+
     hwPost({ t: 'docReady', pages: hwPageCount(), ms: ms });
   });
 }

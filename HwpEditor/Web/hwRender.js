@@ -248,7 +248,7 @@ var hwRenderer = (function () {
       img.style.width = hwHu2Px(o.wHu) + 'px';
       img.style.height = hwHu2Px(o.hHu) + 'px';
       img.alt = '';
-      return img;
+      return stamp(img, para, pos);
     }
 
     var d = el('span', 'hw-obj hw-obj-' + (o.kind || 'opaque'));
@@ -256,7 +256,23 @@ var hwRenderer = (function () {
     d.style.height = hwHu2Px(o.hHu) + 'px';
     d.title = (o.label || o.kind || '') + (o.ctrl ? ' (' + o.ctrl + ')' : '');
     if (o.label) d.setAttribute('data-label', o.label);
-    return d;
+    return stamp(d, para, pos);
+  }
+
+  /* 개체 요소에 신원을 남긴다(8단계). ★ 이게 없으면 눌린 요소에서 모델로 되짚을 길이 없다 —
+     hwObj 가 고르기·조절점을 여기에 건다.
+
+     ★ <b>표에는 안 붙인다.</b> 표는 격자(.hw-table)를 따로 그리지만 이 자리에도 회색 상자를 하나
+       만든다 — 그 상자는 행 사이 여백처럼 칸 줄이 안 덮는 곳에서 드러난다. 거기에 신원을 붙이면
+       그 자리를 누를 때 <b>칸에 캐럿이 안 들어가고</b> 표가 개체로 골라져서, 이어 누른 Delete 가
+       표를 통째로 지운다(deleteRange 가 개체 한 자리를 지우는 것이 곧 표를 지우는 것이다). */
+  function stamp(el, para, pos) {
+    var o = objAt(para, pos);
+    if (o && (o.table || o.kind === 'table')) return el;
+
+    el.setAttribute('data-para', para.id);
+    el.setAttribute('data-pos', String(pos));
+    return el;
   }
 
   /* 쪽 번호 → 그 쪽의 본문 영역 DOM. 캐럿·선택을 얹을 자리다. 아직 안 채운 쪽이면 null. */
@@ -282,7 +298,11 @@ var hwRenderer = (function () {
     fillAll: fillAll,
     bodyOf: bodyOf,
     pageElOf: pageElOf,
-    canvas: canvas
+    canvas: canvas,
+    /* ★ 개체를 끌어 옮길 때도 같은 안전선을 써야 한다. 화면은 접힌 값(0)을 보여 주는데 모델에는
+       42억이 그대로 있을 수 있어서, 그 위에 움직인 만큼을 더하면 조금 밀었는데 모델은 여전히
+       미친 값이다 — 그걸 저장하면 PDF 가 만 단위 쪽으로 터진다. */
+    sane: sane
   };
 })();
 

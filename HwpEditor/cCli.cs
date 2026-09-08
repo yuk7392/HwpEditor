@@ -74,8 +74,9 @@ namespace HwpEditor
             if (cmd != "--roundtrip" && cmd != "--roundtrip-all"
              && cmd != "--dump-assets" && cmd != "--selftest"
              && cmd != "--oracle" && cmd != "--model" && cmd != "--render-oracle"
-             && cmd != "--edit-test" && cmd != "--image-test" && cmd != "--apply"
-             && cmd != "--ui-test" && cmd != "--pdf" && cmd != "--grid-test") return -1;
+             && cmd != "--edit-test" && cmd != "--image-test" && cmd != "--apply" && cmd != "--obj-test"
+             && cmd != "--ui-test" && cmd != "--pdf" && cmd != "--grid-test"
+             && cmd != "--recent-test") return -1;
 
             EnsureConsole();
             try
@@ -92,10 +93,12 @@ namespace HwpEditor
                     case "--render-oracle": return RunRenderOracle(pArgs);
                     case "--edit-test": return cEditTest.RunEdit(pArgs);
                     case "--image-test": return cEditTest.RunImage(pArgs);
+                    case "--obj-test": return cEditTest.RunObj(pArgs);
                     case "--apply": return cEditTest.RunApply(pArgs);
                     case "--ui-test": return cUiTestRunner.Run(pArgs);
                     case "--pdf": return cPdfRunner.Run(pArgs);
                     case "--grid-test": return cGridTest.Run(pArgs);
+                    case "--recent-test": return cRecentTest.Run(pArgs);
                 }
                 return -1;
             }

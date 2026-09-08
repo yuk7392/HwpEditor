@@ -323,7 +323,11 @@ namespace HwpEditor.Files
             if (!string.IsNullOrEmpty(pObj.Oid) && pIndex.Objs.TryGetValue(pObj.Oid, out r))
             {
                 pText.AddChar(r.Char);
-                if (r.Control != null) pPara.AddControl(r.Control);
+                if (r.Control != null)
+                {
+                    pPara.AddControl(r.Control);
+                    ApplyGeom(r.Control, pObj);
+                }
                 return r.Char.CharSize;
             }
 
@@ -331,6 +335,7 @@ namespace HwpEditor.Files
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
                 Control ctl = AddPicture(pFile, pPara, pText, img);
+                ApplyGeom(ctl, pObj);   // 넣자마자 옮겼으면 그 자리로 (AddPicture 는 오프셋을 0 으로 둔다)
                 HWPChar ch = pText.CharList[pText.CharList.Count - 1];
 
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
@@ -515,6 +520,67 @@ namespace HwpEditor.Files
 
             pText.AddExtendCharForGSO();
             return pic;
+        }
+
+        /// <summary>
+        /// 화면이 옮기거나 크기를 바꾼 개체를 원본 컨트롤에 반영한다(8단계).
+        ///
+        /// ★ 손대는 것은 <b>화면에 놓인</b> 사각형뿐이다. 원본 그림의 사각형(<c>WidthAtCreate</c>·
+        ///   네 꼭짓점·<c>ImageWidth</c>)은 그대로 둔다 — 같이 바꾸면 그림이 늘어난 게 아니라 잘린다
+        ///   (<see cref="AddPicture"/> 의 실측 주석과 같은 자리다).
+        /// ★ 오프셋은 <b>부호 있는</b> 값이다. 리더가 <c>unchecked((int))</c> 로 읽으므로 쓰는 쪽도
+        ///   짝을 맞춘다 — 안 맞추면 -2835 가 4,294,964,461 이 되고 PDF 가 19,926쪽이 된다.
+        /// </summary>
+        private static void ApplyGeom(Control pCtl, EditObj pObj)
+        {
+            if (pCtl == null || pObj == null || !pObj.HasGeom) return;
+
+            CtrlHeaderGso h = pCtl.GetHeader() as CtrlHeaderGso;
+            if (h == null) return;   // Gso 머리말이 없는 컨트롤(각주·필드)은 크기·자리를 안 갖는다
+
+            int w = pObj.WHu.HasValue ? (int)pObj.WHu.Value : (int)h.Width;
+            int hh = pObj.HHu.HasValue ? (int)pObj.HHu.Value : (int)h.Height;
+
+            if (pObj.WHu.HasValue) h.Width = (uint)Math.Max(0, w);
+            if (pObj.HHu.HasValue) h.Height = (uint)Math.Max(0, hh);
+            if (pObj.XOffHu.HasValue) h.XOffset = unchecked((uint)(int)pObj.XOffHu.Value);
+            if (pObj.YOffHu.HasValue) h.YOffset = unchecked((uint)(int)pObj.YOffHu.Value);
+
+            // ★ 글자처럼 취급하는가는 <b>네 설정이 한 벌</b>이다. 하나만 바꾸면 저장은 되고
+            //   여는 쪽에서만 깨진다 — AddPicture 가 새로 만들 때 채우는 것과 같은 조합을 쓴다.
+            //   기준(Para)까지 같이 못 박는 이유: 우리 배치도 리더가 읽은 relH/relV 를 그대로 쓴다.
+            if (pObj.Inline.HasValue && h.Property != null)
+            {
+                h.Property.SetLikeWord(pObj.Inline.Value);
+                h.Property.SetTextFlowMethod(TextFlowMethod.TakePlace);
+                h.Property.SetHorzRelTo(HorzRelTo.Para);
+                h.Property.SetVertRelTo(VertRelTo.Para);
+            }
+
+            if (!pObj.WHu.HasValue && !pObj.HHu.HasValue) return;
+
+            // 그림은 안쪽 사각형까지 같이 옮겨야 한다 — 바깥 머리말만 고치면 한글이 옛 크기로 그린다.
+            // 도형·글상자는 바깥 크기만 둔다(화면도 그것들의 크기 조절은 막아 두었다).
+            ControlPicture pic = pCtl as ControlPicture;
+            if (pic == null) return;
+
+            ShapeComponent sc = pic.ShapeComponent;
+            if (sc != null)
+            {
+                sc.WidthAtCurrent = w;
+                sc.HeightAtCurrent = hh;
+                sc.RotateXCenter = w / 2;
+                sc.RotateYCenter = hh / 2;
+            }
+
+            ShapeComponentPicture scp = pic.ShapeComponentPicture;
+            if (scp != null)
+            {
+                // ★ 왼쪽·위 잘라내기를 더한다. 그림을 잘라 쓴 개체(Left != 0)에서 그냥 w 를 넣으면
+                //   실제 폭이 w - Left 가 되어 요청보다 작아진다.
+                scp.RightAfterCutting = scp.LeftAfterCutting + w;
+                scp.BottomAfterCutting = scp.TopAfterCutting + hh;
+            }
         }
 
         /// <summary>이미 있는 개체보다 위에 놓는다. 없으면 0.</summary>

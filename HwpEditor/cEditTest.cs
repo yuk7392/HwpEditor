@@ -155,6 +155,134 @@ namespace HwpEditor
 
         #endregion
 
+        #region --obj-test
+
+        /// <summary>
+        /// 개체 하나의 크기를 두 배로, 자리를 5000 HWPUNIT 옮겨 저장하고 다시 열어 그 값이 남았는지 본다(8단계).
+        ///
+        /// ★ 값이 바뀐 것만 보지 않는다 — <b>손 안 댄 개체와 글자가 그대로인지</b>도 같이 본다.
+        ///   되쓰기가 개체를 통째로 덮어써도 "바뀌었다" 는 통과하기 때문이다.
+        /// </summary>
+        internal static int RunObj(string[] pArgs)
+        {
+            if (pArgs.Length < 3) { Console.WriteLine("사용법: --obj-test <입력> <출력>"); return 2; }
+
+            string src = pArgs[1], dst = pArgs[2];
+
+            cDocument doc = cDocument.Open(src);
+            DocModel before = doc.Model;
+            cSnapshot b4 = cSnapshot.Of(before);
+
+            // 그림을 우선으로 고른다 — 크기 되쓰기가 안쪽 사각형까지 손대는 것은 그림뿐이다.
+            ParagraphModel host = null;
+            InlineObjModel target = null;
+            foreach (SectionModel sec in before.Sections)
+                foreach (ParagraphModel p in sec.Paras)
+                    foreach (InlineObjModel o in p.Objs)
+                    {
+                        if (o.Hidden == true || o.WHu <= 0 || o.Table != null) continue;
+                        if (target == null || (o.Kind == "image" && target.Kind != "image")) { host = p; target = o; }
+                    }
+
+            if (target == null) { Console.WriteLine("크기를 가진 개체가 없다: " + src); return 2; }
+
+            long wantW = target.WHu * 2, wantH = target.HHu * 2;
+            long wantX = target.XOffHu + 5000, wantY = target.YOffHu;
+            bool wantInline = !target.Inline;
+            int pos = target.Pos;
+            string kind = target.Kind, oid = target.Oid;
+
+            Console.WriteLine("개체 " + oid + " (" + kind + ") 를 " + host.Id + " 에서 고친다");
+            Console.WriteLine("  크기 " + target.WHu + "x" + target.HHu + " → " + wantW + "x" + wantH);
+            Console.WriteLine("  자리 " + target.XOffHu + "," + target.YOffHu + " → " + wantX + "," + wantY);
+            Console.WriteLine("  취급 " + (target.Inline ? "글자처럼" : "어울림") + " → " + (wantInline ? "글자처럼" : "어울림"));
+            Console.WriteLine();
+
+            EditOp rep = new EditOp();
+            rep.Op = "replace";
+            rep.Id = host.Id;
+            rep.Ps = host.Ps;
+            rep.Runs = host.Runs;
+            rep.Seg = host.Seg;
+            rep.Objs = new List<EditObj>();
+            foreach (InlineObjModel o in host.Objs)
+            {
+                EditObj e = new EditObj();
+                e.Pos = o.Pos;
+                e.Oid = o.Oid;
+                if (ReferenceEquals(o, target))
+                {
+                    e.WHu = wantW; e.HHu = wantH; e.XOffHu = wantX; e.YOffHu = wantY;
+                    e.Inline = wantInline;
+                }
+                rep.Objs.Add(e);
+            }
+
+            SaveResult r = doc.Save(dst, new List<EditOp> { rep });
+            if (!r.Ok) { Console.WriteLine("저장 실패: " + r.Msg); return 3; }
+
+            cDocument re = cDocument.Open(dst);
+            InlineObjModel got = ObjAt(re.Model, host.Id, pos);
+            if (got == null) { Console.WriteLine("저장본에서 그 개체를 못 찾았다 (" + host.Id + " pos " + pos + ")"); return 3; }
+
+            bool ok = true;
+            Console.WriteLine("| 항목 | 저장 후 | 기대 | 판정 |");
+            Console.WriteLine("|---|---|---|---|");
+            ok &= Row2("너비", got.WHu, wantW);
+            ok &= Row2("높이", got.HHu, wantH);
+            ok &= Row2("가로 자리", got.XOffHu, wantX);
+            ok &= Row2("세로 자리", got.YOffHu, wantY);
+
+            bool inlineOk = got.Inline == wantInline;
+            Console.WriteLine("| {0} | {1} | {2} | {3} |", "글자처럼 취급",
+                got.Inline ? "예" : "아니오", wantInline ? "예" : "아니오", inlineOk ? "OK" : "다름");
+            ok &= inlineOk;
+            Console.WriteLine();
+
+            int structOk = Report(Path.GetFileName(src) + " (구조)", b4, cSnapshot.Of(re.Model), null, 0, 0);
+            return (ok && structOk == 0) ? 0 : 1;
+        }
+
+        private static bool Row2(string pName, long pGot, long pWant)
+        {
+            bool ok = pGot == pWant;
+            Console.WriteLine("| {0} | {1} | {2} | {3} |", pName, pGot, pWant, ok ? "OK" : "다름");
+            return ok;
+        }
+
+        /// <summary>저장본에서 (문단 id, 자리)로 개체를 다시 찾는다. 표 칸 안까지 훑는다.</summary>
+        private static InlineObjModel ObjAt(DocModel pDoc, string pParaId, int pPos)
+        {
+            foreach (SectionModel sec in pDoc.Sections)
+                foreach (ParagraphModel p in sec.Paras)
+                {
+                    InlineObjModel hit = ObjInPara(p, pParaId, pPos);
+                    if (hit != null) return hit;
+                }
+            return null;
+        }
+
+        private static InlineObjModel ObjInPara(ParagraphModel pPara, string pParaId, int pPos)
+        {
+            if (pPara.Id == pParaId)
+                foreach (InlineObjModel o in pPara.Objs)
+                    if (o.Pos == pPos) return o;
+
+            foreach (InlineObjModel o in pPara.Objs)
+            {
+                if (o.Table == null) continue;
+                foreach (CellModel c in o.Table.Cells)
+                    foreach (ParagraphModel cp in c.Paras)
+                    {
+                        InlineObjModel hit = ObjInPara(cp, pParaId, pPos);
+                        if (hit != null) return hit;
+                    }
+            }
+            return null;
+        }
+
+        #endregion
+
         #region --apply
 
         /// <summary>화면이 보내는 저장 요청(JSON)을 그대로 먹여 본다.</summary>

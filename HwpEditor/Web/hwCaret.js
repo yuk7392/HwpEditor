@@ -104,6 +104,15 @@ var hwCaret = (function () {
     if (window.hwUi) hwUi.refresh();
     if (cEl && cEl.parentNode) cEl.parentNode.removeChild(cEl);
     paintSelection();
+
+    /* ★ 개체 테두리·조절점도 여기서 같이 다시 그린다 — 가상 스크롤이 쪽을 다시 채울 때마다
+       부르는 자리가 여기라(hwRender.fillVisible), 따로 걸면 스크롤 뒤에 조절점만 사라진다.
+       개체를 고른 동안에는 캐럿을 안 그린다 — 깜빡이는 막대와 테두리가 같이 보이면 무엇이
+       골라졌는지 알 수 없다. 캐럿 <b>자리</b>는 그대로 두므로 되돌리기·지우기는 그 문단을 잡는다. */
+    var objSel = window.hwObj ? hwObj.current() : null;
+    if (window.hwObj) hwObj.paint();
+    if (objSel) return;
+
     if (cId === null) return;
 
     var c = coord(cId, cPos);

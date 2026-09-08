@@ -30,7 +30,7 @@ namespace HwpEditor
         {
             "editor.css",
             "hwUnit.js", "hwModel.js", "hwMeasure.js", "hwBreak.js", "hwTable.js", "hwPage.js", "hwRender.js",
-            "hwCaret.js", "hwUndo.js", "hwFormat.js", "hwInput.js", "hwUi.js", "hwOracle.js", "hwBridge.js",
+            "hwCaret.js", "hwObj.js", "hwUndo.js", "hwFormat.js", "hwInput.js", "hwFind.js", "hwUi.js", "hwOracle.js", "hwBridge.js",
             "NanumGothic.ttf", "NanumGothic-Bold.ttf", "NanumMyeongjo.ttf", "NanumMyeongjo-Bold.ttf"
         };
 
@@ -170,6 +170,11 @@ namespace HwpEditor
 
             // 문서가 실제로 그려질 때까지는 아예 숨긴다. NavigationCompleted 에서 켠다.
             cView.Visible = false;
+
+            // ★ 파일 드롭을 WebView2 가 먹지 않게 한다. 먹게 두면 브라우저가 그 파일로 이동해 버리고,
+            //   문서 쪽에서 받아도 전체 경로가 없어(Chromium 보안) 우리가 열 수가 없다.
+            //   꺼 두면 호스트 폼의 DragEnter/DragDrop 으로 올라온다.
+            cView.AllowExternalDrop = false;
 
             pHost.Controls.Add(cView);
             cView.BringToFront();

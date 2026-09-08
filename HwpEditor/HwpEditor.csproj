@@ -73,6 +73,7 @@
     <Compile Include="cCli.cs" />
     <Compile Include="cEditTest.cs" />
     <Compile Include="cGridTest.cs" />
+    <Compile Include="cRecentTest.cs" />
     <Compile Include="cUiTest.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -105,6 +106,7 @@
     <Compile Include="Models\cJson.cs" />
     <Compile Include="Models\cShapeModels.cs" />
     <Compile Include="Global\cLog.cs" />
+    <Compile Include="Global\cRecent.cs" />
     <Compile Include="mdiHwpEditor.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -167,6 +169,8 @@
     <EmbeddedResource Include="Web\hwPage.js" />
     <EmbeddedResource Include="Web\hwRender.js" />
     <EmbeddedResource Include="Web\hwCaret.js" />
+    <EmbeddedResource Include="Web\hwObj.js" />
+    <EmbeddedResource Include="Web\hwFind.js" />
     <EmbeddedResource Include="Web\hwUndo.js" />
     <EmbeddedResource Include="Web\hwFormat.js" />
     <EmbeddedResource Include="Web\hwInput.js" />

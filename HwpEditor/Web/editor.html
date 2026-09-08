@@ -9,10 +9,12 @@
 
 <div id="hwMenu" class="hw-menu">
   <button class="hw-menu-item" data-cmd="open">열기</button>
+  <select id="hwRecent" class="hw-pick" title="최근 연 문서" disabled></select>
   <button class="hw-menu-item" data-cmd="save">저장</button>
   <button class="hw-menu-item" data-cmd="saveAs">다른 이름으로</button>
   <button class="hw-menu-item" data-cmd="insertImage">그림</button>
   <button class="hw-menu-item" data-cmd="pdf">PDF</button>
+  <button class="hw-menu-item" data-cmd="find">찾기</button>
   <span class="hw-menu-gap"></span>
   <button class="hw-menu-item" id="hwBtnOracle">오라클</button>
   <button class="hw-menu-item" id="hwBtnPing">테스트</button>
@@ -37,10 +39,32 @@
   <button class="hw-tool" data-indent="1" title="들여쓰기">▶</button>
   <select id="hwLine" class="hw-pick hw-pick-sm" title="줄 간격"></select>
   <span class="hw-bar"></span>
+  <button class="hw-tool" data-obj="inline" title="고른 그림을 글자처럼 취급 / 어울림으로 바꾼다">글자처럼</button>
+  <span class="hw-bar"></span>
   <button class="hw-tool" data-tbl="addRow" title="아래에 행 넣기">행+</button>
   <button class="hw-tool" data-tbl="delRow" title="이 행 지우기">행−</button>
   <button class="hw-tool" data-tbl="addCol" title="오른쪽에 열 넣기">열+</button>
   <button class="hw-tool" data-tbl="delCol" title="이 열 지우기">열−</button>
+</div>
+
+<!-- 찾기·바꾸기(8단계). 도구줄 안에 두지 않는다 — 도구줄은 초점을 안 뺏으려고 mousedown 을 막는데
+     찾기 칸은 반대로 초점을 받아야 한다. 흐름 밖으로 띄워 캔버스 높이도 안 건드린다. -->
+<div id="hwFind" class="hw-find" hidden>
+  <div class="hw-find-row">
+    <input id="hwFindText" type="text" placeholder="찾을 내용" spellcheck="false">
+    <button data-find="prev" title="이전 찾기 (Shift+Enter)">◀</button>
+    <button data-find="next" title="다음 찾기 (Enter)">▶</button>
+    <button data-find="close" title="닫기 (Esc)">✕</button>
+  </div>
+  <div class="hw-find-row" id="hwReplRow" hidden>
+    <input id="hwReplText" type="text" placeholder="바꿀 내용" spellcheck="false">
+    <button data-find="one">바꾸기</button>
+    <button data-find="all">모두</button>
+  </div>
+  <div class="hw-find-row">
+    <label><input id="hwFindCase" type="checkbox"> 대소문자 구분</label>
+    <span id="hwFindInfo" class="hw-find-info"></span>
+  </div>
 </div>
 
 <div id="hwCanvas" class="hw-canvas">
@@ -63,9 +87,11 @@
 <script src="hwPage.js"></script>
 <script src="hwRender.js"></script>
 <script src="hwCaret.js"></script>
+<script src="hwObj.js"></script>
 <script src="hwUndo.js"></script>
 <script src="hwFormat.js"></script>
 <script src="hwInput.js"></script>
+<script src="hwFind.js"></script>
 <script src="hwUi.js"></script>
 <script src="hwOracle.js"></script>
 <script src="hwBridge.js"></script>

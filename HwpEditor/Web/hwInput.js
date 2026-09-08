@@ -36,7 +36,15 @@ var hwInput = (function () {
       canvas.addEventListener('mousemove', onMouseMove);
       canvas.addEventListener('dblclick', onDoubleClick);
     }
-    document.addEventListener('mouseup', function () { cDragging = false; });
+    /* ★ 개체 끌기는 <b>문서</b>에서 받는다. 캔버스에만 걸면 끌다가 도구줄·상태줄 위로 나갔을 때
+       움직임도 놓는 것도 안 오고, 개체가 마지막 자리에 붙은 채 끌기 상태로 남는다. */
+    document.addEventListener('mousemove', function (e) {
+      if (window.hwObj && hwObj.dragging()) hwObj.onMove(e);
+    });
+    document.addEventListener('mouseup', function () {
+      cDragging = false;
+      if (window.hwObj) hwObj.endDrag();
+    });
 
     focus();
   }
@@ -48,10 +56,13 @@ var hwInput = (function () {
   /* ── 편집 한 동작 ─────────────────────────────────────
      ★ 되돌리기 기록 → 고치기 → 다시 배치 → 캐럿 을 <b>한 묶음</b>으로 돈다.
        중간에 배치를 빼먹으면 캐럿이 옛 좌표를 보고 엉뚱한 자리에 선다. */
-  function edit(fn, coalesceKey) {
+  function edit(fn, coalesceKey, pIds) {
     if (!hwDoc) return;
 
-    var ids = affected();
+    /* ★ 여러 문단을 한꺼번에 고치는 동작(모두 바꾸기)은 <b>고칠 문단을 직접</b> 준다.
+       affected() 는 캐럿 선택에서 목록을 내므로, 그것만 믿으면 캐럿 밖 문단의 고침이
+       되돌리기 스냅샷에 안 들어가 Ctrl+Z 가 반만 되돌린다. */
+    var ids = (pIds && pIds.length) ? pIds : affected();
     hwUndo.begin(ids);
     var made = fn() || [];
     hwUndo.commit(made, coalesceKey);
@@ -92,6 +103,8 @@ var hwInput = (function () {
 
   function status() {
     var n = hwModel.dirtyCount();
+    /* ★ 고친 개수를 C# 에도 밀어 준다 — 창을 닫을 때 물어보려면 미리 와 있어야 한다. */
+    if (window.hwPostDirty) hwPostDirty();
     hwSetStatus({
       text: (hwDoc.path || '새 문서') + ' — ' + hwPageCount() + '쪽'
           + (n ? ' · 고친 문단 ' + n + '개(저장 안 됨)' : '')
@@ -102,6 +115,9 @@ var hwInput = (function () {
 
   function typeText(str) {
     if (!str) return;
+    /* 글자를 치면 개체 고르기는 푼다 — 개체를 고른 채로 글자가 들어가면 그 자리에 캐럿이 없어
+       무엇을 고쳤는지 화면에 안 보인다. */
+    if (window.hwObj) hwObj.clear();
     edit(function () {
       dropSelection();
       var p = hwCaret.para();
@@ -266,6 +282,10 @@ var hwInput = (function () {
     var ctrl = e.ctrlKey || e.metaKey;
     var shift = e.shiftKey;
 
+    /* ★ 개체를 골랐으면 방향키·Delete·Esc 가 <b>개체</b>의 것이다. 캐럿보다 먼저 보되 Ctrl 조합은
+       넘긴다 — Ctrl+S·Ctrl+Z 는 개체를 고른 채로도 그대로 들어야 한다. */
+    if (!ctrl && window.hwObj && hwObj.onKey(e)) { e.preventDefault(); return; }
+
     if (ctrl && !e.altKey) {
       switch (e.key.toLowerCase()) {
         case 'z': e.preventDefault(); if (hwUndo.undo()) status(); return;
@@ -275,6 +295,8 @@ var hwInput = (function () {
         case 'i': e.preventDefault(); hwFormat.toggleChar('italic'); return;
         case 'u': e.preventDefault(); hwFormat.toggleChar('underline'); return;
         case 's': e.preventDefault(); hwSave(shift); return;
+        case 'f': e.preventDefault(); if (window.hwFind) hwFind.open(false); return;
+        case 'h': e.preventDefault(); if (window.hwFind) hwFind.open(true); return;
         case 'c': case 'x': case 'v': return;   /* copy/cut/paste 이벤트에서 처리한다 */
         case 'home': e.preventDefault(); toDocEdge(-1, shift); return;
         case 'end': e.preventDefault(); toDocEdge(+1, shift); return;
@@ -381,6 +403,16 @@ var hwInput = (function () {
 
   function onMouseDown(e) {
     if (!hwDoc || e.button !== 0) return;
+
+    /* ★ 개체를 <b>캐럿보다 먼저</b> 본다. 여기서 안 보면 그림을 눌러도 캐럿이 그 글자 자리로 갈 뿐
+       개체는 영영 골라지지 않는다(8단계 전까지 그랬다). */
+    if (window.hwObj && hwObj.onDown(e)) {
+      e.preventDefault();
+      focus();
+      syncIme();
+      return;
+    }
+
     var hit = hwCaret.hitTest(e.clientX, e.clientY);
     if (!hit) return;
 
@@ -392,6 +424,8 @@ var hwInput = (function () {
   }
 
   function onMouseMove(e) {
+    /* 개체를 끄는 중이면 글자 선택으로 넘어가지 않는다(움직임 자체는 문서 쪽 수신기가 처리한다). */
+    if (window.hwObj && hwObj.dragging()) return;
     if (!cDragging) return;
     var hit = hwCaret.hitTest(e.clientX, e.clientY);
     if (!hit) return;
@@ -495,8 +529,11 @@ var hwInput = (function () {
   return {
     init: init,
     focus: focus,
-    /* 서식 도구줄이 <b>같은 편집 한 동작</b>을 타게 한다 — 따로 고치면 되돌리기·재배치가 빠진다. */
-    run: function (fn, coalesceKey) { edit(fn, coalesceKey); },
+    /* 서식 도구줄이 <b>같은 편집 한 동작</b>을 타게 한다 — 따로 고치면 되돌리기·재배치가 빠진다.
+       ★ ids 는 캐럿 밖 문단까지 고치는 동작(모두 바꾸기)이 <b>고칠 문단을 직접</b> 주는 자리다.
+         이 인자를 안 넘기면 되돌리기가 캐럿 둘레만 복원한다(실측 — facename.hwp 에서 12군데를
+         바꾸고 Ctrl+Z 했더니 2군데만 돌아왔다). */
+    run: function (fn, coalesceKey, ids) { edit(fn, coalesceKey, ids); },
     typeText: typeText,
     insertImage: insertImage,
     status: status,

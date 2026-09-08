@@ -235,6 +235,81 @@ body {
   z-index: 2;
 }
 
+/* ─ 찾기·바꾸기(8단계) ─
+   ★ 흐름 밖으로 띄운다. 도구줄처럼 세로로 쌓으면 캔버스 높이가 바뀌어 가상 스크롤 창이 흔들린다. */
+.hw-find {
+  position: absolute;
+  right: 20px;
+  top: 74px;
+  z-index: 20;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #b0b0b0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+}
+
+.hw-find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.hw-find-row:last-child { margin-bottom: 0; }
+
+.hw-find input[type="text"] {
+  width: 180px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid #c0c0c0;
+  font-size: 12px;
+}
+
+.hw-find button {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 6px;
+  border: 1px solid #c0c0c0;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.hw-find button:hover { background: #eef4fb; }
+
+.hw-find-info {
+  color: #806000;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* ─ 개체 고르기(8단계) ─
+   ★ 캐럿(3)보다 위에 얹는다. 테두리는 클릭을 통과시켜야 그 안의 그림을 다시 누를 수 있고,
+     조절점은 반대로 클릭을 받아야 한다. */
+.hw-objsel {
+  position: absolute;
+  border: 1px solid #337acc;
+  background: transparent;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.hw-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border: 1px solid #337acc;
+  pointer-events: auto;
+  z-index: 5;
+}
+
+.hw-handle[data-dir="nw"], .hw-handle[data-dir="se"] { cursor: nwse-resize; }
+.hw-handle[data-dir="ne"], .hw-handle[data-dir="sw"] { cursor: nesw-resize; }
+.hw-handle[data-dir="n"], .hw-handle[data-dir="s"] { cursor: ns-resize; }
+.hw-handle[data-dir="e"], .hw-handle[data-dir="w"] { cursor: ew-resize; }
+
 /* IME 수신기. 눈에 안 보이되 화면 안에 있어야 후보 창이 캐럿 옆에 뜬다. */
 #hwIme {
   position: fixed;
@@ -261,8 +336,9 @@ body {
     background: #ffffff;
   }
 
-  .hw-menu, .hw-tools, .hw-status, #hwIme,
-  .hw-caret, .hw-sel, .hw-composing { display: none !important; }
+  .hw-menu, .hw-tools, .hw-status, #hwIme, .hw-find,
+  .hw-caret, .hw-sel, .hw-composing,
+  .hw-objsel, .hw-handle { display: none !important; }
 
   .hw-canvas {
     overflow: visible;

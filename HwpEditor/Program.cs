@@ -34,7 +34,17 @@ namespace HwpEditor
             //   미리 올려 두면 Windows 로더가 그것에 바인딩한다. 반드시 WebView2 타입을 건드리기 전에.
             PrepareWebView2Loader();
 
-            Run();
+            // 탐색기에서 문서를 더블클릭했거나 끌어다 놓으면 그 경로가 첫 인자로 온다.
+            string startPath = null;
+            if (args.Length > 0 && !args[0].StartsWith("--"))
+            {
+                string ext = System.IO.Path.GetExtension(args[0]);
+                if (System.IO.File.Exists(args[0])
+                 && (string.Equals(ext, ".hwp", StringComparison.OrdinalIgnoreCase)
+                  || string.Equals(ext, ".hwpx", StringComparison.OrdinalIgnoreCase))) startPath = args[0];
+            }
+
+            Run(startPath);
         }
 
         /// <summary>로더 준비 결과. 실패해도 앱을 죽이지 않으므로 사유가 남는 곳이 여기뿐이다.</summary>
@@ -96,7 +106,7 @@ namespace HwpEditor
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        static void Run()
+        static void Run(string pStartPath)
         {
             cLog.BaseDir = Application.StartupPath;
 
@@ -121,7 +131,9 @@ namespace HwpEditor
             //   안 남는다. 조용히 빈 창으로 뜨게 두지 않고 여기서 끊는다.
             if (!EnsureWebView2Runtime()) return;
 
-            Application.Run(new mdiHwpEditor());
+            mdiHwpEditor form = new mdiHwpEditor();
+            form.cStartPath = pStartPath;
+            Application.Run(form);
         }
 
         /// <summary>

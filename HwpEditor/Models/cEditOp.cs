@@ -97,6 +97,35 @@ namespace HwpEditor.Models
         [JsonProperty("pos")] public int Pos;
         [JsonProperty("oid")] public string Oid;
         [JsonProperty("tmpId")] public string TmpId;
+
+        /// <summary>
+        /// 화면에서 <b>실제로 옮기거나 크기를 바꾼</b> 개체의 값(HWPUNIT, 8단계).
+        ///
+        /// ★ null 은 "안 바꿨다" 이지 0 이 아니다 — <b>반드시 nullable 이어야 한다</b>.
+        ///   화면은 dirty 문단의 <b>모든</b> 개체에 대해 자리를 실어 보내고(hwModel.objRefs),
+        ///   그중에는 안 보이는 용지 정의·단 정의도 들어 있다. 값형으로 두면 문단에 글자 하나만 쳐도
+        ///   그 문단의 개체가 전부 크기 0 으로 덮인다.
+        /// </summary>
+        [JsonProperty("wHu", NullValueHandling = NullValueHandling.Ignore)] public long? WHu;
+        [JsonProperty("hHu", NullValueHandling = NullValueHandling.Ignore)] public long? HHu;
+        [JsonProperty("xOffHu", NullValueHandling = NullValueHandling.Ignore)] public long? XOffHu;
+        [JsonProperty("yOffHu", NullValueHandling = NullValueHandling.Ignore)] public long? YOffHu;
+
+        /// <summary>
+        /// 글자처럼 취급하는가. null 이면 안 바꿨다.
+        ///
+        /// ★ 이 하나가 <b>네 가지 설정을 한 벌로</b> 움직인다 — hwp 는 <c>SetLikeWord</c>·
+        ///   <c>SetTextFlowMethod</c>·<c>SetHorzRelTo</c>·<c>SetVertRelTo</c>, hwpx 는
+        ///   <c>@treatAsChar</c> 와 그 이웃들이다. 하나만 어긋나면 저장은 되고 여는 쪽에서만 깨진다.
+        /// </summary>
+        [JsonProperty("inline", NullValueHandling = NullValueHandling.Ignore)] public bool? Inline;
+
+        /// <summary>크기·자리·취급을 하나라도 실어 왔나.</summary>
+        [JsonIgnore]
+        public bool HasGeom
+        {
+            get { return WHu.HasValue || HHu.HasValue || XOffHu.HasValue || YOffHu.HasValue || Inline.HasValue; }
+        }
     }
 
     /// <summary>저장 결과. 화면은 ok 를 보고 dirty 집합을 비운다.</summary>

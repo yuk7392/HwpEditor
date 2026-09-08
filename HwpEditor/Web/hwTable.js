@@ -455,6 +455,10 @@ var hwTable = (function () {
        Ctrl+Z 가 <b>글자만</b> 되돌려, 화면에는 넣은 행이 그대로 있는데 저장 요청은 그 전 상태가 된다. */
     if (window.hwUndo) hwUndo.clear();
 
+    /* ★ 표 편집은 hwInput.status() 를 안 지난다 — 알림을 거기에만 걸면 행을 넣고 그냥 닫아도
+       "저장할까요" 가 안 뜬다. */
+    if (window.hwPostDirty) hwPostDirty();
+
     hwCaret.paint();
     hwSetStatus({ text: '표를 고쳤습니다(되돌리기는 여기서 끊깁니다) — 저장하면 문서에 반영됩니다' });
   }

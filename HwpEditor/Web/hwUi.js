@@ -77,6 +77,14 @@ var hwUi = (function () {
     var ind = btn.getAttribute('data-indent');
     if (ind) { hwFormat.indent(parseInt(ind, 10)); hwInput.focus(); return; }
 
+    var obj = btn.getAttribute('data-obj');
+    if (obj === 'inline') {
+      if (!hwObj.current()) { hwSetStatus({ text: '그림을 먼저 고르세요' }); hwInput.focus(); return; }
+      hwObj.toggleInline();
+      hwInput.focus();
+      return;
+    }
+
     var tbl = btn.getAttribute('data-tbl');
     if (tbl) {
       if (!hwTable.here()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); hwInput.focus(); return; }
@@ -125,6 +133,14 @@ var hwUi = (function () {
     var inTable = !!hwTable.here();
     var tbls = bar.querySelectorAll('[data-tbl]');
     for (var t = 0; t < tbls.length; t++) tbls[t].disabled = !inTable;
+
+    /* 개체 단추도 같다 — 고른 그림이 있을 때만. 눌린 상태는 지금 취급을 비춘다. */
+    var objSel = window.hwObj ? hwObj.current() : null;
+    var objBtn = bar.querySelector('[data-obj="inline"]');
+    if (objBtn) {
+      objBtn.disabled = !objSel;
+      objBtn.classList.toggle('on', !!objSel && !!objSel.obj.inline);
+    }
 
     set(el('hwFont'), String(st.cs.face));
     set(el('hwSize'), String(Math.round(st.cs.sizeHu / 100)));

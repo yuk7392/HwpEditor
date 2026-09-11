@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 using Newtonsoft.Json;
 
 namespace HwpEditor
@@ -99,18 +100,16 @@ namespace HwpEditor
 
             string full = Full(pPath);
 
-            bool read;
-            List<string> list = All(out read);
-            if (!read) return;   // 못 읽었으면 덮어쓰지 않는다 — 있던 목록을 날리는 쪽이 더 나쁘다
-
-            list.RemoveAll(delegate (string s)
+            Update(delegate (List<string> list)
             {
-                return string.Equals(s, full, StringComparison.OrdinalIgnoreCase);
+                list.RemoveAll(delegate (string s)
+                {
+                    return string.Equals(s, full, StringComparison.OrdinalIgnoreCase);
+                });
+                list.Insert(0, full);
+                if (list.Count > cMax) list.RemoveRange(cMax, list.Count - cMax);
+                return true;
             });
-            list.Insert(0, full);
-            if (list.Count > cMax) list.RemoveRange(cMax, list.Count - cMax);
-
-            Save(list);
         }
 
         public static void Remove(string pPath)
@@ -121,16 +120,52 @@ namespace HwpEditor
             //   (명령줄로 "HwpEditor.exe doc.hwp" 를 열었다가 실패한 경우가 그렇다).
             string full = Full(pPath);
 
-            bool read;
-            List<string> list = All(out read);
-            if (!read) return;
-
-            int n = list.RemoveAll(delegate (string s)
+            Update(delegate (List<string> list)
             {
-                return string.Equals(s, full, StringComparison.OrdinalIgnoreCase);
+                return list.RemoveAll(delegate (string s)
+                {
+                    return string.Equals(s, full, StringComparison.OrdinalIgnoreCase);
+                }) > 0;
             });
-            if (n > 0) Save(list);
         }
+
+        /// <summary>
+        /// 읽고-고치고-쓰기를 <b>프로세스 사이에서</b> 한 덩어리로 묶는다. <paramref name="pChange"/> 가
+        /// true 를 돌려주면 쓴다.
+        ///
+        /// ★ 창을 둘 켜 두면 둘이 같은 파일을 번갈아 읽고 쓴다. 묶지 않으면 A 가 읽은 뒤 B 가 쓴 항목을
+        ///   A 가 자기 옛 목록으로 덮어 지운다. 이름 있는 뮤텍스로 줄을 세운다.
+        /// ★ 잠금을 오래 못 얻으면 이번 한 번은 건너뛴다 — 최근 목록 때문에 저장·열기가 멈추면 안 된다.
+        /// </summary>
+        private static void Update(Func<List<string>, bool> pChange)
+        {
+            try
+            {
+                using (Mutex m = new Mutex(false, cMutexName))
+                {
+                    bool own;
+                    try { own = m.WaitOne(2000); }
+                    catch (AbandonedMutexException) { own = true; }   // 쥐고 있던 창이 죽었다 — 받아서 쓴다
+                    if (!own) { cLog.Write("최근 목록이 다른 창에 잠겨 있다 — 이번에는 건너뛴다"); return; }
+
+                    try
+                    {
+                        bool read;
+                        List<string> list = All(out read);
+                        if (!read) return;   // 못 읽었으면 덮어쓰지 않는다 — 있던 목록을 날리는 쪽이 더 나쁘다
+                        if (pChange(list)) Save(list);
+                    }
+                    finally { m.ReleaseMutex(); }
+                }
+            }
+            catch (Exception ex)
+            {
+                cLog.Write("최근 목록을 고치지 못했다");
+                cLog.Write(ex);
+            }
+        }
+
+        private const string cMutexName = @"Local\HwpEditor.recent";
 
         private static string Full(string pPath)
         {
@@ -144,7 +179,13 @@ namespace HwpEditor
             {
                 string p = FilePath;
                 Directory.CreateDirectory(Path.GetDirectoryName(p));
-                File.WriteAllText(p, JsonConvert.SerializeObject(pList), new UTF8Encoding(false));
+
+                // ★ 옆에 다 쓴 뒤 한 번에 바꿔 끼운다. 제자리에 쓰면 쓰는 도중에 다른 창이 읽어
+                //   반쪽짜리 JSON 을 "깨진 목록" 으로 보고, 다음 쓰기에서 빈 목록으로 새로 만든다.
+                string tmp = p + ".tmp";
+                File.WriteAllText(tmp, JsonConvert.SerializeObject(pList), new UTF8Encoding(false));
+                if (File.Exists(p)) File.Replace(tmp, p, null);
+                else File.Move(tmp, p);
             }
             catch (Exception ex)
             {

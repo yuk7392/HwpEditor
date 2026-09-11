@@ -280,6 +280,57 @@ function hwUiTest() {
   if (!cellPara) {
     ok('28 표 없는 문서', true, '표가 없어 건너뜀');
   } else {
+    /* ★ 표 옆에서 지우기(TODO 3절) — 표는 한 글자 자리를 차지해서, 막지 않으면 Backspace 한 번에
+       칸 내용까지 통째로 사라진다. 한글처럼 표는 남고 캐럿이 칸으로 들어가야 한다.
+       캐럿만 옮기거나 아무것도 안 지우는 동작이라 뒤 단계가 보는 모델은 그대로다. */
+    var tob = cellPara._cell._obj, tHost = null, tAll = hwModel.allParas();
+    for (var th = 0; th < tAll.length && !tHost; th++) if ((tAll[th].objs || []).indexOf(tob) >= 0) tHost = tAll[th];
+    var tableKept = function () { return !!tHost && (tHost.objs || []).indexOf(tob) >= 0; };
+    var inTob = function () { var q = hwCaret.para(); return !!q && !!q._cell && q._cell._obj === tob ? q : null; };
+
+    hwCaret.set(tHost.id, tob.pos + 1, false);
+    key('Backspace');
+    var qb = inTob();
+    ok('28-2 표 뒤 Backspace 는 표를 안 지우고 마지막 칸 끝으로', tableKept() && !!qb && hwCaret.at().pos === qb.len,
+       (tableKept() ? '표 남음' : '표가 지워졌다') + ', 캐럿 ' + hwCaret.at().id + ':' + hwCaret.at().pos
+         + (qb ? ' (칸 r' + qb._cell.r + ' c' + qb._cell.c + ', 끝 ' + qb.len + ')' : ' (표 밖)'));
+
+    hwCaret.set(tHost.id, tob.pos, false);
+    key('Delete');
+    var qd = inTob();
+    ok('28-3 표 앞 Delete 는 표를 안 지우고 첫 칸 머리로', tableKept() && !!qd && hwCaret.at().pos === 0,
+       (tableKept() ? '표 남음' : '표가 지워졌다') + ', 캐럿 ' + hwCaret.at().id + ':' + hwCaret.at().pos
+         + (qd ? ' (칸 r' + qd._cell.r + ' c' + qd._cell.c + ')' : ' (표 밖)'));
+
+    var dirty28 = hwModel.dirtyCount();
+    hwCaret.set(tHost.id, tob.pos, false);
+    hwCaret.set(tHost.id, tob.pos + 1, true);
+    key('Delete');
+    ok('28-4 표만 걸친 선택을 지워도 표가 남고 문단이 안 더러워진다', tableKept() && hwModel.dirtyCount() === dirty28,
+       (tableKept() ? '표 남음' : '표가 지워졌다') + ', 고친 문단 ' + dirty28 + '→' + hwModel.dirtyCount());
+
+    /* 표를 통째로 덮은 선택(앞 문단 끝 ~ 뒤 문단 머리)을 지워도 표와 <b>칸 내용</b>이 그대로여야 한다.
+       표만 남기고 칸 문단을 가운데 문단으로 지우면 내용이 날아간 빈 틀이 남는다. 끝나면 되돌려 둔다. */
+    var cellText = function () {
+      var s = '';
+      for (var ci = 0; ci < tob.table.cells.length; ci++)
+        for (var cj = 0; cj < tob.table.cells[ci].paras.length; cj++) s += hwModel.text(tob.table.cells[ci].paras[cj]) + '|';
+      return s;
+    };
+    var tPrev = tHost ? hwModel.before(tHost) : null, tNext = tHost ? hwModel.after(tHost) : null;
+    if (!tPrev || !tNext || tHost._cell) {
+      ok('28-5 표를 덮은 선택을 지워도 표와 칸 내용이 남는다', true, '표 앞뒤 본문 문단이 없다 — 건너뜀');
+    } else {
+      var ct0 = cellText();
+      hwCaret.set(tPrev.id, tPrev.len, false);
+      hwCaret.set(tNext.id, 0, true);
+      key('Delete');
+      var ct1 = cellText();
+      ok('28-5 표를 덮은 선택을 지워도 표와 칸 내용이 남는다', tableKept() && ct1 === ct0,
+         (tableKept() ? '표 남음' : '표가 지워졌다') + ', 칸 글자 ' + ct0.length + '→' + ct1.length);
+      key('z', { ctrl: true });
+    }
+
     hwCaret.set(cellPara.id, cellPara.len, false);
     ok('28 표 칸에 캐럿', hwCaret.at().id === cellPara.id, hwCaret.at().id + ':' + hwCaret.at().pos);
 
@@ -471,6 +522,12 @@ function hwUiTest() {
            !!hwModel.byId(sel39.para.id) && objAtPos(sel39.para.id, pos0),
            '원래 자리(' + pos0 + ')에 ' + (objAtPos(sel39.para.id, pos0) ? '있다' : '없다')
              + (now42 ? '' : ', 고르기는 풀렸다'));
+
+        /* ★ 고르기도 되돌린 시점으로 가야 한다(TODO 3절). 옮긴 뒤 자리(to:pos)를 그대로 쥐고 있으면
+           되돌린 문단의 그 자리에 있는 <b>다른</b> 개체가 골라지거나 고르기가 소리 없이 풀린다. */
+        ok('42-1 되돌리면 개체 고르기도 원래 자리로',
+           !!now42 && now42.para.id === sel39.para.id && now42.obj.pos === pos0,
+           now42 ? (now42.para.id + ':' + now42.obj.pos + ' (원래 ' + sel39.para.id + ':' + pos0 + ')') : '고르기가 풀렸다');
       }
 
       /* 되돌린 뒤 다시 골라 둔다 — 43(크기 조절)이 이어서 돈다. */
@@ -491,6 +548,24 @@ function hwUiTest() {
       up();
       ok('43 모서리로 크기 조절', (cur43.obj.wHu || 0) > w0,
          'wHu ' + w0 + '→' + (cur43.obj.wHu || 0));
+
+      /* ★ 최소 크기까지 줄여도 비율이 안 깨지는가(TODO 3절). 하한을 w·h 에 따로 걸면 짧은 쪽만 먼저
+         멈춰 둘 다 최소값이 된다(정사각형). 그래서 정사각형에 가까운 개체로는 못 가린다. */
+      var w1 = cur43.obj.wHu || 0, h1 = cur43.obj.hHu || 0;
+      var hse1 = document.querySelector('.hw-handle[data-dir="se"]');
+      if (hse1 && w1 > 0 && h1 > 0 && Math.abs(w1 / h1 - 1) > 0.05) {
+        var r1 = hse1.getBoundingClientRect();
+        down(hse1, r1.left + 4, r1.top + 4);
+        move(r1.left - 3000, r1.top - 3000);
+        up();
+        var w2 = cur43.obj.wHu || 0, h2 = cur43.obj.hHu || 0;
+        var rdrift = h2 > 0 ? Math.abs((w2 / h2) / (w1 / h1) - 1) : 1;
+        ok('43-1 모서리로 최소 크기까지 줄여도 비율 유지', rdrift < 0.02 && Math.min(w2, h2) >= 990,
+           w1 + '×' + h1 + ' → ' + w2 + '×' + h2 + ' (비율 오차 ' + (rdrift * 100).toFixed(1) + '%)');
+      } else {
+        ok('43-1 모서리로 최소 크기까지 줄여도 비율 유지', true,
+           w1 + '×' + h1 + ' — 정사각형에 가까워 비율로 못 가린다(건너뜀)');
+      }
     } else if (cur43 && cur43.obj.kind !== 'image') {
       ok('43 모서리로 크기 조절', true,
          (cur43.obj.kind || '?') + ' 는 크기를 안 바꾼다 — 바깥 크기만 늘리면 안쪽이 안 따라온다(건너뜀)');
@@ -594,6 +669,22 @@ function hwUiTest() {
        found && !!fsel && (fsel.toPos - fsel.fromPos) === probe.length,
        '"' + probe + '" ' + (fsel ? (fsel.fromId + ' ' + fsel.fromPos + '~' + fsel.toPos) : '못 찾음'));
 
+    /* ★ 여러 문단에 걸친 선택에서 이전 찾기(TODO 3절) — 선택 <b>앞끝</b> 바로 앞의 그 말이 골라져야 한다.
+       방금 찾은 자리 끝을 앞끝으로, 다음 문단 끝을 뒤끝(캐럿)으로 둔다. 기대 자리는 방금 찾은 그 자리다. */
+    var hitP = fsel ? hwModel.byId(fsel.fromId) : null, hitAt = fsel ? fsel.fromPos : -1;
+    var nextP = hitP ? hwModel.after(hitP) : null;
+    if (!hitP || !nextP) {
+      ok('48-1 여러 문단 선택에서 이전 찾기는 앞끝 앞에서 찾는다', true, '다음 문단이 없다 — 건너뜀');
+    } else {
+      hwCaret.set(hitP.id, hitAt + probe.length, false);
+      hwCaret.set(nextP.id, nextP.len, true);
+      hwFind.search(-1);
+      var bsel = hwCaret.selection();
+      ok('48-1 여러 문단 선택에서 이전 찾기는 앞끝 앞에서 찾는다',
+         !!bsel && bsel.fromId === hitP.id && bsel.fromPos === hitAt,
+         (bsel ? (bsel.fromId + ' ' + bsel.fromPos) : '못 찾음') + ' (기대 ' + hitP.id + ' ' + hitAt + ')');
+    }
+
     document.getElementById('hwReplText').value = 'ZZ';
     hwFind.replaceAll();
     var text1 = hwDocText();
@@ -643,6 +734,22 @@ function hwUiTest() {
      !!rsel && !rev.defaultPrevented && !!mbtn && mev.defaultPrevented,
      '콤보 ' + (rev.defaultPrevented ? '막힘(문제)' : '열림') + ' / 단추 '
        + (mev.defaultPrevented ? '초점 지킴' : '초점 뺏김(문제)'));
+
+  /* ── 여백 합이 용지 높이 이상인 구역(TODO 3절) ──
+     본문 높이가 0 이하가 되면 자리 차지 개체의 while 이 영영 안 끝났다. 무한루프면 이 단계에서
+     멈춰 C# 시한 초과로 걸린다. 모델은 잠깐만 바꾸고 반드시 되돌린다. */
+  var sec54 = hwDoc.sections[0], pg54 = sec54.page, mt54 = pg54.mtHu, fp54 = sec54.paras[0], objs54 = fp54.objs;
+  var n54 = -1;
+  try {
+    pg54.mtHu = pg54.hHu;
+    fp54.objs = (objs54 || []).concat([{ pos: -1, inline: false, relV: 'para', yOffHu: 0, hHu: 30000 }]);
+    n54 = hwPage.layout().length;
+  } finally {
+    pg54.mtHu = mt54;
+    fp54.objs = objs54;
+    hwRelayout();
+  }
+  ok('54 여백 합이 용지 높이 이상이어도 배치가 끝난다', n54 > 0, n54 + '쪽 (되돌린 뒤 ' + hwPageCount() + '쪽)');
 
   /* ★ 그림은 늦게 온다 — 그린 직후에 재면 아직 안 받아 온 것까지 "실패" 로 찍힌다.
      다 붙거나 실패할 때까지 기다렸다가 판정한다. */
@@ -932,7 +1039,10 @@ function hwFirePing() {
    C# 이 인쇄 직전에 부른다. 가상 스크롤을 끄고 모든 쪽을 채운 뒤 준비됐다고 알린다 —
    ★ 이걸 안 하면 화면 밖 쪽이 빈 채로 PDF 에 나간다(보이는 ±2쪽만 내용이 있다). */
 function hwPrintPrepare() {
-  hwRenderer.fillAll(true);
+  /* ★ 여기서 바로 던져도 printReady 는 보낸다(아래 catch 와 같은 이유) — C# 은 그걸 받아야
+     "PDF 를 만드는 중" 을 푼다. 안 보내면 그 창에서는 다시 PDF 를 못 뽑는다. */
+  try { hwRenderer.fillAll(true); }
+  catch (e0) { hwPost({ t: 'printReady', pages: hwPageCount(), err: String(e0 && e0.message ? e0.message : e0) }); return; }
   /* 그림·글꼴이 다 붙은 다음에 찍어야 한다. */
   hwWaitImages().then(function () {
     return (document.fonts && document.fonts.ready) ? document.fonts.ready : null;

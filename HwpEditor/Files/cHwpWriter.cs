@@ -218,7 +218,7 @@ namespace HwpEditor.Files
             SetDivide(pPara.Header.DivideSort, pOp.Brk);
 
             List<cFlatChar> flat = Flatten(pOp.Runs);
-            Dictionary<int, EditObj> objs = ByPosition(pOp.Objs);
+            Dictionary<int, EditObj> objs = ByPosition(pOp.Objs, flat.Count, pOp.Id);
             int len = flat.Count + objs.Count;
 
             if (pPara.Text == null) pPara.CreateText();
@@ -369,11 +369,27 @@ namespace HwpEditor.Files
             return flat;
         }
 
-        private static Dictionary<int, EditObj> ByPosition(List<EditObj> pObjs)
+        /// <summary>
+        /// ★ 자리가 겹치거나 범위(글자 수 + 개체 수) 밖인 개체는 되쓰기 반복이 한 번도 안 지나 <b>조용히</b>
+        ///   빠진다. 짝 없는 개체처럼 흔적을 남긴다 — 화면에는 있는데 저장본에서 사라진 개체를 되짚을 길이 이것뿐이다.
+        /// </summary>
+        private static Dictionary<int, EditObj> ByPosition(List<EditObj> pObjs, int pChars, string pParaId)
         {
             Dictionary<int, EditObj> map = new Dictionary<int, EditObj>();
             if (pObjs == null) return map;
-            foreach (EditObj o in pObjs) if (o != null) map[o.Pos] = o;
+            foreach (EditObj o in pObjs)
+            {
+                if (o == null) continue;
+                if (map.ContainsKey(o.Pos))
+                    cLog.Write("되쓰기: 자리가 겹친 개체를 건너뛴다 id=" + pParaId + " pos=" + o.Pos + " oid=" + map[o.Pos].Oid + " tmpId=" + map[o.Pos].TmpId);
+                map[o.Pos] = o;
+            }
+
+            int len = pChars + map.Count;
+            foreach (KeyValuePair<int, EditObj> kv in map)
+                if (kv.Key < 0 || kv.Key >= len)
+                    cLog.Write("되쓰기: 자리가 범위 밖인 개체를 건너뛴다 id=" + pParaId + " pos=" + kv.Key + " len=" + len
+                             + " oid=" + kv.Value.Oid + " tmpId=" + kv.Value.TmpId);
             return map;
         }
 
@@ -583,22 +599,37 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>이미 있는 개체보다 위에 놓는다. 없으면 0.</summary>
+        /// <summary>
+        /// 이미 있는 개체보다 위에 놓는다. 없으면 0.
+        /// ★ 표 칸 안까지 훑는다. 본문 문단만 보면 칸 안 그림의 순서를 못 봐서 새 그림이 그보다 낮게
+        ///   매겨지고, 글자처럼 취급을 끄면(어울림) 겹침 순서가 뒤집힌다.
+        /// </summary>
         private static int NextZOrder(HWPFile pFile)
         {
             int max = -1;
-            foreach (Section sec in pFile.BodyText.SectionList)
-                for (int i = 0; i < sec.ParagraphCount; i++)
-                {
-                    Paragraph p = sec.GetParagraph(i);
-                    if (p.ControlList == null) continue;
-                    foreach (Control c in p.ControlList)
-                    {
-                        CtrlHeaderGso g = c.GetHeader() as CtrlHeaderGso;
-                        if (g != null && g.ZOrder > max) max = g.ZOrder;
-                    }
-                }
+            foreach (Section sec in pFile.BodyText.SectionList) MaxZOrder(sec, ref max);
             return max + 1;
+        }
+
+        private static void MaxZOrder(IParagraphList pList, ref int pMax)
+        {
+            if (pList == null) return;
+            for (int i = 0; i < pList.ParagraphCount; i++)
+            {
+                Paragraph p = pList.GetParagraph(i);
+                if (p.ControlList == null) continue;
+                foreach (Control c in p.ControlList)
+                {
+                    CtrlHeaderGso g = c.GetHeader() as CtrlHeaderGso;
+                    if (g != null && g.ZOrder > pMax) pMax = g.ZOrder;
+
+                    HwpLib.Object.BodyText.Control.ControlTable t = c as HwpLib.Object.BodyText.Control.ControlTable;
+                    if (t == null || t.RowList == null) continue;
+                    foreach (HwpLib.Object.BodyText.Control.Table.Row row in t.RowList)
+                        foreach (HwpLib.Object.BodyText.Control.Table.Cell cell in row.CellList)
+                            MaxZOrder(cell.ParagraphList, ref pMax);
+                }
+            }
         }
 
         #endregion

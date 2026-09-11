@@ -180,20 +180,14 @@ namespace HwpEditor.Files
             return n;
         }
 
-        /// <summary>문단 id 는 문서 안에서 안 겹치기만 하면 된다. 이미 쓰는 것 중 가장 큰 값 +1.</summary>
+        /// <summary>
+        /// 문단 id 는 문서 안에서 안 겹치기만 하면 된다. 이미 쓰는 것 중 가장 큰 값 +1.
+        /// ★ 표 칸 안의 문단까지 본다(<see cref="NextParagraphIdDeep"/>). 구역 루트의 직계만 보면
+        ///   칸 문단 id 가 더 큰 문서(끝이 표로 끝나는 문서)에서 이미 있는 id 를 또 만든다.
+        /// </summary>
         private static string NewParagraphId(XmlElement pNear)
         {
-            long max = 0;
-            XmlNode root = pNear.OwnerDocument.DocumentElement;
-            foreach (XmlNode n in root.ChildNodes)
-            {
-                XmlElement e = n as XmlElement;
-                if (e == null || e.LocalName != "p") continue;
-                XmlAttribute a = e.Attributes["id"];
-                long v;
-                if (a != null && long.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out v) && v > max) max = v;
-            }
-            return (max + 1).ToString(CultureInfo.InvariantCulture);
+            return NextParagraphIdDeep(pNear.OwnerDocument).ToString(CultureInfo.InvariantCulture);
         }
 
         #endregion
@@ -241,7 +235,7 @@ namespace HwpEditor.Files
             pP.SetAttribute("columnBreak", pOp.Brk == "column" || pOp.Brk == "multicolumn" ? "1" : "0");
 
             List<cFlatChar> flat = Flatten(pOp.Runs);
-            Dictionary<int, EditObj> objs = ByPosition(pOp.Objs);
+            Dictionary<int, EditObj> objs = ByPosition(pOp.Objs, flat.Count, pOp.Id);
             int len = flat.Count + objs.Count;
 
             cRunBuilder b = new cRunBuilder(pP);
@@ -318,11 +312,27 @@ namespace HwpEditor.Files
             return flat;
         }
 
-        private static Dictionary<int, EditObj> ByPosition(List<EditObj> pObjs)
+        /// <summary>
+        /// ★ 자리가 겹치거나 범위(글자 수 + 개체 수) 밖인 개체는 되쓰기 반복이 한 번도 안 지나 <b>조용히</b>
+        ///   빠진다. 흔적을 남긴다 — 화면에는 있는데 저장본에서 사라진 개체를 되짚을 길이 이것뿐이다.
+        /// </summary>
+        private static Dictionary<int, EditObj> ByPosition(List<EditObj> pObjs, int pChars, string pParaId)
         {
             Dictionary<int, EditObj> map = new Dictionary<int, EditObj>();
             if (pObjs == null) return map;
-            foreach (EditObj o in pObjs) if (o != null) map[o.Pos] = o;
+            foreach (EditObj o in pObjs)
+            {
+                if (o == null) continue;
+                if (map.ContainsKey(o.Pos))
+                    cLog.Write("되쓰기: 자리가 겹친 개체를 건너뛴다 id=" + pParaId + " pos=" + o.Pos + " oid=" + map[o.Pos].Oid + " tmpId=" + map[o.Pos].TmpId);
+                map[o.Pos] = o;
+            }
+
+            int len = pChars + map.Count;
+            foreach (KeyValuePair<int, EditObj> kv in map)
+                if (kv.Key < 0 || kv.Key >= len)
+                    cLog.Write("되쓰기: 자리가 범위 밖인 개체를 건너뛴다 id=" + pParaId + " pos=" + kv.Key + " len=" + len
+                             + " oid=" + kv.Value.Oid + " tmpId=" + kv.Value.TmpId);
             return map;
         }
 

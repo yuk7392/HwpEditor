@@ -170,7 +170,10 @@ var hwInput = (function () {
        그런 문단은 <b>내용만 비운다</b> — 지워지지 않는 컨트롤은 deleteRange 가 지켜 준다. */
     for (var m = 0; m < mid.length; m++) {
       var mp = mid[m];
-      if (hasHidden(mp) || hwModel.listOf(mp).length <= 1) hwModel.deleteRange(mp, 0, mp.len);
+      /* ★ 선택이 통째로 덮은 표의 칸 문단은 건너뛴다. 표는 안 지워지고 남는데(hwModel.keeps) 그 칸만
+         비우면 내용이 날아간 빈 틀이 남는다. 선택 끝이 그 표 안에 걸쳐 있을 때만 칸을 고친다. */
+      if (mp._cell && !inTableOf(fromP, mp) && !inTableOf(toP, mp)) continue;
+      if (hasKept(mp) || hwModel.listOf(mp).length <= 1) hwModel.deleteRange(mp, 0, mp.len);
       else hwModel.removePara(mp);
     }
 
@@ -181,13 +184,54 @@ var hwInput = (function () {
     return true;
   }
 
-  /* 화면에 안 보이지만 지우면 안 되는 컨트롤을 달고 있는가. */
-  function hasHidden(para) {
-    for (var i = 0; i < (para.objs || []).length; i++) if (para.objs[i].hidden) return true;
+  /* p 가 cellPara 와 같은 표 안(그 표의 칸, 또는 그 안에 든 표의 칸)에 있는가. */
+  function inTableOf(p, cellPara) {
+    var tbl = cellPara._cell._obj;
+    for (var q = p; q && q._cell; ) {
+      if (q._cell._obj === tbl) return true;
+      q = hostOf(q._cell._obj);
+    }
     return false;
   }
 
+  /* 표 개체를 단 문단. */
+  function hostOf(obj) {
+    var all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) if ((all[i].objs || []).indexOf(obj) >= 0) return all[i];
+    return null;
+  }
+
+  /* 글자 지우기로는 안 지워지는 개체(용지·단 정의, 표)를 달고 있는가. */
+  function hasKept(para) {
+    for (var i = 0; i < (para.objs || []).length; i++) if (hwModel.keeps(para.objs[i])) return true;
+    return false;
+  }
+
+  /* 캐럿 바로 앞(dir<0)·뒤(dir>0) 자리의 표. 선택이 있으면 null — 그때는 선택 지우기가 먼저다. */
+  function tableBeside(dir) {
+    if (hwCaret.selection()) return null;
+    var p = hwCaret.para();
+    if (!p) return null;
+    var at = hwCaret.at().pos + (dir < 0 ? -1 : 0);
+    for (var i = 0; i < (p.objs || []).length; i++)
+      if (p.objs[i].pos === at && p.objs[i].table) return p.objs[i];
+    return null;
+  }
+
+  /* ★ 표 옆에서 지우기를 누르면 표를 지우지 않고 칸으로 들어간다(한글과 같다) — Backspace 는
+       마지막 칸 끝, Delete 는 첫 칸 머리. 캐럿만 옮기므로 edit() 를 안 탄다(되돌리기 칸이 안 생긴다). */
+  function enterTable(o, last) {
+    var q = hwTable.edgePara(o, last);
+    if (!q) return false;
+    hwCaret.set(q.id, last ? q.len : 0, false);
+    hwCaret.scrollIntoView();
+    return true;
+  }
+
   function backspace() {
+    var tb = tableBeside(-1);
+    if (tb && enterTable(tb, true)) return;
+
     edit(function () {
       if (dropSelection()) return null;
 
@@ -214,6 +258,9 @@ var hwInput = (function () {
   }
 
   function del() {
+    var tb = tableBeside(+1);
+    if (tb && enterTable(tb, false)) return;
+
     edit(function () {
       if (dropSelection()) return null;
 

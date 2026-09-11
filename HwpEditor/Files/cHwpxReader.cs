@@ -274,7 +274,11 @@ namespace HwpEditor.Files
 
                 XmlElement ul = Child(c, "underline");
                 string ulType = Attr(ul, "type");
-                m.Underline = (ulType != null && ulType != "NONE") ? 1 : 0;
+                // ★ 종류를 살려 둔다(0 없음·1 아래·2 가운데·3 위 — hwp 의 UnderLineSort 와 같은 번호).
+                //   1 로 뭉개면 저장 왕복 한 번에 가운데·위 밑줄이 전부 아래 밑줄로 바뀐다(되쓰기는 번호대로 쓴다).
+                m.Underline = ulType == null || ulType == "NONE" ? 0
+                            : ulType == "CENTER" ? 2
+                            : ulType == "TOP" ? 3 : 1;
 
                 XmlElement st = Child(c, "strikeout");
                 string stShape = Attr(st, "shape");

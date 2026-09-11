@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace HwpEditor
 {
@@ -66,6 +67,34 @@ namespace HwpEditor
                 fail += Check("깨진 파일이면 빈 목록", cRecent.All().Count, 0);
                 cRecent.Add(real[0]);
                 fail += Check("깨진 뒤에도 다시 쓴다", cRecent.Live().Count, 1);
+
+                // ★ 여러 창이 동시에 넣어도 하나도 안 잃는다. 창 대신 스레드로 태운다 — 잠금이 이름 있는
+                //   뮤텍스라 스레드끼리도 같은 줄을 선다. 잠금이 없으면 나중에 쓴 쪽이 먼저 쓴 항목을 덮는다.
+                int lost = 0;
+                for (int round = 0; round < 20; round++)
+                {
+                    File.Delete(store);
+                    List<string> want = new List<string>();
+                    List<Thread> ts = new List<Thread>();
+                    using (ManualResetEvent go = new ManualResetEvent(false))
+                    {
+                        for (int t = 0; t < 8; t++)
+                        {
+                            string f = Path.Combine(dir, "r" + round + "t" + t + ".hwp");
+                            want.Add(f);
+                            Thread th = new Thread(delegate () { go.WaitOne(); cRecent.Add(f); });
+                            th.Start();
+                            ts.Add(th);
+                        }
+                        go.Set();
+                        foreach (Thread th in ts) th.Join();
+                    }
+
+                    List<string> got = cRecent.All();
+                    foreach (string w in want)
+                        if (!got.Exists(delegate (string s) { return string.Equals(s, w, StringComparison.OrdinalIgnoreCase); })) lost++;
+                }
+                fail += Check("동시에 넣어도 안 잃는다(8개씩 20회)", lost, 0);
             }
             catch (Exception ex)
             {

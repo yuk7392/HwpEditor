@@ -184,6 +184,23 @@ var hwTable = (function () {
     return { cell: p._cell, obj: p._cell._obj };
   }
 
+  /* 표의 첫 칸 첫 문단(last 면 마지막 칸 끝 문단). 표 옆에서 지우기를 누르면 캐럿이 여기로 들어간다.
+     ★ cells 배열 순서로 고르지 않는다 — 행·열을 넣으면 새 칸이 뒤에 붙어 배열 끝이 마지막 칸이 아니다.
+       병합 칸은 덮는 끝 번호로 본다(오른쪽 아래를 덮은 칸이 마지막 칸이다). */
+  function edgePara(obj, last) {
+    var t = obj && obj.table, best = null;
+    if (!t || !t.cells) return null;
+    for (var i = 0; i < t.cells.length; i++) {
+      var c = t.cells[i];
+      if (!c.paras || !c.paras.length) continue;
+      if (!best) { best = c; continue; }
+      var r = last ? c.r + (c.rs || 1) : c.r, br = last ? best.r + (best.rs || 1) : best.r;
+      var k = last ? c.c + (c.cs || 1) : c.c, bk = last ? best.c + (best.cs || 1) : best.c;
+      if (last ? (r > br || (r === br && k > bk)) : (r < br || (r === br && k < bk))) best = c;
+    }
+    return best ? best.paras[last ? best.paras.length - 1 : 0] : null;
+  }
+
   /* 고친 뒤에도 캐럿을 둘 문단 id — 지금 있던 칸의 첫 문단. */
   function keepId(at) {
     return at.cell.paras.length ? at.cell.paras[0].id : null;
@@ -465,6 +482,6 @@ var hwTable = (function () {
 
   return {
     measure: measure, place: place, textWidth: textWidth, pad: pad,
-    here: here, addRow: addRow, delRow: delRow, addCol: addCol, delCol: delCol
+    here: here, edgePara: edgePara, addRow: addRow, delRow: delRow, addCol: addCol, delCol: delCol
   };
 })();

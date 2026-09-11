@@ -66,6 +66,17 @@ var hwObj = (function () {
     hwCaret.set(id, pos, false);
   }
 
+  /* 되돌리기 스냅샷이 담는 고르기 상태. ★ 되돌리기가 모델만 되돌리고 이 값을 놔두면, 되돌린 자리에
+     마침 다른 개체가 있을 때 그 개체가 골라진 채로 남아 이어 누른 Delete·끌기가 엉뚱한 개체에 간다. */
+  function state() { return cId === null ? null : { id: cId, pos: cPos }; }
+
+  function restore(st) {
+    cDrag = null;
+    cId = st ? st.id : null;
+    cPos = st ? st.pos : -1;
+    if (!current()) { cId = null; cPos = -1; }
+  }
+
   function clear() {
     if (cId === null) return;
     cId = null;
@@ -216,14 +227,21 @@ var hwObj = (function () {
     var w = b.w + (east ? dx : 0) - (west ? dx : 0);
     var h = b.h + (south ? dy : 0) - (north ? dy : 0);
 
-    /* 모서리(가로·세로가 같이 걸린 방향)는 비율을 지킨다. Shift 면 반대로 자유롭게 늘린다. */
+    var minPx = hwHu2Px(cMinHu);
+
+    /* 모서리(가로·세로가 같이 걸린 방향)는 비율을 지킨다. Shift 면 반대로 자유롭게 늘린다.
+       ★ 최소 크기도 비율(k)에 건다. w·h 에 따로 걸면 가늘고 긴 개체를 줄일 때 짧은 쪽만 먼저
+         바닥에 닿아 멈추고 긴 쪽은 계속 줄어 비율이 깨진다.
+       ★ 그 하한은 두 변이 다 최소 이상인 개체에만 건다. 원래부터 최소보다 얇은 개체(가는 선 그림)에
+         걸면 k 가 1 아래로 못 내려가 모서리로는 영영 못 줄인다 — 그런 개체는 전처럼 아래 따로 걸린
+         하한만 탄다(비율은 원래부터 못 지킨다: 저장 때 clampSize 가 짧은 변을 최소로 올린다). */
     if ((east || west) && (north || south) && !shift && b.w > 0 && b.h > 0) {
-      var k = Math.max(w / b.w, h / b.h);
+      var floor = (b.w >= minPx && b.h >= minPx) ? Math.max(minPx / b.w, minPx / b.h) : 0;
+      var k = Math.max(w / b.w, h / b.h, floor);
       w = b.w * k;
       h = b.h * k;
     }
 
-    var minPx = hwHu2Px(cMinHu);
     if (w < minPx) w = minPx;
     if (h < minPx) h = minPx;
 
@@ -428,6 +446,8 @@ var hwObj = (function () {
     select: select,
     clear: clear,
     current: current,
+    state: state,
+    restore: restore,
     paint: paint,
     onDown: onDown,
     onMove: onMove,

@@ -340,6 +340,11 @@ body {
   .hw-caret, .hw-sel, .hw-composing,
   .hw-objsel, .hw-handle { display: none !important; }
 
+  /* ★ 아직 못 그리는 개체(수식·OLE·도형 등)의 회색 자리 상자와 이름표는 화면용 표시다 — 종이에 나가면
+       안 된다. display:none 이 아니라 visibility 로 감춘다: 자리(폭)는 줄 배치에 들어 있어서 빼면
+       그 뒤 글자가 당겨져 화면과 PDF 가 갈라진다. 실제 그림(.hw-obj-img)은 그대로 찍는다. */
+  .hw-obj:not(.hw-obj-img) { visibility: hidden; }
+
   .hw-canvas {
     overflow: visible;
     padding: 0;

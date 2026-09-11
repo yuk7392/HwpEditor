@@ -106,12 +106,16 @@ var hwFind = (function () {
     var all = hwModel.allParas();
     if (!all.length) return false;
 
-    var at = hwCaret.at();
-    var idx = 0;
-    for (var i = 0; i < all.length; i++) if (all[i].id === at.id) { idx = i; break; }
+    /* ★ 시작 자리는 문단과 오프셋을 <b>같은 끝</b>에서 잡는다 — 선택이 있으면 앞으로 찾을 때는 선택의
+       뒤끝, 뒤로 찾을 때는 앞끝이다. 캐럿 문단(움직인 끝)에 선택 앞끝 오프셋을 붙이면, 여러 문단에 걸친
+       선택에서 뒷문단의 엉뚱한 자리부터 거꾸로 찾는다. */
+    var sel = hwCaret.selection(), at = hwCaret.at();
+    var base = !sel ? { id: at.id, pos: at.pos }
+             : dir > 0 ? { id: sel.toId, pos: sel.toPos } : { id: sel.fromId, pos: sel.fromPos };
 
-    var sel = hwCaret.selection();
-    var start = dir > 0 ? at.pos : (sel ? sel.fromPos : at.pos);
+    var idx = 0;
+    for (var i = 0; i < all.length; i++) if (all[i].id === base.id) { idx = i; break; }
+    var start = base.pos;
 
     /* 한 바퀴 돈다. n === 0 인 문단만 캐럿 자리부터, 나머지는 처음(또는 끝)부터 본다. */
     for (var n = 0; n <= all.length; n++) {

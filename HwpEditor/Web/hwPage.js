@@ -32,6 +32,13 @@ var hwPage = (function () {
        (실측 — basicsReport.hwp 는 h-mt-mb 가 74550 이지만 쪽마다 실제로 채워진 높이는 64727 까지였고,
         h-mt-mb-mh-mf = 66329 이 그 바로 위였다. 이걸 안 빼면 한 쪽에 줄이 더 들어가 쪽이 모자란다.) */
     var textH = page.hHu - page.mtHu - page.mbHu - (page.mhHu || 0) - (page.mfHu || 0);
+
+    /* ★ 여백·머리말·꼬리말 합이 용지 높이 이상인 문서(손상됐거나 극단적인 설정)에서는 본문 높이가
+       0 이하가 되고, 아래 자리 차지 개체의 while 이 영영 안 끝나 탭이 멈춘다. 용지의 1/10 을 하한으로
+       둔다 — 1 같은 작은 값이면 멈추지는 않아도 개체 하나에 쪽이 수만 장 생긴다. */
+    var minH = Math.max(1000, page.hHu > 0 ? page.hHu / 10 : 0);
+    if (!(textH >= minH)) textH = minH;
+
     var colW = cols > 1 ? (textW - gap * (cols - 1)) / cols : textW;
 
     var cur = newPage(sec, si);
@@ -102,7 +109,7 @@ var hwPage = (function () {
       var reserve = floatReserve(para);
       if (reserve > 0 && paraTop + reserve > y) {
         y = paraTop + reserve;
-        while (y > textH) {
+        while (y > textH && textH > 0) {
           y -= textH;
           col++;
           if (col >= cols) { cur = newPage(sec, si); col = 0; }

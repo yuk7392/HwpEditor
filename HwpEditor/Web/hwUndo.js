@@ -45,7 +45,8 @@ var hwUndo = (function () {
      ★ <b>표 칸의 문단 목록도 같이 담는다</b>. 구역 것만 담으면 칸 안에서 누른 Enter 가 안 되돌려진다 —
        글자는 돌아오는데 나뉜 문단이 그대로 남아, 되돌린 뒤에도 칸이 두 줄이다. */
   function snapshot(ids) {
-    var s = { paras: [], lists: [], state: hwModel.state(), caret: caretState() };
+    var s = { paras: [], lists: [], state: hwModel.state(), caret: caretState(),
+              obj: window.hwObj ? hwObj.state() : null };
 
     for (var i = 0; i < ids.length; i++) {
       var p = hwModel.byId(ids[i]);
@@ -76,6 +77,10 @@ var hwUndo = (function () {
     }
     for (var i = 0; i < s.paras.length; i++) restorePara(s.paras[i]);
     hwModel.restoreState(s.state);
+
+    /* ★ 개체 고르기도 그 시점으로 — 캐럿처럼 되돌린 상태의 한 부분이다(hwObj.state 참고).
+       캐럿을 놓기 전에 둔다: hwCaret.set 의 paint 가 고른 개체 테두리를 같이 그린다. */
+    if (window.hwObj) hwObj.restore(s.obj);
 
     hwRelayout();
     if (s.caret && hwModel.byId(s.caret.id)) {

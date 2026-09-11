@@ -215,8 +215,14 @@ var hwModel = (function () {
     setItems(para, a);
   }
 
-  /* 범위를 지운다. ★ 화면에 안 보이는 컨트롤(용지·단 정의)은 <b>안 지운다</b> —
-     지우면 저장할 때 그 구역의 용지 정의가 통째로 사라진다. 지운 자리 앞으로 모아 둔다. */
+  /* 글자 지우기로는 안 지워지는 개체인가.
+     ★ 화면에 안 보이는 컨트롤(용지·단 정의) — 지우면 저장할 때 그 구역의 용지 정의가 통째로 사라진다.
+     ★ 표 — 표는 한 글자 자리를 차지해서, 이걸 안 막으면 표 옆에서 Backspace/Delete 한 번이나 표를
+       가로지른 선택 지우기에 칸 내용까지 통째로 날아간다(고른 적도 없는데). 한글도 그 자리에서는
+       표를 안 지우고 칸으로 들어간다(hwInput 의 backspace/del). */
+  function keeps(o) { return !!(o && (o.hidden || o.table)); }
+
+  /* 범위를 지운다. 안 지워지는 개체(keeps)는 지운 자리 앞으로 모아 둔다. */
   function deleteRange(para, from, to) {
     if (to <= from) return 0;
     var a = items(para);
@@ -225,7 +231,11 @@ var hwModel = (function () {
 
     var cut = a.splice(from, to - from);
     var keep = [];
-    for (var i = 0; i < cut.length; i++) if (cut[i].obj && cut[i].obj.hidden) keep.push(cut[i]);
+    for (var i = 0; i < cut.length; i++) if (keeps(cut[i].obj)) keep.push(cut[i]);
+
+    /* 지울 것이 하나도 없었으면(표·컨트롤만 걸렸으면) 문단을 안 건드린다 — 되담으면 dirty 가 되어
+       바뀐 것도 없는 문단(표를 단 문단)이 저장 때 통째로 다시 쓰인다. */
+    if (keep.length === cut.length) return 0;
     if (keep.length) a.splice.apply(a, [from, 0].concat(keep));
 
     setItems(para, a);
@@ -543,6 +553,7 @@ var hwModel = (function () {
     insertText: insertText,
     insertObj: insertObj,
     deleteRange: deleteRange,
+    keeps: keeps,
     splitPara: splitPara,
     mergeNext: mergeNext,
     removePara: removePara,

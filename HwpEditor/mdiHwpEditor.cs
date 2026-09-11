@@ -189,11 +189,21 @@ namespace HwpEditor
                     break;
 
                 case "pdf":
-                    // 실제 인쇄는 화면이 "모든 쪽을 채웠다"고 알린 뒤에 한다(printReady).
-                    cPdfPath = AskPdfPath();
-                    if (string.IsNullOrEmpty(cPdfPath)) return;
-                    SetStatus("PDF 준비 중…");
-                    cWeb.Invoke("hwPrintPrepare()");
+                    {
+                        // ★ 하나가 끝나기 전에 또 받지 않는다. 경로를 필드 하나에 두므로, 두 번째 대화상자를
+                        //   취소하면 첫 번째 경로가 null 로 덮여 printReady 가 와도 인쇄도 hwPrintDone 도 안 돈다 —
+                        //   모든 쪽이 펼쳐진 채 남는다. 한 번 더 누르면 앞의 인쇄가 끝나며 가상 스크롤을 되돌려
+                        //   두 번째 PDF 가 빈 쪽으로 나가기도 한다.
+                        if (cPdfBusy) { SetStatus("PDF 를 만드는 중입니다 — 끝난 뒤에 다시 하세요"); return; }
+
+                        // 실제 인쇄는 화면이 "모든 쪽을 채웠다"고 알린 뒤에 한다(printReady).
+                        string pdf = AskPdfPath();
+                        if (string.IsNullOrEmpty(pdf)) return;
+                        cPdfPath = pdf;
+                        cPdfBusy = true;
+                        SetStatus("PDF 준비 중…");
+                        cWeb.Invoke("hwPrintPrepare()");
+                    }
                     break;
 
                 default:
@@ -420,6 +430,7 @@ namespace HwpEditor
         #region PDF 내보내기(7단계)
 
         private string cPdfPath;
+        private bool cPdfBusy;   // 대화상자를 지나 hwPrintPrepare 를 부른 뒤 ExportPdf 가 끝날 때까지
 
         private string AskPdfPath()
         {
@@ -438,15 +449,18 @@ namespace HwpEditor
         /// ★ async void 다 — 여기서 새는 예외는 프로세스를 죽인다. 전부 감싼다.
         /// ★ 끝나면 반드시 가상 스크롤을 되돌린다(hwPrintDone). 안 그러면 100쪽 문서가
         ///   전부 펼쳐진 채로 남아 그 뒤 편집이 눈에 띄게 느려진다.
+        ///   printReady 가 왔다는 것 자체가 화면이 펼쳐졌다는 뜻이라, 인쇄할 것이 없어 빠지는 길도
+        ///   try 안에 둬서 finally 를 지나게 한다(hwPrintDone 은 여러 번 불려도 무해하다).
         /// </summary>
         private async void ExportPdf()
         {
             string path = cPdfPath;
             cPdfPath = null;
-            if (string.IsNullOrEmpty(path) || cDoc == null) return;
 
             try
             {
+                if (string.IsNullOrEmpty(path) || cDoc == null) return;
+
                 double wIn = 8.27, hIn = 11.69;
                 DocModel m = cDoc.Model;
                 if (m.Sections.Count > 0)
@@ -465,6 +479,7 @@ namespace HwpEditor
             }
             finally
             {
+                cPdfBusy = false;
                 cWeb.Invoke("hwPrintDone()");
             }
         }

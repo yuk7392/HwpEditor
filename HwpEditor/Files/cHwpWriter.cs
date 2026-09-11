@@ -11,10 +11,13 @@ using HwpLib.Object.BodyText.Control.CtrlHeader.Gso;
 using HwpLib.Object.BodyText.Control.Gso;
 using HwpLib.Object.BodyText.Control.Gso.ShapeComponent;
 using HwpLib.Object.BodyText.Control.Gso.ShapeComponentEach;
+using HwpLib.Object.BodyText.Control.Table;
 using HwpLib.Object.BodyText.Paragraph;
 using HwpLib.Object.BodyText.Paragraph.CharShape;
 using HwpLib.Object.BodyText.Paragraph.LineSeg;
 using HwpLib.Object.BodyText.Paragraph.Text;
+using HwpLib.Object.DocInfo;
+using HwpLib.Object.DocInfo.BorderFill;
 
 namespace HwpEditor.Files
 {
@@ -47,7 +50,7 @@ namespace HwpEditor.Files
             // 새 그림은 op 하나가 실물을, 다른 op 의 objs 가 자리를 들고 온다 — 먼저 짝을 지어 둔다.
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if (op.Op == "addImage" && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
+                if ((op.Op == "addImage" || op.Op == "addTable") && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             // ★ 순서가 뜻을 갖는다: 내용 먼저(replace) → 지우기 → 넣기.
             //   넣기를 먼저 하면 insertAfter 의 기준 문단이 지워진 뒤일 수 있다.
@@ -326,7 +329,15 @@ namespace HwpEditor.Files
             EditOp img;
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
-                Control ctl = AddPicture(pFile, pPara, pText, img);
+                Control ctl;
+                if (img.Op == "addTable")
+                {
+                    ctl = AddTable(pFile, pPara, pText, img);
+                    // ★ 새 표도 문서를 다시 읽어야 한다 — 칸 문단을 <b>여기서</b> 만들었으므로 화면이 들고 있는
+                    //    칸 문단 id 는 문서에 없는 가짜다. 안 읽으면 그 뒤 칸 편집이 저장 요청에서 조용히 빠진다.
+                    if (pResult != null) pResult.Reload = true;
+                }
+                else ctl = AddPicture(pFile, pPara, pText, img);
                 ApplyGeom(ctl, pObj);   // 넣자마자 옮겼으면 그 자리로 (AddPicture 는 오프셋을 0 으로 둔다)
                 HWPChar ch = pText.CharList[pText.CharList.Count - 1];
 
@@ -444,6 +455,164 @@ namespace HwpEditor.Files
         /// ★ 제어문자는 <see cref="ParaText.AddExtendCharForGSO"/> 가 만든다 — 원본 문서의
         ///   그림 제어문자와 바이트가 같다(실측 20-6F-73-67 = " osg").
         /// </summary>
+        /// <summary>
+        /// 새 표 하나. 격자·크기는 <b>화면이 보낸 칸 목록 그대로</b> 쓴다 — 여기서 다시 계산하면
+        /// 저장 전 화면과 저장 뒤 다시 읽은 문서가 갈리고, 그 차이는 되읽기 전까지 아무 신호가 없다.
+        /// ★ 칸 안 문단도 여기서 만든다. 그래야 화면이 새 칸에 친 글자가 저장에 실린다(TODO 2).
+        /// </summary>
+        private static Control AddTable(HWPFile pFile, Paragraph pPara, ParaText pText, EditOp pOp)
+        {
+            List<CellModel> cells = pOp.Cells;
+            if (cells == null || cells.Count == 0) throw new InvalidOperationException("새 표에 칸이 하나도 없다");
+
+            int rows = Math.Max(1, pOp.Rows), cols = Math.Max(1, pOp.Cols);
+            int bf = TableBorderFill(pFile);
+
+            ControlTable tbl = pPara.AddNewControl(ControlType.Table) as ControlTable;
+            if (tbl == null) throw new InvalidOperationException("표 컨트롤을 만들지 못했다");
+
+            long wAll = 0, hAll = 0;
+            foreach (CellModel cm in cells)
+            {
+                if (cm.R == 0) wAll += cm.WHu;
+                if (cm.C == 0) hAll += cm.HHu;
+            }
+
+            CtrlHeaderGso h = tbl.Header;
+            h.Width = (uint)Math.Max(0, wAll);
+            h.Height = (uint)Math.Max(0, hAll);
+            h.XOffset = 0;
+            h.YOffset = 0;
+            h.ZOrder = NextZOrder(pFile);
+            if (h.Property != null)
+            {
+                h.Property.SetLikeWord(true);
+                h.Property.SetTextFlowMethod(TextFlowMethod.TakePlace);
+                h.Property.SetHorzRelTo(HorzRelTo.Para);
+                h.Property.SetVertRelTo(VertRelTo.Para);
+            }
+
+            Table t = tbl.Table;
+            t.RowCount = rows;
+            t.ColumnCount = cols;
+            t.CellSpacing = 0;
+            t.BorderFillId = bf;
+            t.ClearCellCountOfRowList();
+
+            for (int r = 0; r < rows; r++)
+            {
+                Row row = tbl.AddNewRow();
+                int n = 0;
+                foreach (CellModel cm in cells)
+                {
+                    if (cm.R != r) continue;
+                    NewCell(row, cm, bf);
+                    n++;
+                }
+                t.AddCellCountOfRow(n);
+            }
+
+            pText.AddExtendCharForTable();
+            return tbl;
+        }
+
+        private static void NewCell(Row pRow, CellModel pModel, int pBorderFill)
+        {
+            Cell cell = pRow.AddNewCell();
+            ListHeaderForCell lh = cell.ListHeader;
+            lh.RowIndex = pModel.R;
+            lh.ColIndex = pModel.C;
+            lh.RowSpan = Math.Max(1, pModel.Rs);
+            lh.ColSpan = Math.Max(1, pModel.Cs);
+            lh.Width = pModel.WHu;
+            lh.Height = pModel.HHu;
+            lh.LeftMargin = (int)pModel.MlHu;
+            lh.RightMargin = (int)pModel.MrHu;
+            lh.TopMargin = (int)pModel.MtHu;
+            lh.BottomMargin = (int)pModel.MbHu;
+            lh.BorderFillId = pBorderFill;
+            lh.TextWidth = Math.Max(0, pModel.WHu - pModel.MlHu - pModel.MrHu);
+            lh.ParaCount = Math.Max(1, pModel.Paras.Count);
+
+            if (pModel.Paras.Count == 0) NewCellParagraph(cell, null, lh.TextWidth);
+            else foreach (ParagraphModel pm in pModel.Paras) NewCellParagraph(cell, pm, lh.TextWidth);
+
+            // ★ 목록의 마지막 문단만 LastInList 다 — 가운데 문단이 true 면 여는 쪽이 거기서 칸을 끊는다.
+            Paragraph[] all = cell.ParagraphList.GetParagraphs();
+            for (int q = 0; q < all.Length; q++) all[q].Header.LastInList = q == all.Length - 1;
+        }
+
+        private static void NewCellParagraph(Cell pCell, ParagraphModel pModel, long pInner)
+        {
+            Paragraph p = pCell.ParagraphList.AddNewParagraph();
+            if (p.Text == null) p.CreateText();
+            if (p.CharShape == null) p.CreateCharShape();
+
+            p.Header.ParaShapeId = pModel == null ? 0
+                                 : (cShapes == null ? pModel.Ps : cShapeWriter.Map(cShapes.Ps, pModel.Ps));
+
+            List<cFlatChar> flat = Flatten(pModel == null ? null : pModel.Runs);
+            ParaCharShape cs = p.CharShape;
+            int firstCs = flat.Count > 0 ? flat[0].Cs : 0;
+            cs.AddParaCharShape(0, firstCs);
+
+            int lastCs = firstCs, raw = 0;
+            foreach (cFlatChar it in flat)
+            {
+                if (it.Cs != lastCs) { cs.AddParaCharShape(raw, it.Cs); lastCs = it.Cs; }
+                if (it.Ch == '\t') { p.Text.AddChar(NewTab()); raw += 7; }
+                else if (it.Ch == '\n') p.Text.AddChar(new HWPCharControlChar(10));
+                else p.Text.AddChar(new HWPCharNormal(it.Ch));
+                raw++;
+            }
+
+            p.Text.AddChar(new HWPCharControlChar(13));
+            raw++;
+
+            p.Header.CharacterCount = raw;
+            p.Header.CharShapeCount = cs.PositionShapeIdPairList.Count;
+
+            p.DeleteLineSeg();
+            p.CreateLineSeg();
+            LineSegItem only = p.LineSeg.AddNewLineSegItem();
+            only.TextStartPosition = 0;
+            only.LineHeight = 1000;
+            only.TextPartHeight = 1000;
+            only.LineSpace = 600;
+            only.DistanceBaseLineToLineVerticalPosition = 850;
+            only.SegmentWidth = (int)Math.Max(200L, pInner);
+            only.Tag.Value = cSegTagNormal;
+            p.Header.LineAlignCount = 1;
+        }
+
+        /// <summary>
+        /// 표가 참조할 테두리. ★ 문서에 있는 "네 변 실선" 을 <b>다시 쓴다</b> — 저장할 때마다 새로 만들면
+        /// 표를 넣을 때마다 BorderFill 이 하나씩 불어난다.
+        /// ★ hwp 의 borderFill id 는 <b>1부터</b>다(실측 table.hwp — 목록이 2개인데 표가 2번을 가리킨다).
+        /// </summary>
+        private static int TableBorderFill(HWPFile pFile)
+        {
+            IReadOnlyList<BorderFillInfo> list = pFile.DocInfo.BorderFillList;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].LeftBorder.Type == BorderType.Solid && list[i].RightBorder.Type == BorderType.Solid
+                 && list[i].TopBorder.Type == BorderType.Solid && list[i].BottomBorder.Type == BorderType.Solid)
+                    return i + 1;
+
+            BorderFillInfo made = pFile.DocInfo.AddNewBorderFill();
+            SetSolid(made.LeftBorder);
+            SetSolid(made.RightBorder);
+            SetSolid(made.TopBorder);
+            SetSolid(made.BottomBorder);
+            return pFile.DocInfo.BorderFillList.Count;
+        }
+
+        private static void SetSolid(EachBorder pBorder)
+        {
+            pBorder.Type = BorderType.Solid;
+            pBorder.Thickness = BorderThickness.MM0_12;
+            pBorder.Color.Value = 0;
+        }
+
         private static Control AddPicture(HWPFile pFile, Paragraph pPara, ParaText pText, EditOp pImg)
         {
             byte[] data = File.ReadAllBytes(pImg.File);

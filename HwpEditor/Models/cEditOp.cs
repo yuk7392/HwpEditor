@@ -76,6 +76,25 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("from")] public int From = -1;
 
+        /// <summary>
+        /// 칸 사각형. mergeCells 는 네 값을 다 쓰고, sameWidth 는 <c>C0·C1</c>, sameHeight 는 <c>R0·R1</c>,
+        /// splitCell 은 <c>R0·C0</c>(나눌 칸)만 쓴다. ★ 값은 <b>격자를 곱하기 전</b> 번호다.
+        /// </summary>
+        [JsonProperty("r0")] public int R0 = -1;
+        [JsonProperty("c0")] public int C0 = -1;
+        [JsonProperty("r1")] public int R1 = -1;
+        [JsonProperty("c1")] public int C1 = -1;
+
+        /// <summary>splitCell 이 나눌 줄·칸 수, addTable 이 만들 표 크기.</summary>
+        [JsonProperty("rows")] public int Rows;
+        [JsonProperty("cols")] public int Cols;
+
+        /// <summary>
+        /// addTable 이 만들 칸. ★ 칸 내용도 여기 실린다 — 새 표의 칸 문단은 문서 쪽 id 표에 없어서
+        /// replace 로는 갈 수 없다(화면은 그 문단을 <c>_tblNew</c> 로 걸러 낸다).
+        /// </summary>
+        [JsonProperty("cells")] public List<CellModel> Cells;
+
         /// <summary>이 op 가 만드는 개체의 임시 id. 같은 저장 요청 안의 objs[].tmpId 와 맞춘다.</summary>
         [JsonProperty("tmpId")] public string TmpId;
 

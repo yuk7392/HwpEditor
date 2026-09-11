@@ -243,7 +243,7 @@ var hwModel = (function () {
 
     /* ★ 표가 만들 칸에서 나눈 문단도 같은 칸의 것이다. 표시를 안 물려주면 저장 요청에 insertAfter 가
        실리고, 그 기준 문단(_tblNew)이 문서에 없어서 저장이 통째로 예외로 끝난다. */
-    if (para._tblNew) np._tblNew = true;
+    if (para._tblNew) { np._tblNew = true; if (para._tblOwner) np._tblOwner = true; }
     else cFresh[np.id] = true;
     setItems(np, tail);
     insertAfter(para, np);
@@ -350,7 +350,7 @@ var hwModel = (function () {
     /* ★ 행·열을 넣어 <b>화면에만</b> 생긴 칸의 문단은 요청으로 안 보낸다. 문서 쪽 id 표에 없는
        id 라 replace 를 보내면 저장이 통째로 <b>예외로 끝나고</b> 다른 문단의 고침까지 다 날아간다.
        이 칸은 C# 이 표를 다시 세우면서 자기가 만든다. */
-    if (p._tblNew) { if (p.len > 0) cDropped += p.len; return; }
+    if (p._tblNew) { if (p.len > 0 && !p._tblOwner) cDropped += p.len; return; }
 
     var isNew = !!cFresh[p.id];
     if (!isNew && !cDirty[p.id]) return;
@@ -375,6 +375,18 @@ var hwModel = (function () {
     ops.push(op);
   }
 
+  /* addTable 이 들고 갈 칸 목록. 칸 안의 개체는 안 싣는다 — 새 표 칸에 그림을 넣는 길이 아직 없다. */
+  function tableCells(t) {
+    var out = [];
+    for (var i = 0; i < t.cells.length; i++) {
+      var c = t.cells[i], paras = [];
+      for (var q = 0; q < c.paras.length; q++) paras.push({ ps: c.paras[q].ps, runs: c.paras[q].runs });
+      out.push({ r: c.r, c: c.c, rs: c.rs, cs: c.cs, wHu: c.wHu, hHu: c.hHu,
+                 mlHu: c.mlHu, mrHu: c.mrHu, mtHu: c.mtHu, mbHu: c.mbHu, paras: paras });
+    }
+    return out;
+  }
+
   function imageOps(p, ops) {
     var objs = p.objs || [];
     for (var j = 0; j < objs.length; j++) {
@@ -384,6 +396,16 @@ var hwModel = (function () {
           op: 'addImage', id: p.id, pos: objs[j].pos,
           tmpId: objs[j].tmpId, file: objs[j].file,
           wHu: objs[j].wHu, hHu: objs[j].hHu
+        });
+
+      /* ★ 새 표는 <b>칸 내용까지</b> 실어 보낸다 — 칸 문단은 문서 쪽 id 표에 없어서 replace 로는 못 간다.
+         이것이 "새 표 칸에 친 글자가 저장 때 빠진다"(TODO 2)를 닫는 자리다. */
+      if (objs[j].tmpId && objs[j].table && !p._tblNew)
+        ops.push({
+          op: 'addTable', id: p.id, pos: objs[j].pos, tmpId: objs[j].tmpId,
+          rows: objs[j].table.rows, cols: objs[j].table.cols,
+          wHu: objs[j].wHu, hHu: objs[j].hHu,
+          cells: tableCells(objs[j].table)
         });
 
       var t = objs[j].table;

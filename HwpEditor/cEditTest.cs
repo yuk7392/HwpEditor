@@ -294,6 +294,14 @@ namespace HwpEditor
             Console.WriteLine("  원본 " + b4);
             Console.WriteLine("  저장 " + after);
 
+            // ★ 표 구조를 바꾸거나 표를 새로 넣은 저장은 <b>반드시</b> 다시 읽어야 한다 — 칸 문단 객체가
+            //   전부 새것이라, 안 읽으면 화면이 들고 있는 칸 문단 id 가 문서에 없는 값이 되어
+            //   그 뒤 칸 편집이 저장 요청에서 조용히 빠진다.
+            bool needReload = false;
+            foreach (EditOp op in req.Ops)
+                if (op.Op == "addTable" || cTableWriter.IsTableOp(op.Op)) { needReload = true; break; }
+            if (needReload && !r.Reload) Console.WriteLine("  ! 표를 건드렸는데 reload 를 안 켰다");
+
             // ★ 같은 요청을 한 번 더 먹인다 — <b>모양이 또 느는지</b>만 본다.
             //   같은 서식을 다시 걸 때마다 모양이 늘면 그 문서는 열 때마다 무거워진다.
             //   문단 수는 여기서 안 본다: 이건 화면이 두 번 저장한 것이 아니라 같은 요청을 그대로
@@ -310,7 +318,7 @@ namespace HwpEditor
                 ? "두 번 먹였더니 모양이 늘었다 — 실패 (cs " + after.CharShapes + "→" + twice.CharShapes
                   + ", ps " + after.ParaShapes + "→" + twice.ParaShapes + ")"
                 : "두 번 먹여도 모양 개수 그대로 — 통과");
-            return (r.Ok && !grew) ? 0 : 3;
+            return (r.Ok && !grew && !(needReload && !r.Reload)) ? 0 : 3;
         }
 
         #endregion

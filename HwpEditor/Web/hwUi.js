@@ -193,6 +193,8 @@ var hwUi = (function () {
 
     var tbl = btn.getAttribute('data-tbl');
     if (tbl) {
+      /* 표 만들기만 표 밖에서 누르는 단추다 — 나머지는 칸에 커서가 있어야 뜻이 있다. */
+      if (tbl === 'newTable') { hwDialog.tableInsert(); return; }
       if (!hwTable.here()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); hwInput.focus(); return; }
       if (tbl === 'addRow') hwTable.addRow(1);
       else if (tbl === 'delRow') hwTable.delRow();
@@ -369,6 +371,7 @@ var hwUi = (function () {
     ];
     if (kind === 'cell') {
       /* 마지막 줄·칸은 지울 수 없다(hwTable 이 되돌려 보낸다) — 누르면 아무 일도 안 나는 항목이 되지 않게 흐리게 둔다. */
+      var blk = hwTable.blockCells();
       var t = hwTable.here().obj.table, rows = 0, cols = 0;
       for (var i = 0; i < t.cells.length; i++) {
         rows = Math.max(rows, t.cells[i].r + (t.cells[i].rs || 1));
@@ -379,13 +382,33 @@ var hwUi = (function () {
           { label: '위에 줄 추가', fn: function () { hwTable.addRow(-1); } },
           { label: '아래에 줄 추가', fn: function () { hwTable.addRow(1); } },
           { label: '왼쪽에 칸 추가', fn: function () { hwTable.addCol(-1); } },
-          { label: '오른쪽에 칸 추가', fn: function () { hwTable.addCol(1); } }
+          { label: '오른쪽에 칸 추가', fn: function () { hwTable.addCol(1); } },
+          '-',
+          { label: '개수 지정…', key: 'Alt+Insert', fn: function () { hwDialog.tableLines(false); } }
         ] },
         { label: '줄 지우기', disabled: rows <= 1, fn: function () { hwTable.delRow(); } },
         { label: '칸 지우기', disabled: cols <= 1, fn: function () { hwTable.delCol(); } },
+        { label: '줄/칸 지우기…', key: 'Alt+Delete', disabled: rows <= 1 && cols <= 1,
+          fn: function () { hwDialog.tableLines(true); } },
         { label: '표 지우기', fn: function () { hwTable.removeTable(); } },
+        '-',
+        { label: '선택', key: 'F5', sub: [
+          { label: '셀', fn: function () { hwTable.selectRange('cell'); } },
+          { label: '칸', fn: function () { hwTable.selectRange('col'); } },
+          { label: '줄', fn: function () { hwTable.selectRange('row'); } },
+          { label: '표', fn: function () { hwTable.selectRange('table'); } }
+        ] },
+        { label: '셀 합치기', key: 'M', disabled: !blk || blk.cells.length < 2,
+          fn: function () { hwTable.mergeBlock(); } },
+        { label: '셀 나누기…', key: 'S', fn: function () { hwDialog.tableSplit(); } },
+        { label: '셀 너비를 같게', key: 'W', disabled: !blk || blk.rect.c1 <= blk.rect.c0,
+          fn: function () { hwTable.sameSize(true); } },
+        { label: '셀 높이를 같게', key: 'H', disabled: !blk || blk.rect.r1 <= blk.rect.r0,
+          fn: function () { hwTable.sameSize(false); } },
         '-');
     }
+    if (kind !== 'cell')
+      items.push({ label: '표 만들기…', key: 'Ctrl+N,T', fn: function () { hwDialog.tableInsert(); } }, '-');
     items.push(
       { label: '글자 모양…', key: 'Alt+L', fn: function () { hwDialog.charShape(); } },
       { label: '문단 모양…', key: 'Alt+T', fn: function () { hwDialog.paraShape(); } },
@@ -427,7 +450,8 @@ var hwUi = (function () {
     /* 표 단추는 표 안에 있을 때만 살린다 — 밖에서 누르면 아무 일도 안 일어나는 단추가 된다. */
     var inTable = !!hwTable.here();
     var tbls = bar.querySelectorAll('[data-tbl]');
-    for (var t = 0; t < tbls.length; t++) tbls[t].disabled = !inTable;
+    for (var t = 0; t < tbls.length; t++)
+      tbls[t].disabled = tbls[t].getAttribute('data-tbl') === 'newTable' ? inTable : !inTable;
 
     /* 개체 단추도 같다 — 고른 그림이 있을 때만. 눌린 상태는 지금 취급을 비춘다. */
     var objSel = window.hwObj ? hwObj.current() : null;

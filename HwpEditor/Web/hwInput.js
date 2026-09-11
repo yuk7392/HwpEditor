@@ -13,6 +13,7 @@ var hwInput = (function () {
   var cComposing = false;
   var cCompEl = null;
   var cDragging = false;
+  var cDragCell = null;     /* 끌기를 시작한 표 칸. 다른 칸으로 넘어가면 칸 블록이 된다. */
 
   function init() {
     cIme = document.getElementById('hwIme');
@@ -438,6 +439,7 @@ var hwInput = (function () {
     on(['A+t'], function () { hwDialog.paraShape(); });
     on(['C+F10'], function () { hwDialog.charMap(); });
     on(['C+g'], function () { startChord('C+g', 'Ctrl+G'); });
+    on(['C+n'], function () { startChord('C+n', 'Ctrl+N'); });
     on(['S+NumAdd'], function () { hwUi.stepZoom(+1); });
     on(['S+NumSub'], function () { hwUi.stepZoom(-1); });
 
@@ -475,6 +477,11 @@ var hwInput = (function () {
 
     on(['+Tab'], function () { return hwTable.here() ? hwTable.nextCell(+1) || true : false; });
     on(['S+Tab'], function () { return hwTable.here() ? hwTable.nextCell(-1) || true : false; });
+    on(['A+Insert'], function () { hwDialog.tableLines(false); });
+    on(['A+Delete'], function () { hwDialog.tableLines(true); });
+
+    /* ★ 맨 F5 를 여기서 잡아야 한다 — 안 잡으면 WebView2 가 새로고침해서 고친 문서가 통째로 날아간다. */
+    on(['+F5'], function () { return hwTable.cycleBlock() || true; });
 
     cChords = {
       'C+k': {},
@@ -491,6 +498,9 @@ var hwInput = (function () {
         p: function () { hwUi.fitZoom('page'); },
         q: function () { hwUi.setZoom(100); },
         i: function () { hwUi.fitZoom('width'); }
+      },
+      'C+n': {
+        t: function () { hwDialog.tableInsert(); }
       }
     };
     function color(v) { return function () { hwFormat.applyChar({ color: v }); }; }
@@ -554,6 +564,16 @@ var hwInput = (function () {
     /* ★ 개체를 골랐으면 방향키·Delete·Esc 가 <b>개체</b>의 것이다. 캐럿보다 먼저 보되 Ctrl 조합은
        넘긴다 — Ctrl+S·Ctrl+Z 는 개체를 고른 채로도 그대로 들어야 한다. */
     if (!ctrl && window.hwObj && hwObj.onKey(e)) { e.preventDefault(); return; }
+
+    /* 셀 블록도 같은 자리에서 캐럿보다 먼저 받는다. 블록이 안 받는 키는 블록을 풀고 흘려보낸다.
+       ★ 키 이름을 <c>keyName</c> 으로 넘긴다 — 한글 모드에서는 e.key 가 'Process' 라 M·S·W·H 가
+         글자로 새고, 그 자리에 'ㅡ' 가 들어간다(A1 이 키 표에서 이미 겪은 함정).
+       ★ Alt 조합은 넘긴다 — Alt+Delete(줄/칸 지우기)가 블록의 Delete 에 먹히면 안 된다. */
+    if (!ctrl && !e.altKey && window.hwTable && hwTable.onKey(e, keyName(e))) {
+      e.preventDefault();
+      if (e.key === 'Process' || e.keyCode === 229) cSwallow = true;
+      return;
+    }
 
     var fn = cKeys[comboOf(e)];
     if (fn) {
@@ -710,6 +730,8 @@ var hwInput = (function () {
     e.preventDefault();
     focus();
     hwCaret.set(hit.id, hit.pos, e.shiftKey);
+    var hp = hwModel.byId(hit.id);
+    cDragCell = hp ? hp._cell || null : null;
     cDragging = true;
     syncIme();
   }
@@ -737,6 +759,14 @@ var hwInput = (function () {
 
     var hit = dragHit(x, y);
     if (!hit) return;
+
+    /* ★ 칸에서 다른 칸으로 끌면 글자 선택이 아니라 <b>칸 블록</b>이다 — 칸 경계를 넘는 글자 선택은
+       한글에도 없고, 그 범위를 지우면 격자가 깨진다. */
+    var to = hwModel.byId(hit.id);
+    if (cDragCell && to && to._cell && to._cell !== cDragCell && to._cell._obj === cDragCell._obj) {
+      hwTable.dragBlock(cDragCell, to._cell);
+      return;
+    }
     hwCaret.set(hit.id, hit.pos, true);
   }
 
@@ -1109,6 +1139,17 @@ var hwInput = (function () {
     return true;
   }
 
+  /* ★ 셀 블록 안의 칸을 누른 우클릭도 캐럿을 안 옮긴다 — 옮기면 hwCaret.set 이 블록을 풀어, 메뉴의
+     "셀 합치기"·"너비를 같게" 가 <b>늘 흐리게</b> 뜬다. 글자 선택 안에서 우클릭할 때와 같은 규칙이다. */
+  function inBlock(h) {
+    var b = window.hwTable ? hwTable.blockCells() : null;
+    if (!b) return false;
+    var p = hwModel.byId(h.id);
+    if (!p || !p._cell) return false;
+    for (var i = 0; i < b.cells.length; i++) if (b.cells[i] === p._cell) return true;
+    return false;
+  }
+
   /* 우클릭(덤프 7): 선택 안이나 개체 위면 캐럿을 안 옮기고, 아니면 옮긴 뒤 띄운다.
      ★ 오른쪽 단추 mousedown 은 onMouseDown 이 안 막아 초점이 수신기에서 빠진다 — 여기서 되돌려야 메뉴를 닫은 뒤 키가 산다. */
   function onContextMenu(e) {
@@ -1124,7 +1165,7 @@ var hwInput = (function () {
     } else {
       if (window.hwObj) hwObj.clear();
       var hit = hwCaret.hitTest(e.clientX, e.clientY);
-      if (hit && !inSelection(hit)) hwCaret.set(hit.id, hit.pos, false);
+      if (hit && !inSelection(hit) && !inBlock(hit)) hwCaret.set(hit.id, hit.pos, false);
       kind = hwTable.here() ? 'cell' : 'body';
     }
     focus();

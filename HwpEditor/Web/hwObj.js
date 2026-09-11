@@ -38,11 +38,17 @@ var hwObj = (function () {
     return o ? { para: p, obj: o } : null;
   }
 
-  /* 화면에 그려진 그 개체의 요소. 가상 스크롤로 아직 안 채운 쪽이면 없다. */
+  /* 화면에 그려진 그 개체의 요소. 가상 스크롤로 아직 안 채운 쪽이면 없다.
+     ★ 표만 <c>.hw-table</c> 이다 — 격자를 따로 그리고 회색 자리 상자에는 신원을 안 붙였다. */
   function domOf() {
     if (cId === null) return null;
+    var cur = current();
+    if (cur && isTable(cur.obj))
+      return document.querySelector('.hw-table[data-tpara="' + cId + '"][data-tpos="' + cPos + '"]');
     return document.querySelector('.hw-obj[data-para="' + cId + '"][data-pos="' + cPos + '"]');
   }
+
+  function isTable(o) { return !!(o && (o.table || o.kind === 'table')); }
 
   /* 요소의 사각형을 본문(.hw-body) 기준 px 로. */
   function rectIn(el, body) {
@@ -136,6 +142,31 @@ var hwObj = (function () {
     return { x: x, y: y };
   }
 
+  /* 표 테두리 <b>바깥</b> 4px 띠. 누른 자리로 표를 고르는 유일한 길이다.
+     ★ 안쪽은 뺀다 — 격자 안을 누르는 사람은 칸을 편집하려는 것이다(TODO 1 "표는 고를 수 없다" 의 이유). */
+  var cBandPx = 4;
+
+  function tableBandAt(clientX, clientY) {
+    var boxes = document.querySelectorAll('.hw-table[data-tpara]');
+    for (var i = 0; i < boxes.length; i++) {
+      var r = boxes[i].getBoundingClientRect();
+      if (clientX < r.left - cBandPx || clientX > r.right + cBandPx) continue;
+      if (clientY < r.top - cBandPx || clientY > r.bottom + cBandPx) continue;
+      if (clientX > r.left && clientX < r.right && clientY > r.top && clientY < r.bottom) continue;
+      return boxes[i];
+    }
+    return null;
+  }
+
+  /* F5 순환의 마지막 칸(hwTable.cycleBlock). 누른 자리가 아니라 상태로 들어오는 길이다. */
+  function selectTable(obj) {
+    var host = hwModel.hostOf(obj);
+    if (!host) return false;
+    select(host.id, obj.pos);
+    paint();
+    return true;
+  }
+
   /* hwInput.onMouseDown 이 캐럿보다 <b>먼저</b> 부른다. 개체를 먹었으면 true. */
   function onDown(e) {
     if (!hwDoc) return false;
@@ -146,6 +177,14 @@ var hwObj = (function () {
       return true;
     }
 
+    var band = tableBandAt(e.clientX, e.clientY);
+    if (band) {
+      select(band.getAttribute('data-tpara'), parseInt(band.getAttribute('data-tpos'), 10));
+      if (window.hwTable) hwTable.blockOff();
+      begin('move', null, e);
+      return true;
+    }
+
     var dom = e.target.closest ? e.target.closest('.hw-obj') : null;
     if (!dom) { clear(); return false; }
 
@@ -153,12 +192,12 @@ var hwObj = (function () {
     var pos = parseInt(dom.getAttribute('data-pos'), 10);
     if (!id || isNaN(pos)) return false;
 
-    /* ★ 표는 고르지 않는다(hwRender.stamp 가 애초에 신원을 안 붙이지만 여기서도 막는다).
-       표 바깥 크기는 칸 격자에서 다시 내므로 여기서 바꾸면 칸 폭 합과 갈라지고, 무엇보다
-       Delete 한 번에 표가 통째로 지워진다. */
+    /* ★ 표는 <b>회색 자리 상자로는</b> 안 고른다(hwRender.stamp 가 신원을 안 붙이지만 여기서도 막는다).
+       그 상자는 칸 줄이 안 덮는 자리에서 드러나므로, 거기서 고르면 칸에 캐럿이 못 들어간다.
+       표를 고르는 길은 위의 테두리 바깥 띠와 F5 순환뿐이다. */
     var pre = hwModel.byId(id);
     var po = pre ? objAt(pre, pos) : null;
-    if (!po || po.table || po.kind === 'table') { clear(); return false; }
+    if (!po || isTable(po)) { clear(); return false; }
 
     select(id, pos);
     /* ★ 글자처럼 취급하는 개체도 끌 수 있다 — 다만 옮겨지는 것이 자리(offset)가 아니라
@@ -367,6 +406,9 @@ var hwObj = (function () {
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (cur.obj.hidden) return false;   /* 안 보이는 컨트롤은 지키고 남긴다 */
+      /* ★ 표는 remove() 로 안 빠진다 — deleteRange 의 keeps 가 막는다(hwModel.keeps).
+         D1 의 전용 경로로 보낸다. 결과는 "표 지우기" 명령과 같아야 한다. */
+      if (isTable(cur.obj)) { clear(); hwTable.removeTable(cur.obj); return true; }
       remove();
       return true;
     }
@@ -438,6 +480,7 @@ var hwObj = (function () {
     onMove: onMove,
     endDrag: endDrag,
     onKey: onKey,
+    selectTable: selectTable,
     toggleInline: toggleInline,
     remove: remove,
     dragging: function () { return !!cDrag; }

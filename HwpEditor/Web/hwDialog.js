@@ -548,6 +548,63 @@ var hwDialog = (function () {
     return st;
   }
 
+  function tableLines(isDel) {
+    if (!hwTable.here()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return null; }
+    return open({
+      title: isDel ? '줄/칸 지우기' : '줄/칸 추가하기', width: 340,
+      rows: [
+        { type: 'radio', key: 'where', label: isDel ? '지울 것' : '넣을 자리', value: isDel ? 'row' : 'down',
+          options: isDel ? [{ v: 'row', t: '줄' }, { v: 'col', t: '칸' }]
+                         : [{ v: 'up', t: '위' }, { v: 'down', t: '아래' }, { v: 'left', t: '왼쪽' }, { v: 'right', t: '오른쪽' }] },
+        { type: 'number', key: 'count', label: '개수', value: 1, min: 1, max: 100, width: 80 }
+      ],
+      buttons: [{ label: isDel ? '지우기' : '넣기', ok: true }, { label: '취소', cancel: true }],
+      onOk: function (s) {
+        var n = s.get('count') || 1, w = s.get('where');
+        close();
+        if (isDel) { if (w === 'col') hwTable.delCol(n); else hwTable.delRow(n); }
+        else if (w === 'up') hwTable.addRow(-1, n);
+        else if (w === 'down') hwTable.addRow(1, n);
+        else if (w === 'left') hwTable.addCol(-1, n);
+        else hwTable.addCol(1, n);
+      }
+    });
+  }
+
+  function tableInsert() {
+    if (!hwDoc) return null;
+    return open({
+      title: '표 만들기', width: 320,
+      rows: [
+        { type: 'number', key: 'cols', label: '칸 개수', value: 5, min: 1, max: 100, width: 80 },
+        { type: 'number', key: 'rows', label: '줄 개수', value: 2, min: 1, max: 100, width: 80 }
+      ],
+      buttons: [{ label: '만들기', ok: true }, { label: '취소', cancel: true }],
+      onOk: function (s) {
+        var r = s.get('rows') || 1, c = s.get('cols') || 1;
+        close();
+        hwTable.insertTable(r, c);
+      }
+    });
+  }
+
+  function tableSplit() {
+    if (!hwTable.here() && !hwTable.block()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return null; }
+    return open({
+      title: '셀 나누기', width: 320,
+      rows: [
+        { type: 'number', key: 'cols', label: '칸 개수', value: 2, min: 1, max: 64, width: 80 },
+        { type: 'number', key: 'rows', label: '줄 개수', value: 1, min: 1, max: 64, width: 80 }
+      ],
+      buttons: [{ label: '나누기', ok: true }, { label: '취소', cancel: true }],
+      onOk: function (s) {
+        var r = s.get('rows') || 1, c = s.get('cols') || 1;
+        close();
+        hwTable.splitCell(r, c);
+      }
+    });
+  }
+
   return {
     open: open,
     close: close,
@@ -556,6 +613,9 @@ var hwDialog = (function () {
     charShape: charShape,
     paraShape: paraShape,
     charMap: charMap,
+    tableLines: tableLines,
+    tableInsert: tableInsert,
+    tableSplit: tableSplit,
     categories: function () { return cCats.map(function (c) { return c.t; }); }
   };
 })();

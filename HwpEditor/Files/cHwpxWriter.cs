@@ -38,7 +38,7 @@ namespace HwpEditor.Files
 
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if (op.Op == "addImage" && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
+                if ((op.Op == "addImage" || op.Op == "addTable") && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             foreach (EditOp op in pOps) if (op.Op == "replace") ApplyReplace(pDoc, pIndex, op, images, pResult);
             foreach (EditOp op in pOps) if (op.Op == "delete") ApplyDelete(pIndex, op);
@@ -275,12 +275,19 @@ namespace HwpEditor.Files
             EditOp img;
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
-                XmlElement pic = MakePicture(pDoc, pP, img);
-                ApplyGeom(pic, pObj);   // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다)
+                bool isTable = img.Op == "addTable";
+                XmlElement made = isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
+                                          : MakePicture(pDoc, pP, img);
+                // ★ 새 표도 문서를 다시 읽어야 한다 — 칸 문단을 여기서 만들었으므로 화면이 들고 있는
+                //    칸 문단 id 는 문서에 없는 가짜다(hwp 쪽 PutObject 와 같은 이유).
+                if (isTable && pResult != null) pResult.Reload = true;
+                // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다).
+                // ★ 표는 뺀다 — 표의 바깥 크기는 칸 격자에서 나오므로 여기서 덮으면 칸 폭 합과 갈라진다.
+                if (!isTable) ApplyGeom(made, pObj);
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
-                pIndex.Objs[oid] = pic;
+                pIndex.Objs[oid] = made;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;
-                return pic;
+                return made;
             }
 
             cLog.Write("hwpx 되쓰기: 짝 없는 개체를 건너뛴다 oid=" + pObj.Oid + " tmpId=" + pObj.TmpId);
@@ -477,12 +484,31 @@ namespace HwpEditor.Files
 
                 foreach (cGridCell g in cells)
                     if (g.Made) g.Tag = EmptyCellLike((XmlElement)g.Seed.Tag);
+                foreach (cGridCell g in cells) Absorb(g);
 
                 Rebuild(tbl, rows, cells);
                 Resize(tbl, cells);
                 any = true;
             }
             return any;
+        }
+
+        /// <summary>
+        /// 합쳐진 칸의 문단을 남는 칸 뒤로 <b>옮긴다</b>(복제가 아니다 — id 를 그대로 둬야 같은 저장 요청의
+        /// replace 가 가리키는 문단과 같은 것이 남는다).
+        /// </summary>
+        private static void Absorb(cGridCell pCell)
+        {
+            if (pCell.Absorbed == null) return;
+            XmlElement dst = Kid((XmlElement)pCell.Tag, "subList");
+            if (dst == null) return;
+
+            foreach (cGridCell a in pCell.Absorbed)
+            {
+                XmlElement src = Kid((XmlElement)a.Tag, "subList");
+                if (src == null) continue;
+                foreach (XmlElement p in ChildElements(src, "p")) { src.RemoveChild(p); dst.AppendChild(p); }
+            }
         }
 
         /// <summary>tc 들을 격자 좌표째 떠 온다. 번호는 <b>파일이 들고 있던 것</b>을 그대로 쓴다.</summary>
@@ -737,6 +763,150 @@ namespace HwpEditor.Files
         /// ★ 우리 리더가 다시 읽을 때 크기를 보는 곳은 <c>hp:sz</c>, 글자처럼 취급인지 보는 곳은
         ///   <c>hp:pos/@treatAsChar</c> 다 — 이 둘이 틀리면 저장은 되는데 다시 열었을 때 자리가 어긋난다.
         /// </summary>
+        /// <summary>
+        /// 새 표 하나(<c>hp:tbl</c>). 격자·크기는 <b>화면이 보낸 칸 목록 그대로</b> 쓴다.
+        ///
+        /// ★ hwpx 표본에 표가 <b>하나도 없다</b>(TODO 2) — 이 요소들은 OWPML 명세를 보고 세운 것이고
+        ///   우리 리더 왕복으로만 검증된다. 한글이 실제로 여는지는 그림이 든 hwpx 표본이 생겨야 잰다.
+        /// ★ 문단 id 는 <b>한 번 받아 세어 나간다</b>. 칸마다 NextParagraphIdDeep 을 다시 부르면 아직
+        ///   문서에 안 붙은 앞 칸의 문단을 못 봐서 같은 id 가 여럿 생긴다.
+        /// </summary>
+        private static XmlElement MakeTable(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP, EditOp pOp,
+                                            Dictionary<string, EditOp> pImages, SaveResult pResult)
+        {
+            List<CellModel> cells = pOp.Cells;
+            if (cells == null || cells.Count == 0) throw new InvalidOperationException("새 표에 칸이 하나도 없다");
+
+            int rows = Math.Max(1, pOp.Rows), cols = Math.Max(1, pOp.Cols);
+            XmlDocument xd = pP.OwnerDocument;
+            string px = pP.Prefix, ns = pP.NamespaceURI;
+
+            long wAll = 0, hAll = 0;
+            foreach (CellModel cm in cells)
+            {
+                if (cm.R == 0) wAll += cm.WHu;
+                if (cm.C == 0) hAll += cm.HHu;
+            }
+
+            XmlElement tbl = xd.CreateElement(px, "tbl", ns);
+            tbl.SetAttribute("id", NewObjectId(xd));
+            tbl.SetAttribute("zOrder", "0");
+            tbl.SetAttribute("numberingType", "TABLE");
+            tbl.SetAttribute("textWrap", "TOP_AND_BOTTOM");
+            tbl.SetAttribute("textFlow", "BOTH_SIDES");
+            tbl.SetAttribute("lock", "0");
+            tbl.SetAttribute("dropcapstyle", "None");
+            tbl.SetAttribute("pageBreak", "CELL");
+            tbl.SetAttribute("repeatHeader", "0");
+            tbl.SetAttribute("rowCnt", Str(rows));
+            tbl.SetAttribute("colCnt", Str(cols));
+            tbl.SetAttribute("cellSpacing", "0");
+            tbl.SetAttribute("borderFillIDRef", "1");
+            tbl.SetAttribute("noAdjust", "0");
+
+            XmlElement sz = El(xd, px, ns, "sz", "width", Str(wAll), "height", Str(hAll));
+            sz.SetAttribute("widthRelTo", "ABSOLUTE");
+            sz.SetAttribute("heightRelTo", "ABSOLUTE");
+            sz.SetAttribute("protect", "0");
+            tbl.AppendChild(sz);
+
+            XmlElement pos = xd.CreateElement(px, "pos", ns);
+            pos.SetAttribute("treatAsChar", "1");
+            pos.SetAttribute("affectLSpacing", "0");
+            pos.SetAttribute("flowWithText", "1");
+            pos.SetAttribute("allowOverlap", "0");
+            pos.SetAttribute("holdAnchorAndSO", "0");
+            pos.SetAttribute("vertRelTo", "PARA");
+            pos.SetAttribute("horzRelTo", "COLUMN");
+            pos.SetAttribute("vertAlign", "TOP");
+            pos.SetAttribute("horzAlign", "LEFT");
+            pos.SetAttribute("vertOffset", "0");
+            pos.SetAttribute("horzOffset", "0");
+            tbl.AppendChild(pos);
+
+            tbl.AppendChild(Margin(xd, px, ns, "outMargin", 0, 0, 0, 0));
+            tbl.AppendChild(Margin(xd, px, ns, "inMargin", 0, 0, 0, 0));
+
+            long nextId = NextParagraphIdDeep(xd);
+            for (int r = 0; r < rows; r++)
+            {
+                XmlElement tr = xd.CreateElement(px, "tr", ns);
+                foreach (CellModel cm in cells)
+                {
+                    if (cm.R != r) continue;
+                    tr.AppendChild(MakeCell(pDoc, pIndex, pP, cm, pImages, pResult, ref nextId));
+                }
+                tbl.AppendChild(tr);
+            }
+            return tbl;
+        }
+
+        private static XmlElement Margin(XmlDocument pXml, string pPrefix, string pNs, string pLocal,
+                                         long pL, long pR, long pT, long pB)
+        {
+            XmlElement e = El(pXml, pPrefix, pNs, pLocal, "left", Str(pL), "right", Str(pR), "top", Str(pT));
+            e.SetAttribute("bottom", Str(pB));
+            return e;
+        }
+
+        private static XmlElement MakeCell(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP, CellModel pModel,
+                                           Dictionary<string, EditOp> pImages, SaveResult pResult, ref long pNextId)
+        {
+            XmlDocument xd = pP.OwnerDocument;
+            string px = pP.Prefix, ns = pP.NamespaceURI;
+
+            XmlElement tc = xd.CreateElement(px, "tc", ns);
+            tc.SetAttribute("name", "");
+            tc.SetAttribute("header", "0");
+            tc.SetAttribute("hasMargin", "0");
+            tc.SetAttribute("protect", "0");
+            tc.SetAttribute("editable", "0");
+            tc.SetAttribute("dirty", "0");
+            tc.SetAttribute("borderFillIDRef", "1");
+
+            tc.AppendChild(El(xd, px, ns, "cellAddr", "colAddr", Str(pModel.C), "rowAddr", Str(pModel.R)));
+            tc.AppendChild(El(xd, px, ns, "cellSpan", "colSpan", Str(Math.Max(1, pModel.Cs)),
+                                                     "rowSpan", Str(Math.Max(1, pModel.Rs))));
+            tc.AppendChild(El(xd, px, ns, "cellSz", "width", Str(pModel.WHu), "height", Str(pModel.HHu)));
+            tc.AppendChild(Margin(xd, px, ns, "cellMargin", pModel.MlHu, pModel.MrHu, pModel.MtHu, pModel.MbHu));
+
+            XmlElement sub = xd.CreateElement(px, "subList", ns);
+            sub.SetAttribute("id", "");
+            sub.SetAttribute("textDirection", "HORIZONTAL");
+            sub.SetAttribute("lineWrap", "BREAK");
+            sub.SetAttribute("vertAlign", "TOP");
+            sub.SetAttribute("linkListIDRef", "0");
+            sub.SetAttribute("linkListNextIDRef", "0");
+            sub.SetAttribute("textWidth", "0");
+            sub.SetAttribute("textHeight", "0");
+            sub.SetAttribute("hasTextRef", "0");
+            sub.SetAttribute("hasNumRef", "0");
+            tc.AppendChild(sub);
+
+            long inner = Math.Max(200, pModel.WHu - pModel.MlHu - pModel.MrHu);
+            List<ParagraphModel> paras = pModel.Paras;
+            if (paras == null || paras.Count == 0) { paras = new List<ParagraphModel>(); paras.Add(new ParagraphModel()); }
+
+            foreach (ParagraphModel pm in paras)
+            {
+                // ★ 새로 만들지 않고 <b>바깥 문단을 복제</b>한다 — styleIDRef 같은 속성이 빠지면 그 칸만
+                //   다르게 보인다(ApplyInsertAfter 와 같은 이유). 구역·단 정의는 떼어 낸다.
+                XmlElement np = (XmlElement)pP.CloneNode(true);
+                StripCarried(np);
+                np.SetAttribute("id", Str(pNextId++));
+                sub.AppendChild(np);
+
+                EditOp one = new EditOp { Op = "replace", Id = np.GetAttribute("id"), Ps = pm.Ps, Runs = pm.Runs };
+                Rewrite(pDoc, pIndex, np, one, pImages, pResult);
+
+                // 줄 폭은 칸 안쪽 폭이다 — WriteLineSeg 의 기본값(쪽 폭)이 그대로 박히면 안 된다.
+                foreach (XmlElement arr in ChildElements(np, "linesegarray"))
+                    foreach (XmlElement seg in ChildElements(arr, "lineseg"))
+                        seg.SetAttribute("horzsize", Str(inner));
+            }
+            return tc;
+        }
+
         private static XmlElement MakePicture(cHwpxDocument pDoc, XmlElement pP, EditOp pImg)
         {
             byte[] data = File.ReadAllBytes(pImg.File);

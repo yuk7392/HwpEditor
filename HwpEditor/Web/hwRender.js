@@ -80,6 +80,10 @@ var hwRenderer = (function () {
     if (!at || !grid) return;
 
     var box = el('div', 'hw-table');
+    /* ★ 신원을 여기 붙인다 — 회색 자리 상자(stamp 가 일부러 안 붙인다)가 아니라 격자 상자다.
+       hwObj 가 <b>테두리 바깥 띠</b>를 눌렀을 때만 이걸 찾아 표를 고른다. 안쪽은 칸 편집이다. */
+    var host = hwModel.hostOf(obj);
+    if (host) { box.setAttribute('data-tpara', host.id); box.setAttribute('data-tpos', String(obj.pos)); }
     box.style.left = hwHu2Px(at.xHu) + 'px';
     box.style.top = hwHu2Px(at.yHu) + 'px';
     box.style.width = hwHu2Px(grid.wHu) + 'px';

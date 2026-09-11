@@ -67,6 +67,26 @@ namespace HwpEditor
             bad += One("table.hwp 모양 — 세로병합 칸 아래에 행 넣기", like, Op("addRow", 2, 0));
             bad += One("table.hwp 모양 — 가로병합 칸 오른쪽에 열 넣기", like, Op("addCol", 2, 0));
 
+            // ★ 합치기·나누기·크기 맞추기는 <b>바깥 크기가 안 변해야</b> 한다 — 셋 다 칸 경계만 옮기는 일이다.
+            //   격자 성립(덮임·시작)만 봐서는 옆 칸이 홀쭉해지는 사고가 그대로 통과한다.
+            bad += One("2x2 가로 두 칸 합치기", plain, Rect("mergeCells", 0, 0, 0, 1), true);
+            bad += One("2x2 세로 두 칸 합치기", plain, Rect("mergeCells", 0, 0, 1, 0), true);
+            bad += One("2x2 전부 합치기", plain, Rect("mergeCells", 0, 0, 1, 1), true);
+
+            cGridCell[] merged = { Cell(0, 0, 1, 2), Cell(1, 0, 1, 1), Cell(1, 1, 1, 1) };
+            bad += One("이미 병합된 칸까지 합치기", merged, Rect("mergeCells", 0, 0, 1, 1), true);
+            bad += One("가로병합 칸을 2열로 나누기 — span 을 나눈다", merged, Split(0, 0, 1, 2), true);
+
+            bad += One("단칸을 2열로 나누기 — 격자를 곱한다", plain, Split(0, 0, 1, 2), true);
+            bad += One("단칸을 2줄로 나누기", plain, Split(0, 0, 2, 1), true);
+            bad += One("단칸을 2줄 3칸으로 나누기", plain, Split(0, 0, 2, 3), true);
+
+            // 폭이 다른 표. 유령 열을 폭까지 빼면서 접으면 넓은 칸이 홀쭉해진다 — 여기서 걸린다.
+            cGridCell[] uneven = { Wide(0, 0, 300), Wide(0, 1, 700), Wide(1, 0, 300), Wide(1, 1, 700) };
+            bad += One("폭이 다른 표 — 넓은 칸을 2열로 나누기", uneven, Split(0, 1, 1, 2), true);
+            bad += One("폭이 다른 두 열 너비 같게", uneven, Same("sameWidth", 0, 1), true);
+            bad += One("두 줄 높이 같게", uneven, Same("sameHeight", 0, 1), true);
+
             Console.WriteLine();
             Console.WriteLine("GRIDTEST fail=" + bad);
             return bad == 0 ? 0 : 1;
@@ -77,13 +97,42 @@ namespace HwpEditor
             return new cGridCell { R = pR, C = pC, Rs = pRs, Cs = pCs, W = 1000 * pCs, H = 700 * pRs };
         }
 
+        /// <summary>줄마다 높이가 다른 표본. 크기 맞추기가 실제로 값을 옮기는지 보려면 처음부터 달라야 한다.</summary>
+        private static cGridCell Wide(int pR, int pC, long pW)
+        {
+            return new cGridCell { R = pR, C = pC, Rs = 1, Cs = 1, W = pW, H = 400 + 300 * pR };
+        }
+
         private static EditOp Op(string pOp, int pPos, int pFrom)
         {
             return new EditOp { Op = pOp, Pos = pPos, From = pFrom };
         }
 
+        private static EditOp Rect(string pOp, int pR0, int pC0, int pR1, int pC1)
+        {
+            return new EditOp { Op = pOp, R0 = pR0, C0 = pC0, R1 = pR1, C1 = pC1 };
+        }
+
+        private static EditOp Split(int pR, int pC, int pRows, int pCols)
+        {
+            return new EditOp { Op = "splitCell", R0 = pR, C0 = pC, Rows = pRows, Cols = pCols };
+        }
+
+        private static EditOp Same(string pOp, int pA0, int pA1)
+        {
+            return pOp == "sameWidth"
+                 ? new EditOp { Op = pOp, C0 = pA0, C1 = pA1 }
+                 : new EditOp { Op = pOp, R0 = pA0, R1 = pA1 };
+        }
+
         /// <summary>표 하나를 고쳐 보고 격자가 성립하는지 본다. 어긋나면 1.</summary>
         private static int One(string pName, cGridCell[] pCells, EditOp pOp)
+        {
+            return One(pName, pCells, pOp, false);
+        }
+
+        /// <summary><paramref name="pKeepSize"/> 면 표 바깥 크기가 op 전후로 같아야 한다.</summary>
+        private static int One(string pName, cGridCell[] pCells, EditOp pOp, bool pKeepSize)
         {
             List<cGridCell> cells = new List<cGridCell>();
             foreach (cGridCell c in pCells) cells.Add(Copy(c));
@@ -94,6 +143,7 @@ namespace HwpEditor
                 Console.WriteLine("SKIP " + pName + " — 원본부터 어긋남: " + before);
                 return 1;
             }
+            long w0 = cTableWriter.GridWidth(cells), h0 = cTableWriter.GridHeight(cells);
 
             long grow;
             if (!cTableWriter.EditGrid(cells, pOp, out grow))
@@ -103,6 +153,13 @@ namespace HwpEditor
             }
 
             string after = Bad(cells);
+            if (after == null && pKeepSize)
+            {
+                long w1 = cTableWriter.GridWidth(cells), h1 = cTableWriter.GridHeight(cells);
+                if (w1 != w0 || h1 != h0)
+                    after = "바깥 크기가 달라졌다 " + w0 + "x" + h0 + " → " + w1 + "x" + h1;
+            }
+
             Console.WriteLine((after == null ? "OK   " : "BAD  ") + pName
                 + "  " + Shape(cells) + (after == null ? "" : "  ← " + after));
             return after == null ? 0 : 1;
@@ -151,6 +208,29 @@ namespace HwpEditor
                 bool any = false;
                 foreach (cGridCell s in pCells) if (s.C == c) { any = true; break; }
                 if (!any) return "칸이 하나도 시작 안 하는 열 " + c;
+            }
+
+            // ★ 한 열에 걸치지 않은 칸(Cs==1)들은 폭이 같아야 한다 — 다르면 그 열에 세로선이 두 개 생긴다.
+            //   덮임·시작 검사로는 안 잡히는데, 크기를 다루는 op(나누기·합치기·크기 맞추기)는 전부 여기서 갈린다.
+            for (int c = 0; c < cols; c++)
+            {
+                long w = -1;
+                foreach (cGridCell s in pCells)
+                {
+                    if (s.C != c || s.Cs != 1) continue;
+                    if (w < 0) w = s.W;
+                    else if (s.W != w) return "열 " + c + " 의 칸 폭이 갈린다 " + w + " vs " + s.W;
+                }
+            }
+            for (int r = 0; r < rows; r++)
+            {
+                long h = -1;
+                foreach (cGridCell s in pCells)
+                {
+                    if (s.R != r || s.Rs != 1) continue;
+                    if (h < 0) h = s.H;
+                    else if (s.H != h) return "행 " + r + " 의 칸 높이가 갈린다 " + h + " vs " + s.H;
+                }
             }
             return null;
         }

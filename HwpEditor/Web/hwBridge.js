@@ -757,7 +757,16 @@ function hwUiTest() {
   /* ★ 그림은 늦게 온다 — 그린 직후에 재면 아직 안 받아 온 것까지 "실패" 로 찍힌다.
      다 붙거나 실패할 때까지 기다렸다가 판정한다. */
   var tail = s2 && s2.after ? s2.after()['catch'](function (e) { ok('S2 비동기 검사 중 예외', false, String(e)); }) : Promise.resolve();
-  tail.then(function () { return hwWaitImages(); }).then(function (r) {
+  tail.then(function () {
+    /* ★ S3 은 S2 의 비동기 검사(112 그림 붙여넣기)가 끝난 <b>뒤</b>다 — 그 사이에 문서를 고치면
+       기다리던 그림이 엉뚱한 문단에 붙는다. */
+    try {
+      hwUiTestS3({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+    } catch (eS3) {
+      ok('S3 세션 3 검사 중 예외', false, String(eS3 && eS3.stack ? eS3.stack : eS3).replace(/\s+/g, ' ').slice(0, 400));
+    }
+    return hwWaitImages();
+  }).then(function (r) {
     ok('20 그림이 실제로 그려짐', r.total === 0 || r.loaded === r.total, r.loaded + '/' + r.total + ' 장');
     /* ★ 여기서 다시 만든다 — 위에서 잡아 둔 ops 는 표 칸을 고치기 <b>전</b>의 것이라,
        그것을 내보내면 --apply 가 표 편집을 한 번도 안 태운다(실측으로 걸렸다). */
@@ -1664,6 +1673,327 @@ function hwWorstBox() {
     }
   }
   return worstOver > 1 ? (Math.round(worstOver) + 'px 넘침: ' + worst) : '없음';
+}
+
+/* 세션 3 — 표 편집.
+   ★ 문서에 표가 있든 없든 <b>스스로 표를 만들어</b> 그 위에서 본다. 표본마다 표 모양이 제각각이고
+     S1 의 90 이 첫 표를 지운 뒤라, 남아 있는 표를 기준으로 삼으면 문서마다 다른 것을 재게 된다.
+   ★ 끝에 표 하나를 글자째 남긴다 — 최종 저장 요청에 addTable 이 실려 --apply 가 그 길을 탄다. */
+function hwUiTestS3(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn, down = t.down, up = t.up;
+
+  function tables() {
+    var n = 0, all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) for (var j = 0; j < (all[i].objs || []).length; j++) if (all[i].objs[j].table) n++;
+    return n;
+  }
+  function rowsOf(tb) {
+    var n = 0;
+    for (var i = 0; i < tb.cells.length; i++) n = Math.max(n, tb.cells[i].r + (tb.cells[i].rs || 1));
+    return n;
+  }
+  function widthOf(tb) {
+    var w = 0;
+    for (var i = 0; i < tb.cells.length; i++) if (tb.cells[i].r === 0) w += tb.cells[i].wHu || 0;
+    return w;
+  }
+  function cellAt(tb, r, c) {
+    for (var i = 0; i < tb.cells.length; i++) if (tb.cells[i].r === r && tb.cells[i].c === c) return tb.cells[i];
+    return null;
+  }
+  function cellText(tb) {
+    var s = '';
+    for (var i = 0; i < tb.cells.length; i++)
+      for (var q = 0; q < tb.cells[i].paras.length; q++) s += hwModel.text(tb.cells[i].paras[q]);
+    return s;
+  }
+  function opsOf(name) {
+    var all = hwBuildOps(), n = 0;
+    for (var i = 0; i < all.length; i++) if (all[i].op === name) n++;
+    return n;
+  }
+  /* 새 표가 저장 요청에 싣는 꾸러미. 구조를 바꿔도 <b>구조 요청이 아니라 이것</b>이 달라져야 한다. */
+  function payload(obj) {
+    var all = hwBuildOps();
+    for (var i = 0; i < all.length; i++) if (all[i].op === 'addTable' && all[i].tmpId === obj.tmpId) return all[i];
+    return null;
+  }
+  function spanOf(pl, r, c) {
+    for (var i = 0; pl && i < pl.cells.length; i++)
+      if (pl.cells[i].r === r && pl.cells[i].c === c) return pl.cells[i];
+    return null;
+  }
+  function rowOf(m, label) {
+    var rs = m ? m.querySelectorAll('.hw-ctx-item') : [];
+    for (var i = 0; i < rs.length; i++) if (rs[i].firstChild.textContent === label) return rs[i];
+    return null;
+  }
+  function click(el) { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); return !!el; }
+
+  /* 대화상자 경로. 값을 직접 넣지 않고 이벤트로 넣는다 — "바뀐 칸만 적용" 이 그 이벤트로 가려진다. */
+  function dlgNum(k, v) {
+    var d = hwDialog.current(), e = d ? d.field(k) : null;
+    if (!e) return false;
+    e.value = String(v);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+  function dlgRadio(k, v) {
+    var d = hwDialog.current(), e = d ? d.field(k) : null;
+    var b = e ? e.querySelector('.hw-dlg-rad[data-v="' + v + '"]') : null;
+    return click(b);
+  }
+  function dlgPress(label) {
+    var d = hwDialog.current(), b = d ? d.button(label) : null;
+    return click(b);
+  }
+
+  /* 그 칸의 캐럿 자리에서 진짜 contextmenu 이벤트를 쏜다 — showMenu 를 직접 부르면 캐럿·블록을
+     다루는 hwInput.onContextMenu 를 통째로 건너뛴다(S2 의 menuAt 과 같은 이유). */
+  function menuAtPara(p, pos) {
+    hwCaret.scrollIntoView();
+    hwRenderRefresh();
+    var c = hwCaret.coord(p.id, pos), b = c ? hwRenderer.bodyOf(c.pageIdx) : null;
+    if (!b) return false;
+    var r = b.getBoundingClientRect();
+    var x = r.left + hwHu2Px(c.xHu) + 2, y = r.top + hwHu2Px(c.yHu + c.hHu / 2);
+    var efp = document.elementFromPoint(x, y);
+    (efp || b).dispatchEvent(new MouseEvent('contextmenu',
+      { bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y }));
+    return true;
+  }
+
+  /* 본문 마지막 문단(검사가 만든 n… 문단이 아닌 것)으로 캐럿을 옮긴다 — 표는 그 다음에 붙는다. */
+  function toBody() {
+    var S = hwDoc.sections[0].paras, p = S[S.length - 1];
+    for (var i = S.length - 1; i >= 0; i--) if (S[i].id.charAt(0) !== 'n') { p = S[i]; break; }
+    hwCaret.set(p.id, p.len, false);
+    return p;
+  }
+
+  /* 새 표 하나를 만들고 그 표 객체를 준다. 이어지는 단계가 전부 이걸로 돈다. */
+  function make(r, c) {
+    hwTable.clearBlock();
+    if (window.hwObj) hwObj.clear();
+    toBody();
+    hwTable.insertTable(r, c);
+    var at = hwTable.here();
+    return at ? at.obj : null;
+  }
+
+  var n91 = tables();
+  var o91 = make(2, 3);
+  var t91 = o91 ? o91.table : null;
+  /* ★ 마지막 칸 뒤에는 Tab 을 안 친다 — 그것이 줄을 하나 더하는 동작이다(97-2). */
+  if (t91) for (var i91 = 0; i91 < 6; i91++) { typeIn('칸' + i91); if (i91 < 5) key('Tab'); }
+  var add91 = null, ops91 = hwBuildOps();
+  for (var k91 = 0; k91 < ops91.length; k91++) if (ops91[k91].op === 'addTable') add91 = ops91[k91];
+  var txt91 = '';
+  for (var c91 = 0; add91 && c91 < add91.cells.length; c91++)
+    for (var q91 = 0; q91 < add91.cells[c91].paras.length; q91++)
+      for (var r91 = 0; r91 < (add91.cells[c91].paras[q91].runs || []).length; r91++)
+        txt91 += add91.cells[c91].paras[q91].runs[r91].text;
+  ok('91 표 넣기 — 2줄 3칸, 칸 여섯에 친 글자가 addTable 요청에 실린다',
+     !!t91 && tables() === n91 + 1 && !!add91 && add91.rows === 2 && add91.cols === 3
+       && add91.cells.length === 6 && txt91.indexOf('칸0') >= 0 && txt91.indexOf('칸5') >= 0,
+     '표 ' + n91 + '→' + tables() + ', addTable ' + (add91 ? add91.rows + 'x' + add91.cols + ' 칸' + add91.cells.length : '없음')
+       + ', 실린 글 "' + txt91 + '"');
+
+  /* ★ 되돌리기는 <b>갓 넣은</b> 표로 본다 — 위에서 칸에 글을 쳤으므로 Ctrl+Z 한 번은 그 글자의 것이다. */
+  var n91b = tables();
+  var o91b = make(2, 2);
+  var made91 = tables();
+  key('z', { ctrl: true });
+  var undone91 = tables(), off91 = o91b ? payload(o91b) : null;
+  key('z', { ctrl: true, shift: true });
+  ok('91-1 되돌리기로 새 표가 빠지고(저장 요청에서도) 다시 하기로 돌아온다',
+     made91 === n91b + 1 && undone91 === n91b && !off91 && tables() === made91 && !!(o91b && payload(o91b)),
+     '표 ' + n91b + '→' + made91 + '→' + undone91 + '→' + tables()
+       + ', 되돌린 뒤 꾸러미 ' + (off91 ? '남음' : '없음'));
+
+  var o92 = make(2, 3), t92 = o92 ? o92.table : null;
+  var base92 = t92 ? rowsOf(t92) : 0, w92 = t92 ? widthOf(t92) : 0;
+  /* ★ Alt+Insert 대화상자 경로로 태운다 — addRow 를 직접 부르면 방향 라디오·개수 칸을 한 번도 안 지난다. */
+  var dlg92 = false;
+  if (t92) {
+    hwCaret.set(cellAt(t92, 1, 0).paras[0].id, 0, false);
+    key('Insert', { alt: true });
+    dlg92 = hwDialog.isOpen() && dlgRadio('where', 'up') && dlgNum('count', 2) && dlgPress('넣기');
+  }
+  var pl92 = o92 ? payload(o92) : null;
+  ok('92 Alt+Insert 로 위에 2줄 추가 — 줄 +2, 표 폭 그대로, 저장 꾸러미도 4줄 12칸',
+     dlg92 && !hwDialog.isOpen() && !!t92 && rowsOf(t92) === base92 + 2 && widthOf(t92) === w92
+       && !!pl92 && pl92.rows === base92 + 2 && pl92.cells.length === 12,
+     (dlg92 ? '대화상자 통과' : '대화상자 실패') + ', 줄 ' + base92 + '→' + (t92 ? rowsOf(t92) : 0)
+       + ', 폭 ' + w92 + '→' + (t92 ? widthOf(t92) : 0)
+       + ', 꾸러미 ' + (pl92 ? pl92.rows + 'x' + pl92.cols + ' 칸' + pl92.cells.length : '없음'));
+
+  var o93 = make(2, 3), t93 = o93 ? o93.table : null;
+  key('F5'); key('F5'); key('F5');
+  var b93 = hwTable.blockCells();
+  ok('93 F5 세 번이면 블록이 표의 모든 칸', !!b93 && !!t93 && b93.cells.length === t93.cells.length,
+     b93 ? b93.cells.length + '/' + t93.cells.length + ' 칸' : '블록 없음');
+
+  if (t93) for (var z93 = 0; z93 < t93.cells.length; z93++) {
+    hwCaret.set(t93.cells[z93].paras[0].id, 0, false);
+    typeIn('글' + z93);
+  }
+  var had93 = t93 ? cellText(t93).length : 0, n93 = tables();
+  hwCaret.set(t93 ? t93.cells[0].paras[0].id : hwCaret.at().id, 0, false);
+  key('F5'); key('F5'); key('F5');
+  key('Delete');
+  ok('93-1 블록 Delete 는 칸 글자만 지운다(표는 남는다)',
+     !!t93 && tables() === n93 && had93 > 0 && cellText(t93) === '',
+     '표 ' + n93 + '→' + tables() + ', 칸 글 ' + had93 + '자 → "' + (t93 ? cellText(t93) : '?') + '"');
+
+  hwTable.clearBlock();
+  hwCaret.set(t93 ? t93.cells[0].paras[0].id : hwCaret.at().id, 0, false);
+  key('F5');
+  var on93 = !!hwTable.block();
+  key('Escape');
+  ok('93-2 Esc 로 블록이 풀린다', on93 && !hwTable.block(), (on93 ? '잡힘' : '안 잡힘') + ' → ' + (hwTable.block() ? '남음' : '풀림'));
+
+  var o94 = make(2, 3), t94 = o94 ? o94.table : null;
+  if (t94) {
+    hwCaret.set(cellAt(t94, 0, 0).paras[0].id, 0, false); typeIn('앞칸');
+    hwCaret.set(cellAt(t94, 0, 1).paras[0].id, 0, false); typeIn('뒷칸');
+  }
+  var n94 = t94 ? t94.cells.length : 0, w94 = t94 ? widthOf(t94) : 0;
+  /* ★ 합치기 키는 <b>한글 모드</b>로 태운다 — 그때 e.key 는 'Process' 이고 code 로만 M 을 알 수 있다. */
+  if (t94) { hwCaret.set(cellAt(t94, 0, 0).paras[0].id, 0, false); key('F5'); key('F5'); key('ArrowRight'); key('Process', { code: 'KeyM' }); }
+  var keep94 = t94 ? cellAt(t94, 0, 0) : null, txt94 = '';
+  for (var y94 = 0; keep94 && y94 < keep94.paras.length; y94++) txt94 += hwModel.text(keep94.paras[y94]);
+  var s94 = o94 ? spanOf(payload(o94), 0, 0) : null;
+  ok('94 블록 M 으로 두 칸이 합쳐진다 — 칸 −1, 표 폭 그대로, 두 칸 글이 차례대로 이어 붙고 꾸러미에도 실린다',
+     !!t94 && t94.cells.length === n94 - 1 && widthOf(t94) === w94 && txt94 === '앞칸뒷칸'
+       && !!s94 && s94.cs === 2 && s94.paras.length === 2,
+     '칸 ' + n94 + '→' + (t94 ? t94.cells.length : 0) + ', 폭 ' + w94 + '→' + (t94 ? widthOf(t94) : 0)
+       + ', 남은 칸 글 "' + txt94 + '", 꾸러미 첫 칸 cs=' + (s94 ? s94.cs : '?') + ' 문단 ' + (s94 ? s94.paras.length : '?') + '개');
+
+  var o94b = make(1, 2), t94b = o94b ? o94b.table : null;
+  var n94b = t94b ? t94b.cells.length : 0, w94b = t94b ? widthOf(t94b) : 0;
+  if (t94b) { hwCaret.set(cellAt(t94b, 0, 0).paras[0].id, 0, false); hwTable.splitCell(2, 2); }
+  var pl94b = o94b ? payload(o94b) : null;
+  ok('94-1 셀 나누기(2줄 2칸) — 칸 +3, 표 폭 그대로, 꾸러미도 그 칸 수',
+     !!t94b && t94b.cells.length === n94b + 3 && widthOf(t94b) === w94b
+       && !!pl94b && pl94b.cells.length === n94b + 3,
+     '칸 ' + n94b + '→' + (t94b ? t94b.cells.length : 0) + ', 폭 ' + w94b + '→' + (t94b ? widthOf(t94b) : 0)
+       + ', 꾸러미 칸 ' + (pl94b ? pl94b.cells.length : '없음'));
+
+  /* ★ 원본 표에서도 한 번 태운다 — 새 표의 합치기·나누기는 <b>addTable 이 이미 고쳐진 격자</b>를 쓰므로
+     C# 의 Merge·Split 을 한 번도 안 지난다. 요청에 진짜 oid 가 실리는지까지 본다. */
+  var cp94c = firstCellPara();
+  var ob94c = cp94c ? cp94c._cell._obj : null;
+  if (!ob94c || !ob94c.oid) {
+    ok('94-2 원본 표에서 합치기·나누기', true, '남은 원본 표 없음 — 건너뜀');
+  } else {
+    var tc = ob94c.table, nc = tc.cells.length, wc = widthOf(tc);
+    var a94 = null, b94 = null;
+    for (var i94 = 0; i94 < tc.cells.length && !a94; i94++)
+      for (var j94 = 0; j94 < tc.cells.length; j94++) {
+        var A = tc.cells[i94], B = tc.cells[j94];
+        if (A === B || A.r !== B.r || A.rs !== B.rs || B.c !== A.c + A.cs) continue;
+        a94 = A; b94 = B; break;
+      }
+    if (!a94) {
+      ok('94-2 원본 표에서 합치기·나누기', true, '나란한 두 칸이 없다 — 건너뜀');
+    } else {
+      hwTable.dragBlock(a94, b94);
+      hwTable.mergeBlock();
+      var mops = hwBuildOps(), mg = null, sp94 = null;
+      for (var m94 = 0; m94 < mops.length; m94++) if (mops[m94].op === 'mergeCells' && mops[m94].oid === ob94c.oid) mg = mops[m94];
+
+      var one94 = null;
+      for (var k94 = 0; k94 < tc.cells.length; k94++)
+        if (tc.cells[k94].cs === 1 && tc.cells[k94].rs === 1) { one94 = tc.cells[k94]; break; }
+      if (one94) {
+        hwCaret.set(one94.paras[0].id, 0, false);
+        hwTable.splitCell(1, 2);
+        var sops = hwBuildOps();
+        for (var s94 = 0; s94 < sops.length; s94++) if (sops[s94].op === 'splitCell' && sops[s94].oid === ob94c.oid) sp94 = sops[s94];
+      }
+      ok('94-2 원본 표에서 합치기·나누기 — 칸 수가 맞고 요청이 그 표의 oid 를 가리킨다',
+         !!mg && (!one94 || !!sp94) && tc.cells.length === nc - 1 + (one94 ? 1 : 0) && widthOf(tc) === wc,
+         '칸 ' + nc + '→' + tc.cells.length + ', 폭 ' + wc + '→' + widthOf(tc)
+           + ', mergeCells ' + (mg ? 'oid 실림' : '없음') + ', splitCell ' + (one94 ? (sp94 ? 'oid 실림' : '없음') : '건너뜀'));
+    }
+  }
+
+  var o95 = make(1, 3), t95 = o95 ? o95.table : null;
+  if (t95) { cellAt(t95, 0, 0).wHu = 6000; cellAt(t95, 0, 1).wHu = 12000; cellAt(t95, 0, 2).wHu = 3000; }
+  var w95 = t95 ? widthOf(t95) : 0;
+  if (t95) { hwCaret.set(cellAt(t95, 0, 0).paras[0].id, 0, false); key('F5'); key('F5'); key('ArrowRight'); key('ArrowRight'); key('w'); }
+  var ws95 = t95 ? [cellAt(t95, 0, 0).wHu, cellAt(t95, 0, 1).wHu, cellAt(t95, 0, 2).wHu] : [];
+  var p95 = o95 ? spanOf(payload(o95), 0, 1) : null;
+  ok('95 블록 W 로 세 칸 폭이 같아진다 — 표 전체 폭은 그대로',
+     !!t95 && ws95.length === 3 && Math.abs(ws95[0] - ws95[1]) <= 1 && Math.abs(ws95[1] - ws95[2]) <= 1
+       && widthOf(t95) === w95 && !!p95 && p95.wHu === ws95[1],
+     '폭 ' + ws95.join('/') + ', 합 ' + w95 + '→' + (t95 ? widthOf(t95) : 0)
+       + ', 꾸러미 가운데 칸 ' + (p95 ? p95.wHu : '없음'));
+
+  var o97 = make(2, 3), t97 = o97 ? o97.table : null;
+  hwTable.selectRange('table');
+  var b97 = hwTable.blockCells();
+  ok('97 "선택 ▸ 표" 면 블록이 모든 칸', !!b97 && !!t97 && b97.cells.length === t97.cells.length,
+     b97 ? b97.cells.length + '/' + t97.cells.length + ' 칸' : '블록 없음');
+
+  /* ★ 진짜 우클릭으로 태운다 — 블록 칸을 누른 우클릭이 캐럿을 옮겨 블록을 풀어 버리면
+     "셀 합치기" 는 <b>늘 흐림</b>이 된다(showMenu 를 직접 부르면 그 길을 안 지난다). */
+  hwTable.clearBlock();
+  if (t97) { hwCaret.set(cellAt(t97, 0, 0).paras[0].id, 0, false); key('F5'); key('F5'); key('ArrowRight'); }
+  var n97 = t97 ? t97.cells.length : 0;
+  var shown97 = t97 ? menuAtPara(cellAt(t97, 0, 1).paras[0], 0) : false;
+  var blk97 = !!hwTable.block();
+  var mg97 = rowOf(hwUi.menuEl(), '셀 합치기');
+  var live97 = !!mg97 && !mg97.classList.contains('dis');
+  click(mg97);
+  hwUi.closeMenu();
+  ok('97-1 블록 칸에서 우클릭하면 블록이 살아 있고 "셀 합치기" 로 칸이 하나 준다',
+     shown97 && blk97 && live97 && !!t97 && t97.cells.length === n97 - 1,
+     (shown97 ? '메뉴 뜸' : '메뉴 못 띄움') + ', 블록 ' + (blk97 ? '살아 있음' : '풀림')
+       + ', 항목 ' + (mg97 ? (live97 ? '살아 있음' : '흐림') : '없음')
+       + ', 칸 ' + n97 + '→' + (t97 ? t97.cells.length : 0));
+
+  var o97b = make(2, 3), t97b = o97b ? o97b.table : null;
+  var r97 = t97b ? rowsOf(t97b) : 0;
+  if (t97b) {
+    var last97 = null;
+    for (var y97 = 0; y97 < t97b.cells.length; y97++) {
+      var cc97 = t97b.cells[y97];
+      if (!last97 || cc97.r > last97.r || (cc97.r === last97.r && cc97.c > last97.c)) last97 = cc97;
+    }
+    hwCaret.set(last97.paras[0].id, 0, false);
+    key('Tab');
+  }
+  var at97 = hwTable.here();
+  ok('97-2 마지막 칸에서 Tab 은 줄을 더하고 캐럿을 새 줄 첫 칸에 둔다',
+     !!t97b && rowsOf(t97b) === r97 + 1 && !!at97 && at97.cell.r === r97 && at97.cell.c === 0,
+     '줄 ' + r97 + '→' + (t97b ? rowsOf(t97b) : 0) + ', 캐럿 ' + (at97 ? 'r' + at97.cell.r + ' c' + at97.cell.c : '표 밖'));
+
+  /* ★ 96 을 맨 끝에 둔다 — 표를 지우는 단계라 앞에 두면 뒤 단계가 쓸 표가 없다. */
+  var o96 = make(1, 2);
+  hwTable.clearBlock();
+  hwCaret.paint();
+  hwRenderRefresh();
+  var box96 = o96 ? document.querySelector('.hw-table[data-tpara="' + hwModel.hostOf(o96).id + '"]') : null;
+  var n96 = tables(), sel96 = null;
+  if (box96) {
+    var r96 = box96.getBoundingClientRect();
+    down(box96, r96.left - 2, r96.top + r96.height / 2);
+    up();
+    sel96 = hwObj.current();
+    key('Delete');
+  }
+  ok('96 테두리 바깥 띠를 누르면 표가 개체로 골라지고 Delete 로 지워진다',
+     !!box96 && !!sel96 && !!sel96.obj.table && tables() === n96 - 1,
+     (box96 ? '격자 있음' : '격자 없음') + ', 고름 ' + (sel96 ? (sel96.obj.table ? '표' : sel96.obj.kind) : '없음')
+       + ', 표 ' + n96 + '→' + tables());
+
+  /* 마지막으로 저장 요청에 실을 표 하나 — --apply 가 addTable 을 타게 한다. */
+  var last = make(2, 2);
+  if (last) { typeIn('왕복'); key('Tab'); typeIn('검사'); }
+  hwTable.clearBlock();
+  if (window.hwObj) hwObj.clear();
 }
 
 function firstCellPara() {

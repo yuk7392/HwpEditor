@@ -39,6 +39,7 @@ var hwCaret = (function () {
     if (!p) return;
     /* 캐럿이 움직이면 대기 중인 서식은 버린다 — 다른 자리에 걸리면 뜻이 없다. */
     if (window.hwFormat && (id !== cId || pos !== cPos)) hwFormat.clearPending();
+    dropBlock();
     cId = id;
     cPos = Math.max(0, Math.min(pos, p.len));
     if (!extend) { cAnchorId = cId; cAnchorPos = cPos; }
@@ -110,6 +111,11 @@ var hwCaret = (function () {
     if (window.hwObj) hwObj.paint();
     if (objSel) return;
 
+    /* 셀 블록도 같은 이유로 여기서 다시 그린다. 블록을 잡은 동안에는 캐럿을 안 그린다 —
+       칸 바탕이 파란데 막대까지 깜빡이면 지우기가 무엇에 걸리는지 알 수 없다. */
+    if (window.hwTable) hwTable.paintBlock();
+    if (window.hwTable && hwTable.block()) return;
+
     if (cId === null) return;
 
     var c = coord(cId, cPos);
@@ -124,6 +130,11 @@ var hwCaret = (function () {
     cEl.style.height = hwHu2Px(c.hHu) + 'px';
     body.appendChild(cEl);
   }
+
+  /* ★ 캐럿을 옮기면 셀 블록은 풀린다. 여기 한 자리에서 푸는 이유는, 블록을 안 푸는 편집 경로
+     (IME 입력·붙여넣기)가 따로 있어서 키에만 걸면 블록이 남은 채 글자가 들어가기 때문이다.
+     블록을 세우는 쪽(cycleBlock·selectRange·dragBlock)은 set 을 안 지나간다. */
+  function dropBlock() { if (window.hwTable) hwTable.blockOff(); }
 
   function paintSelection() {
     var olds = document.querySelectorAll('.hw-sel');

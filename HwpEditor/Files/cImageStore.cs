@@ -14,10 +14,8 @@ using HwpLib.Object.DocInfo.BinData;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 문서 안의 그림을 화면이 실제로 볼 수 있는 파일로 꺼내 놓고(3단계 ①), 새 그림을 문서에 등록한다(②).
-    ///
     /// ★ 화면은 <c>https://hwpeditor.local/</c> 에 매핑된 <see cref="cWebHost.WebDir"/> 아래만 읽을 수 있다.
-    ///   그래서 그 밑 <c>bin\{문서키}\</c> 에 풀고 상대 경로를 <c>src</c> 로 준다(계획 B-6).
+    ///   그래서 그 밑 <c>bin\{문서키}\</c> 에 풀고 상대 경로를 <c>src</c> 로 준다.
     /// ★ 문서키는 경로 해시다 — 같은 문서를 다시 열면 같은 폴더를 다시 쓰고, 다른 문서끼리는 안 섞인다.
     /// </summary>
     public static class cImageStore
@@ -40,8 +38,6 @@ namespace HwpEditor.Files
         #region 읽기 — BinData → 파일 → src
 
         /// <summary>
-        /// 모델의 그림 개체마다 원본 BinData 를 풀어 <see cref="InlineObjModel.Src"/> 를 채운다.
-        ///
         /// ★ 개체에서 BinData 로 가는 길은 두 단계다:
         ///   <c>ControlPicture.ShapeComponentPicture.PictureInfo.BinItemID</c>(1부터)
         ///   → <c>DocInfo.BinDataList[BinItemID-1].BinDataId</c>
@@ -89,7 +85,7 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>BinItemID 하나를 파일로 푼다. 못 풀면 null(화면은 회색 상자로 남는다).</summary>
+        /// <summary>못 풀면 null(화면은 회색 상자로 남는다).</summary>
         private static string Dump(HWPFile pFile, int pBinItemId, string pDir, string pDocKey)
         {
             try
@@ -125,7 +121,6 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>hwpx 는 zip 안의 바이트를 그대로 받아 같은 폴더 규칙으로 푼다.</summary>
         public static string DumpBytes(byte[] pData, string pExtension, string pName, string pDocKey)
         {
             try
@@ -152,8 +147,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 넣으려는 그림을 화면이 <b>저장 전에도</b> 볼 수 있게 웹 폴더로 복사하고, 넣을 크기를 정한다.
-        ///
         /// ★ 저장할 때까지 안 보여 주면 사용자는 자기가 어디에 무엇을 넣었는지 모른 채 계속 편집한다.
         /// ★ 크기는 원본 픽셀을 HWPUNIT 으로 옮긴 값이되 본문 폭을 넘지 않게 줄인다 —
         ///   요즘 사진은 3000픽셀이 예사라 그대로 넣으면 한 장이 열 쪽을 차지한다.
@@ -166,7 +159,7 @@ namespace HwpEditor.Files
             int pw, ph;
             PixelSize(data, out pw, out ph);
 
-            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다(계획 5절 단위).
+            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다.
             pWidthHu = pw > 0 ? pw * 75L : 20000;
             pHeightHu = ph > 0 ? ph * 75L : 15000;
 

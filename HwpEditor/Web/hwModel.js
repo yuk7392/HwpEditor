@@ -1,25 +1,18 @@
-﻿/* 문서 모델. C# 이 보낸 JSON 을 그대로 들고 있으면서, 화면이 자주 묻는 것만 색인해 둔다.
-   ★ 모델을 두 벌로 만들지 않는다 — 편집도 이 객체를 고치고, 저장할 때 dirty 문단만 ops 로 뽑는다
-     (계획 6절). */
+﻿/* ★ 모델을 두 벌로 만들지 않는다 — 편집도 이 객체를 고치고, 저장할 때 dirty 문단만 ops 로 뽑는다. */
 
 var hwDoc = null;
 
 var hwModel = (function () {
   'use strict';
 
-  /* 문단 id → 문단. 삽입·삭제로 인덱스가 밀려도 안 깨지도록 id 로 잡는다(계획 B-1). */
   var cById = {};
-
-  /* 문단 id → 문서 전체에서 몇 번째인가. 선택 범위의 앞뒤를 가릴 때 쓴다. */
   var cOrder = {};
-
-  /* 편집이 일어난 문단 id 집합. 여기 든 문단은 seg(오라클)를 더 이상 믿지 않는다(계획 B-5). */
   var cDirty = {};
 
   /* 지운 <b>원본</b> 문단 id. 새로 만들었다가 지운 것은 저장할 때 보낼 것이 없으므로 안 담는다. */
   var cDeleted = [];
 
-  /* 표 구조를 바꾼 요청(행·열 넣기·빼기). 저장할 때 맨 뒤에 붙여 보낸다(5단계). */
+  /* 표 구조를 바꾼 요청. 저장할 때 맨 뒤에 붙여 보낸다. */
   var cTableOps = [];
 
   /* 새 문단·새 개체에 붙일 일련번호. id 는 n1, n2 … 이고 C# 이 그 이름 그대로 표에 등록한다. */
@@ -27,7 +20,7 @@ var hwModel = (function () {
 
   /* 아직 <b>문서에 안 들어간</b> 새 문단 id.
      ★ id 앞글자만 보고 "새 문단" 이라 판정하면 안 된다 — 한 번 저장한 뒤에도 id 는 n1 그대로라
-       두 번째 저장에서 같은 문단을 또 넣게 된다(저장할 때마다 문단이 하나씩 늘어난다). */
+       두 번째 저장에서 같은 문단을 또 넣게 된다. */
   var cFresh = {};
 
   function index(doc) {
@@ -49,8 +42,7 @@ var hwModel = (function () {
     }
   }
 
-  /* 표 안의 문단도 같은 색인에 넣는다 — id 규칙이 이미 유일하다.
-     ★ 순서(cOrder)에도 넣는다(5단계). 안 넣으면 셀을 지나는 선택 범위의 앞뒤를 못 가린다.
+  /* ★ 순서(cOrder)에도 넣는다. 안 넣으면 셀을 지나는 선택 범위의 앞뒤를 못 가린다.
      ★ <c>_cell</c> 을 달아 둔다 — 넣기·지우기가 구역이 아니라 그 칸의 문단 목록을 봐야 한다. */
   function indexCells(para, si, at) {
     if (!para.objs) return;
@@ -72,14 +64,12 @@ var hwModel = (function () {
     }
   }
 
-  /* 이 문단이 든 목록. 본문이면 구역의 문단들, 표 셀 안이면 그 칸의 문단들이다. */
   function listOf(para) {
     return para._cell ? para._cell.paras : hwDoc.sections[para._sec].paras;
   }
 
-  /* 문서 순서로 늘어놓은 <b>모든</b> 문단 — 표 칸 안의 것까지.
-     ★ 구역의 paras 만 도는 코드를 쓰면 안 된다. 서식·복사·선택 칠하기·지우기가 전부 그 형태였고,
-       그래서 표 칸 안에서는 굵게도 복사도 선택 강조도 <b>아무 일이 안 일어났다</b>(예외도 안 났다).
+  /* ★ 구역의 paras 만 도는 코드를 쓰면 안 된다. 서식·복사·선택 칠하기·지우기가 전부 그 형태였고,
+       그래서 표 칸 안에서는 굵게도 복사도 선택 강조도 <b>아무 일이 안 일어났다</b>.
      ★ 차례는 cOrder 와 같아야 한다 — 여기 순서와 색인 순서가 갈리면 선택 범위의 앞뒤가 뒤집힌다. */
   function allParas() {
     var out = [];
@@ -99,20 +89,18 @@ var hwModel = (function () {
     });
   }
 
-  /* 문단이 달고 있는 표들. 표를 찾는 자리가 여럿이라 한 군데로 모은다. */
   function eachTableOf(p, fn) {
     var objs = p.objs || [];
     for (var i = 0; i < objs.length; i++) if (objs[i].table) fn(objs[i].table, objs[i]);
   }
 
-  /* 개체(표)를 달고 있는 문단. 칸 안에서 표 바깥으로 거슬러 올라갈 때 쓴다. 못 찾으면 null. */
+  /* 개체(표)를 달고 있는 문단. 칸 안에서 표 바깥으로 거슬러 올라갈 때 쓴다. */
   function hostOf(obj) {
     var all = allParas();
     for (var i = 0; i < all.length; i++) if ((all[i].objs || []).indexOf(obj) >= 0) return all[i];
     return null;
   }
 
-  /* 문서 안의 모든 표 칸. 되돌리기가 칸의 문단 목록을 통째로 담을 때 쓴다. */
   function allCells() {
     var out = [];
     var ps = allParas();
@@ -133,10 +121,9 @@ var hwModel = (function () {
     var s = parts.join('');
 
     if (para.objs && para.objs.length) {
-      /* 개체는 pos(편집 인덱스)에 끼워 넣는다.
-         ★ pos 는 <b>개체까지 센 최종 좌표</b>다 — 그래서 <b>앞에서부터</b> 넣어야 한다.
+      /* ★ pos 는 <b>개체까지 센 최종 좌표</b>다 — 그래서 <b>앞에서부터</b> 넣어야 한다.
            뒤에서부터 넣으면 앞 개체가 아직 안 들어간 상태의 좌표에 끼워져 개체가 글자 사이사이로
-           흩어진다(실측 — 개체 두 개로 시작하는 문단이 "￼리￼포트" 가 됐고, 캐럿이 글자 앞에 섰다). */
+           흩어진다. */
       var objs = para.objs.slice().sort(function (a, b) { return a.pos - b.pos; });
       for (var k = 0; k < objs.length; k++) {
         var at = Math.min(objs[k].pos, s.length);
@@ -147,7 +134,6 @@ var hwModel = (function () {
     return s;
   }
 
-  /* 편집 인덱스 위치의 글자모양 id. run 경계를 훑어 찾는다. */
   function shapeAt(para, pos) {
     var objs = para.objs || [];
     var before = 0;
@@ -168,8 +154,7 @@ var hwModel = (function () {
     if (p) { p.seg = null; p._text = undefined; p._lines = null; }
   }
 
-  /* ── 편집 원시 연산 ───────────────────────────────────────
-     ★ 문단 내용을 <b>항목 배열</b>로 펼쳤다가 되담는다. runs·objs 를 직접 자르면 개체 위치와
+  /* ★ 문단 내용을 <b>항목 배열</b>로 펼쳤다가 되담는다. runs·objs 를 직접 자르면 개체 위치와
        글자모양 경계를 동시에 맞춰야 해서, 어느 한쪽이 어긋난 것을 눈으로는 못 잡는다.
        문단 하나는 길어야 수천 글자라 매번 펼쳐도 값이 싸다. */
 
@@ -222,11 +207,10 @@ var hwModel = (function () {
     setItems(para, a);
   }
 
-  /* 글자 지우기로는 안 지워지는 개체인가.
-     ★ 화면에 안 보이는 컨트롤(용지·단 정의) — 지우면 저장할 때 그 구역의 용지 정의가 통째로 사라진다.
+  /* ★ 화면에 안 보이는 컨트롤(용지·단 정의) — 지우면 저장할 때 그 구역의 용지 정의가 통째로 사라진다.
      ★ 표 — 표는 한 글자 자리를 차지해서, 이걸 안 막으면 표 옆에서 Backspace/Delete 한 번이나 표를
-       가로지른 선택 지우기에 칸 내용까지 통째로 날아간다(고른 적도 없는데). 한글도 그 자리에서는
-       표를 안 지우고 칸으로 들어간다(hwInput 의 backspace/del). */
+       가로지른 선택 지우기에 칸 내용까지 통째로 날아간다. 한글도 그 자리에서는
+       표를 안 지우고 칸으로 들어간다. */
   function keeps(o) { return !!(o && (o.hidden || o.table)); }
 
   /* 범위를 지운다. 안 지워지는 개체(keeps)는 지운 자리 앞으로 모아 둔다. */
@@ -249,7 +233,6 @@ var hwModel = (function () {
     return (to - from) - keep.length;
   }
 
-  /* pos 에서 문단을 자르고 <b>뒤쪽을 담은 새 문단</b>을 만들어 바로 뒤에 넣는다. */
   function splitPara(para, pos) {
     var a = items(para);
     var tail = a.splice(Math.max(0, Math.min(pos, a.length)));
@@ -267,7 +250,6 @@ var hwModel = (function () {
     return np;
   }
 
-  /* 다음 문단을 이 문단 끝에 붙이고 지운다. 붙일 것이 없으면 false. */
   function mergeNext(para) {
     var next = after(para);
     if (!next) return false;
@@ -299,7 +281,6 @@ var hwModel = (function () {
     index(hwDoc);
   }
 
-  /* 문서 순서로 앞·뒤 문단. 구역 경계를 넘어 이어진다. */
   function after(para) { return neighbour(para, +1); }
   function before(para) { return neighbour(para, -1); }
 
@@ -322,8 +303,6 @@ var hwModel = (function () {
     }
     return null;
   }
-
-  /* ── 저장 요청 만들기(계획 6절) ─────────────────────────── */
 
   function buildOps() {
     var ops = [];
@@ -350,7 +329,6 @@ var hwModel = (function () {
     return ops;
   }
 
-  /* 한 문단(과 그 안 표의 셀 문단들)에 대한 요청. */
   function opsForList(paras, pi, ops) {
     var p = paras[pi];
     pushOp(paras, pi, ops);
@@ -397,7 +375,6 @@ var hwModel = (function () {
     ops.push(op);
   }
 
-  /* 새 그림은 실물 경로를 따로 실어 보낸다. 표 안에 넣은 그림도 같이 훑는다. */
   function imageOps(p, ops) {
     var objs = p.objs || [];
     for (var j = 0; j < objs.length; j++) {
@@ -416,9 +393,7 @@ var hwModel = (function () {
     }
   }
 
-  /* 개체는 자리와 정체만 보낸다 — 원본은 C# 이 들고 있다(계획 6절).
-
-     ★ 예외가 있다: 화면에서 실제로 만진 것만 그 값을 싣는다 — 크기는 `_resized`, 자리는 `_moved`,
+  /* ★ 예외가 있다: 화면에서 실제로 만진 것만 그 값을 싣는다 — 크기는 `_resized`, 자리는 `_moved`,
        글자처럼 취급은 `_flowed` 다(<b>셋을 따로 본다</b>). 전부 싣지 않는 이유는 두 가지다 —
        손 안 댄 개체까지 화면이 반올림한 값으로 원본을 덮어써서 조금씩 움직이고, 무엇보다 이 목록에는
        <b>안 보이는 컨트롤</b>(용지 정의·단 정의)도 들어 있어서 글자 하나만 쳐도 그것들의 크기가
@@ -430,7 +405,7 @@ var hwModel = (function () {
       var o = objs[i];
       var r = o.tmpId ? { pos: o.pos, tmpId: o.tmpId } : { pos: o.pos, oid: o.oid };
       /* ★ 크기와 자리를 따로 싣는다. 옮기기만 한 개체에 크기까지 실으면, 리더가 안쪽 자식에서
-         읽어 온 값이 바깥 개체에 써질 수 있다(hwpx 리더는 크기를 재귀로 찾는다). */
+         읽어 온 값이 바깥 개체에 써질 수 있다. */
       if (o._resized) { r.wHu = o.wHu; r.hHu = o.hHu; }
       if (o._moved) { r.xOffHu = o.xOffHu || 0; r.yOffHu = o.yOffHu || 0; }
       if (o._flowed) { r.inline = !!o.inline; }
@@ -439,7 +414,6 @@ var hwModel = (function () {
     return out;
   }
 
-  /* 저장이 끝나면 dirty 를 비운다. 새 문단·새 그림은 이제 원본이 되었으므로 표시를 지운다. */
   function accept(result) {
     cDirty = {};
     cDeleted = [];
@@ -455,7 +429,7 @@ var hwModel = (function () {
        (되돌린 문단이 dirty 로 안 잡혀 다음 저장에 op 가 하나도 안 실린다). */
     if (window.hwUndo) hwUndo.clear();
 
-    /* 모양 번호가 문서 쪽에서 바뀌었을 수 있다(같은 모양 재사용, G-10) — 화면 번호를 다시 매긴다. */
+    /* 모양 번호가 문서 쪽에서 바뀌었을 수 있다 — 화면 번호를 다시 매긴다. */
     if (result && result.csMap) remapShapes(result.csMap, result.psMap);
     if (result && result.charShapes) hwDoc.charShapes = result.charShapes;
     if (result && result.paraShapes) hwDoc.paraShapes = result.paraShapes;
@@ -479,7 +453,6 @@ var hwModel = (function () {
     }
   }
 
-  /* 저장 뒤 문서가 준 번호로 갈아 끼운다. 안 하면 같은 서식을 다시 적용할 때마다 모양이 하나씩 는다. */
   function remapShapes(csMap, psMap) {
     for (var si = 0; si < hwDoc.sections.length; si++) {
       var paras = hwDoc.sections[si].paras;
@@ -577,8 +550,7 @@ var hwModel = (function () {
 
 function hwBuildOps() { return hwModel.buildOps(); }
 
-/* C# 이 부르는 진입점.
-   ★ 반드시 @font-face 로드를 기다린 뒤에 배치한다. 폰트가 아직 안 붙은 상태로 재면 브라우저가
+/* ★ 반드시 @font-face 로드를 기다린 뒤에 배치한다. 폰트가 아직 안 붙은 상태로 재면 브라우저가
      대체 글꼴 폭을 돌려주고, 그 값이 캐시에 굳어 오라클이 통째로 어긋난다. */
 function hwLoadDoc(doc) {
   hwModel.load(doc);

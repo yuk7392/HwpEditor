@@ -1,13 +1,4 @@
-﻿/* 문단 → 줄 배열. 1단계 완료 판정의 핵심(오라클 일치율 ≥90%)이 여기서 갈린다.
-
-   한글의 줄 나눔 규칙 중 이번에 넣는 것:
-     - 한글은 글자 단위로 자른다(문단모양이 어절 단위면 어절 단위).
-     - 라틴은 문단모양의 latinBreak 대로 word / hyphen / letter.
-     - 금칙: 여는 괄호류는 줄 끝에 못 오고, 닫는 괄호·마침표류는 줄 머리에 못 온다.
-     - 첫 줄 들여쓰기(음수면 내어쓰기), 문단 좌우 여백.
-     - 탭은 다음 탭 자리로 건너뛴다.
-
-   ★ 문단 정렬은 줄 나눔이 끝난 뒤 줄마다 "앞 여백(lead)·늘릴 몫(gap)" 으로 단다(alignLines).
+﻿/* ★ 문단 정렬은 줄 나눔이 끝난 뒤 줄마다 "앞 여백(lead)·늘릴 몫(gap)" 으로 단다(alignLines).
      정렬은 줄을 다시 나누지 않는다 — 나눌 자리는 왼쪽 정렬과 똑같다.
    ★ 아직 안 넣은 것: 문단별 탭 정의(tabdef), 하이픈 자동 넣기.
      탭은 기본 간격으로 근사한다 — 이것이 tabdef.hwp 의 일치율에 영향을 준다. */
@@ -15,12 +6,10 @@
 var hwBreak = (function () {
   'use strict';
 
-  /* 기본 탭 간격(HWPUNIT). 한글 기본값은 문단모양의 tabdef 를 따르지만 1단계에서는 근사한다. */
+  /* 기본 탭 간격(HWPUNIT). 한글 기본값은 문단모양의 tabdef 를 따르지만 여기서는 근사한다. */
   var cTabHu = 4000;
 
-  /* 줄 머리에 못 오는 글자 */
   var cNoLineStart = '.,)]}?!:;’”）］｝」』】〕%…';
-  /* 줄 끝에 못 오는 글자 */
   var cNoLineEnd = '([{‘“（［｛「『【〔¥￦';
 
   function isLatin(ch) {
@@ -105,8 +94,7 @@ var hwBreak = (function () {
     return lines;
   }
 
-  /* ── 문단 정렬 ──────────────────────────────────────────
-     줄마다 셋을 단다:
+  /* 줄마다 셋을 단다:
        lead    : 줄 앞에 비울 폭(가운데·오른쪽)
        gap     : 늘릴 자리 하나에 더할 폭(양쪽·배분)
        gapMode : 'space' 면 공백에만, 'char' 면 글자 사이마다. gapFrom·gapTo 가 늘릴 구간이다.
@@ -210,7 +198,6 @@ var hwBreak = (function () {
     return hwMeasure.charHu(ch, hwModel.charShape(hwModel.shapeAt(para, k)));
   }
 
-  /* 개체 하나. 못 찾으면 null. */
   function objAt(para, pos) {
     if (!para.objs) return null;
     for (var k = 0; k < para.objs.length; k++) if (para.objs[k].pos === pos) return para.objs[k];
@@ -223,7 +210,6 @@ var hwBreak = (function () {
     return (o && o.inline) ? (o.wHu || 0) : 0;
   }
 
-  /* 줄 높이에 얹히는 개체 높이. 역시 인라인만이다. */
   function objHeight(para, pos) {
     var o = objAt(para, pos);
     return (o && o.inline) ? (o.hHu || 0) : 0;
@@ -265,7 +251,7 @@ var hwBreak = (function () {
   }
 
   /* 같은 폭으로 다시 물으면 지난번 결과를 그대로 준다.
-     ★ 글자 하나를 칠 때마다 문서 전체를 다시 쪼개면 3,000문단 문서에서 입력이 눈에 띄게 늦는다(G-5).
+     ★ 글자 하나를 칠 때마다 문서 전체를 다시 쪼개면 3,000문단 문서에서 입력이 눈에 띄게 늦는다.
        고친 문단은 hwModel.markDirty 가 이 표를 지우므로 그 문단만 다시 쪼개진다. */
   function linesOf(para, widthHu) {
     if (para._lines && para._linesW === widthHu) return para._lines;

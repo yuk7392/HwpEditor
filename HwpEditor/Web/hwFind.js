@@ -1,6 +1,4 @@
-﻿/* 찾기·바꾸기(8단계). Ctrl+F / Ctrl+H.
-
-   ★ 패널은 도구줄 안에 두지 않는다. 도구줄은 mousedown 기본 동작을 막아 캐럿 초점을 지키는데
+﻿/* ★ 패널은 도구줄 안에 두지 않는다. 도구줄은 mousedown 기본 동작을 막아 캐럿 초점을 지키는데
      (hwUi.onMouseDown), 찾기 칸은 반대로 <b>초점을 가져가야</b> 글자를 받는다.
    ★ 그래도 친 글자가 문서로 새지 않는다 — 본문 키 처리는 #hwIme 에 걸려 있어서(hwInput.init),
      초점이 찾기 칸에 있는 동안에는 아예 안 불린다. 구조가 이미 보장하는 성질이다.
@@ -95,8 +93,6 @@ var hwFind = (function () {
     }
   }
 
-  /* ── 찾기 ────────────────────────────────────────────── */
-
   function needle() { return cText ? (cText.value || '') : ''; }
 
   /* ★ 대소문자를 무시할 때도 <b>길이를 지킨다</b>. 접은 문자열에서 찾은 자리를 원본 문자열에
@@ -179,8 +175,6 @@ var hwFind = (function () {
 
   function isOpen() { return !!cPanel && !cPanel.hidden; }
 
-  /* ── 찾아가기(Alt+G) — 쪽 번호로 간다 ─────────────────── */
-
   function openGoto() {
     if (!cGoto || !hwDoc) return;
     if (cPanel) cPanel.hidden = true;
@@ -216,8 +210,6 @@ var hwFind = (function () {
     hwCaret.scrollIntoView();
     return true;
   }
-
-  /* ── 바꾸기 ──────────────────────────────────────────── */
 
   /* 지금 고른 것이 찾는 말이면 바꾸고, 아니면 먼저 찾는다(한글과 같은 차례다). */
   function replaceOne() {

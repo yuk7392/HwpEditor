@@ -7,9 +7,8 @@ using HwpEditor.Models;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 화면이 새로 만든 글자모양·문단모양을 .hwpx 의 <c>header.xml</c> 에 등록한다(4단계).
     /// hwp 쪽 <see cref="cShapeWriter"/> 와 같은 약속이다 — <b>원본 요소를 복제해서</b> 만들고,
-    /// <b>같은 모양이 이미 있으면 그것을 쓴다</b>(G-10).
+    /// <b>같은 모양이 이미 있으면 그것을 쓴다</b>.
     ///
     /// ★ 같은지 보는 기준은 <b>요소 전체(id 만 빼고)</b>다. 우리가 모델에 안 담은 속성까지 같아야
     ///   같은 모양이다 — 일부 필드만 보고 같다고 하면 그림자나 외곽선이 다른 모양으로 글이 옮겨 붙는다.
@@ -70,7 +69,6 @@ namespace HwpEditor.Files
             return map;
         }
 
-        /// <summary>id 만 빼고 통째로 같은 요소의 번호. 없으면 -1.</summary>
         private static int FindSame(List<XmlElement> pHave, XmlElement pWant)
         {
             string want = Normalized(pWant);
@@ -117,7 +115,6 @@ namespace HwpEditor.Files
         private static readonly string[] cBeforeUnderline = { "strikeout", "outline", "shadow", "emboss", "engrave" };
         private static readonly string[] cBeforeStrikeout = { "outline", "shadow", "emboss", "engrave" };
 
-        /// <summary>없으면 스키마 차례에 맞는 자리에 만들어서 돌려준다.</summary>
         private static XmlElement Need(XmlElement pParent, string pLocal, string[] pBefore)
         {
             XmlElement had = Child(pParent, pLocal);

@@ -1,7 +1,5 @@
-﻿/* 키보드·마우스·IME.
-
-   ★ 본문은 contenteditable 이 아니다. 화면 밖에 숨긴 contenteditable div 하나가 IME 수신기이고,
-     본문은 우리가 계산한 배치를 그린 그림이다(계획 G-4). 본문을 편집 가능하게 두면 브라우저가
+﻿/* ★ 본문은 contenteditable 이 아니다. 화면 밖에 숨긴 contenteditable div 하나가 IME 수신기이고,
+     본문은 우리가 계산한 배치를 그린 그림이다. 본문을 편집 가능하게 두면 브라우저가
      제 나름대로 줄을 다시 흐르게 만들어서 우리 배치와 화면이 갈라진다.
    ★ 조합 중에는 <b>모델을 건드리지 않는다</b>. 임시 span 하나만 캐럿 자리에 띄우고,
      compositionend 에서 한 번에 모델에 넣는다. 조합 중에 모델을 고치면 그 문단이 다시 배치되면서
@@ -53,8 +51,7 @@ var hwInput = (function () {
     if (cIme) cIme.focus({ preventScroll: true });
   }
 
-  /* ── 편집 한 동작 ─────────────────────────────────────
-     ★ 되돌리기 기록 → 고치기 → 다시 배치 → 캐럿 을 <b>한 묶음</b>으로 돈다.
+  /* ★ 되돌리기 기록 → 고치기 → 다시 배치 → 캐럿 을 <b>한 묶음</b>으로 돈다.
        중간에 배치를 빼먹으면 캐럿이 옛 좌표를 보고 엉뚱한 자리에 선다. */
   function edit(fn, coalesceKey, pIds) {
     if (!hwDoc) return;
@@ -73,7 +70,7 @@ var hwInput = (function () {
     status();
   }
 
-  /* 이번 편집이 건드릴 수 있는 문단들. 이웃까지 담는다 — 나누기·합치기가 이웃을 고친다. */
+  /* 이웃까지 담는다 — 나누기·합치기가 이웃을 고친다. */
   function affected() {
     var ids = [];
     var sel = hwCaret.selection();
@@ -110,8 +107,6 @@ var hwInput = (function () {
           + (n ? ' · 고친 문단 ' + n + '개(저장 안 됨)' : '')
     });
   }
-
-  /* ── 글자 넣기·지우기 ─────────────────────────────────── */
 
   function typeText(str) {
     if (!str) return;
@@ -372,8 +367,6 @@ var hwInput = (function () {
     hwRenderRefresh();
   }
 
-  /* ── 그림 넣기(3단계) ─────────────────────────────────── */
-
   function insertImage(info) {
     if (!hwDoc || !info || !info.file) return;
 
@@ -399,15 +392,13 @@ var hwInput = (function () {
     });
   }
 
-  /* ── 키 ──────────────────────────────────────────────────
-     ★ 단축키는 <b>표 한 장</b>이다: "C·A·S 머리 + 키 이름" → 동작. 한글 손버릇 키는 같은 동작에 여러
+  /* ★ 단축키는 <b>표 한 장</b>이다: "C·A·S 머리 + 키 이름" → 동작. 한글 손버릇 키는 같은 동작에 여러
        이름이 붙는다(Ctrl+B · Alt+Shift+B). 방향키처럼 Shift 를 인자로 받는 이동 키는 아래 switch 에 둔다.
      ★ 동작이 <c>false</c> 를 돌려주면 "여기서는 안 한다" 는 뜻이다 — 칸 밖의 Tab 처럼 아래로 흘려보낸다.
      ★ Ctrl+C·X·V 는 표에 <b>안 넣는다</b>. 기본 동작을 막으면 copy·cut·paste 이벤트가 안 온다. */
 
   var cKeys = null;
 
-  /* 두 타 조합(Ctrl+K·Ctrl+Q·Ctrl+M 뒤 한 글자). 첫 키를 누르면 여기에 담아 두고 다음 키 하나를 둘째 키로 본다. */
   var cChords = null;
   var cChord = null;
 
@@ -423,7 +414,6 @@ var hwInput = (function () {
     function align(a) { return function () { hwFormat.setAlign(a); }; }
     function scroll(dx, dy) { return function () { scrollView(dx, dy); }; }
 
-    /* 편집·파일 */
     on(['C+z'], function () { if (hwUndo.undo()) status(); });
     on(['CS+z'], function () { if (hwUndo.redo()) status(); });
     on(['C+a'], function () { hwCaret.selectAll(); });
@@ -453,8 +443,6 @@ var hwInput = (function () {
     on(['AS+j'], function () { hwFormat.stepRatio(-1); });
     on(['AS+w'], function () { hwFormat.stepSpacing(+1); });
     on(['AS+n'], function () { hwFormat.stepSpacing(-1); });
-
-    /* 문단 모양 */
     on(['CS+l', 'CA+l'], align('left'));
     on(['CS+c', 'CA+c'], align('center'));
     on(['CS+r', 'CA+r'], align('right'));
@@ -471,13 +459,12 @@ var hwInput = (function () {
     on(['CA+F7'], function () { hwFormat.stepMargin('mrHu', +1); });
     on(['CA+F8'], function () { hwFormat.stepMargin('mrHu', -1); });
 
-    /* 보기 — 캐럿은 두고 화면만 민다. ★ Alt+← 는 WebView2 의 "뒤로 가기" 다 — 표에 있어야 막힌다. */
+    /* ★ Alt+← 는 WebView2 의 "뒤로 가기" 다 — 표에 있어야 막힌다. */
     on(['A+ArrowUp'], scroll(0, -1));
     on(['A+ArrowDown'], scroll(0, +1));
     on(['A+ArrowLeft'], scroll(-1, 0));
     on(['A+ArrowRight'], scroll(+1, 0));
 
-    /* 표 — 칸 안에서만 칸을 옮긴다. 칸 밖이면 false 로 흘려 탭 글자가 들어간다. */
     on(['+Tab'], function () { return hwTable.here() ? hwTable.nextCell(+1) || true : false; });
     on(['S+Tab'], function () { return hwTable.here() ? hwTable.nextCell(-1) || true : false; });
 
@@ -497,7 +484,7 @@ var hwInput = (function () {
     return cKeys;
   }
 
-  /* 키 이름. ★ <b>code 를 먼저</b> 본다 — 한글 모드에서 글자 키의 key 는 'Process' 이고, Shift 를 누르면
+  /* ★ <b>code 를 먼저</b> 본다 — 한글 모드에서 글자 키의 key 는 'Process' 이고, Shift 를 누르면
      ']' 가 '}' 로 온다. code 가 없으면(합성 이벤트) key 로 물러선다. */
   function keyName(e) {
     var c = e.code || '', m;
@@ -582,8 +569,6 @@ var hwInput = (function () {
     var target = dir < 0 ? { p: all[0], pos: 0 } : { p: last, pos: last.len };
     if (target) { hwCaret.set(target.p.id, target.pos, extend); hwCaret.scrollIntoView(); }
   }
-
-  /* ── IME ─────────────────────────────────────────────── */
 
   function onCompStart() {
     cComposing = true;
@@ -685,14 +670,12 @@ var hwInput = (function () {
     cIme.style.height = hwHu2Px(c.hHu) + 'px';
   }
 
-  /* ── 마우스 ──────────────────────────────────────────── */
-
   function onMouseDown(e) {
     clearChord();
     if (!hwDoc || e.button !== 0) return;
 
     /* ★ 개체를 <b>캐럿보다 먼저</b> 본다. 여기서 안 보면 그림을 눌러도 캐럿이 그 글자 자리로 갈 뿐
-       개체는 영영 골라지지 않는다(8단계 전까지 그랬다). */
+       개체는 영영 골라지지 않는다. */
     if (window.hwObj && hwObj.onDown(e)) {
       e.preventDefault();
       focus();
@@ -711,10 +694,9 @@ var hwInput = (function () {
   }
 
   /* 글자 선택 끌기. ★ 본문 밖으로 나가도 이어 간다 — 좌표를 캔버스 안쪽으로 잘라서 가장자리 줄을 잡는다.
-     위·아래로 나가면 그만큼 화면을 밀어 준다(자동 스크롤).
+     위·아래로 나가면 그만큼 화면을 밀어 준다.
      ★ 자른 좌표가 쪽 사이 여백에 떨어지면 hitTest 가 null 이다 — 그때는 마지막 자리를 그대로 둔다. */
   function onMouseMove(e) {
-    /* 개체를 끄는 중이면 글자 선택으로 넘어가지 않는다(움직임 자체는 개체 쪽이 처리한다). */
     if (window.hwObj && hwObj.dragging()) return;
     if (!cDragging) return;
 
@@ -783,8 +765,6 @@ var hwInput = (function () {
     var body = hwRenderer.bodyOf(c.pageIdx);
     if (body) placeIme(c, body);
   }
-
-  /* ── 클립보드 ────────────────────────────────────────── */
 
   function selectedText() {
     var sel = hwCaret.selection();

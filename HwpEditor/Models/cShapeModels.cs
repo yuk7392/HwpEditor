@@ -25,7 +25,7 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("base")] public int Base = -1;
 
-        /// <summary>한글 FaceName 인덱스. 라틴은 따로 두지 않는다(1단계 범위).</summary>
+        /// <summary>한글 FaceName 인덱스. 라틴은 따로 두지 않는다.</summary>
         [JsonProperty("face")] public int Face;
 
         /// <summary>기준 크기 HWPUNIT. pt = /100.</summary>

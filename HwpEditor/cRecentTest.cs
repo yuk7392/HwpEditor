@@ -6,8 +6,6 @@ using System.Threading;
 namespace HwpEditor
 {
     /// <summary>
-    /// 최근 목록 단독 검사(<c>--recent-test</c>, 8단계). 화면도 문서도 없이 돈다.
-    ///
     /// ★ 사용자의 실제 목록(<c>%LOCALAPPDATA%\HwpEditor\recent.json</c>)은 건드리지 않는다 —
     ///   <see cref="cRecent.cPathOverride"/> 로 임시 파일을 쓰게 하고 끝나면 지운다.
     /// </summary>

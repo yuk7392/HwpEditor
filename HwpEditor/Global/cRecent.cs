@@ -8,8 +8,6 @@ using Newtonsoft.Json;
 namespace HwpEditor
 {
     /// <summary>
-    /// 최근에 연 문서 목록. <c>%LOCALAPPDATA%\HwpEditor\recent.json</c> 에 둔다(8단계).
-    ///
     /// ★ 레지스트리가 아니라 파일인 이유: 이 앱은 이미 그 폴더를 자기 집으로 쓰고(webview·web·로더),
     ///   단일 exe 라 지워 줄 언인스톨러가 없다. 지울 자리가 한 곳으로 유지되고,
     ///   검사에서 초기 상태를 만들 때도 파일 하나만 지우면 된다.
@@ -22,8 +20,7 @@ namespace HwpEditor
         private const int cMax = 10;
 
         /// <summary>
-        /// 검사 통로가 쓰는 임시 목록 파일. ★ 검사가 사용자의 실제 최근 목록을 지우면 안 된다.
-        /// 평소에는 null 이고 <c>--recent-test</c> 만 이것을 채운다.
+        /// ★ 검사가 사용자의 실제 최근 목록을 지우면 안 된다. 평소에는 null 이고 <c>--recent-test</c> 만 이것을 채운다.
         /// </summary>
         internal static string cPathOverride;
 
@@ -39,7 +36,6 @@ namespace HwpEditor
             }
         }
 
-        /// <summary>저장된 목록 그대로(지금 없는 파일도 들어 있다).</summary>
         public static List<string> All()
         {
             bool read;
@@ -82,7 +78,6 @@ namespace HwpEditor
             }
         }
 
-        /// <summary>화면에 낼 목록 — 지금 실제로 열 수 있는 것만.</summary>
         public static List<string> Live()
         {
             List<string> live = new List<string>();

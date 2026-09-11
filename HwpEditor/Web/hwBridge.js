@@ -1,6 +1,5 @@
-﻿/* C# ↔ 문서 통로. C# 이 부르는 것은 전부 hw* 전역 함수다.
-   ★ 준비 전에 보낸 메시지는 큐에 담았다가 통로가 열리면 순서대로 낸다 —
-     문서가 먼저 뜨고 WebView2 가 붙는 순서가 뒤집힐 수 있다. */
+﻿/* ★ 준비 전에 보낸 메시지는 큐에 담았다가 통로가 열리면 순서대로 낸다 —
+   문서가 먼저 뜨고 WebView2 가 붙는 순서가 뒤집힐 수 있다. */
 
 var hwBridge = (function () {
   'use strict';
@@ -32,8 +31,6 @@ var hwBridge = (function () {
 })();
 
 function hwPost(o) { hwBridge.post(o); }
-
-/* ── C# → 문서 ───────────────────────────────────────────── */
 
 function hwSetStatus(o) {
   var el = document.getElementById('hwStatus');
@@ -88,7 +85,7 @@ function hwUiTest() {
     ime.dispatchEvent(new InputEvent('input', { bubbles: true }));
   }
 
-  /* 마우스 — 개체 다루기(8단계) 검사용. ★ 누르기는 <b>그 요소</b>에 보낸다(target 으로 되짚으므로),
+  /* ★ 누르기는 <b>그 요소</b>에 보낸다(target 으로 되짚으므로),
      움직임·놓기는 문서에 보낸다(끌기 수신기가 거기 걸려 있다). */
   function down(el, x, y) {
     el.dispatchEvent(new MouseEvent('mousedown',
@@ -153,14 +150,14 @@ function hwUiTest() {
   ok('8 Ctrl+Z 로 문단 되돌림', hwDoc.sections[0].paras.length === paras0,
      '문단 ' + hwDoc.sections[0].paras.length);
 
-  /* 다시 실행은 Ctrl+Shift+Z 다 — Ctrl+Y 는 한글처럼 "한 줄 지우기" 로 옮겼다(FEATURE-PLAN 결정 ①). */
+  /* 다시 실행은 Ctrl+Shift+Z 다 — Ctrl+Y 는 한글처럼 "한 줄 지우기" 로 옮겼다. */
   key('z', { ctrl: true, shift: true });
   ok('9 Ctrl+Shift+Z 로 다시', hwDoc.sections[0].paras.length === paras0 + 1,
      '문단 ' + hwDoc.sections[0].paras.length);
 
   key('z', { ctrl: true });
 
-  /* IME — 조합 중에는 모델이 그대로여야 하고, 화면에는 임시 글자가 떠 있어야 한다(G-4). */
+  /* IME — 조합 중에는 모델이 그대로여야 하고, 화면에는 임시 글자가 떠 있어야 한다. */
   var cur = hwModel.byId(hwCaret.at().id);
   var lenIme = cur.len;
   ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
@@ -192,7 +189,7 @@ function hwUiTest() {
   } catch (e) { pasteGot = String(e); }
   ok('15 두 줄 붙여넣기', pasteOk, pasteGot);
 
-  /* 그림 넣기(3단계) — 실물은 저장할 때 들어가고 지금은 자리와 미리보기만이다. */
+  /* 그림 넣기 — 실물은 저장할 때 들어가고 지금은 자리와 미리보기만이다. */
   var cur2 = hwModel.byId(hwCaret.at().id);
   var objs0 = (cur2.objs || []).length;
   hwInsertImage({ file: hwUiTestImage || '', src: hwUiTestSrc || null, wHu: 4800, hHu: 3600 });
@@ -212,13 +209,11 @@ function hwUiTest() {
      줄 뒤로 갈수록 캐럿이 글자 앞으로 밀린다 — 눌러 봐야만 나오는 결함이라 여기서 잰다. */
   ok('19 캐럿 x = 그려진 글자 x', true, hwCaretDrift());
 
-  /* 글자 하나 치고 화면에 나오기까지(G-5 지표 30ms). 배치·그리기까지 다 들어간 시간이다. */
+  /* 글자 하나 치고 화면에 나오기까지 30ms. 배치·그리기까지 다 들어간 시간이다. */
   var t0 = performance.now();
   typeIn('빠');
   var ms = Math.round((performance.now() - t0) * 10) / 10;
   ok('21 입력→반영 30ms 이내', ms <= 30, ms + 'ms');
-
-  /* ── 서식(4단계) — 같은 모양을 두 번 만들지 않는지가 핵심이다(G-10) ── */
 
   var fmtPara = hwModel.byId(hwCaret.at().id);
   hwCaret.set(fmtPara.id, 0, false);
@@ -255,8 +250,6 @@ function hwUiTest() {
   ok('25 가운데 정렬', hwDoc.paraShapes[fmtPara.ps].align === 'center',
      'ps ' + ps0 + '→' + fmtPara.ps + ' ' + hwDoc.paraShapes[fmtPara.ps].align);
 
-  /* ── 되쓰기에서 실제로 깨졌던 자리들 ── */
-
   hwCaret.set(fmtPara.id, fmtPara.len, false);
   var lenTab = fmtPara.len;
   key('Tab');
@@ -278,13 +271,11 @@ function hwUiTest() {
   ok('27 저장한 뒤에는 문단 요청이 안 남는다', stillPara === 0,
      '저장 전 op ' + ops2.length + '개(넣기 ' + ins + ') → 저장 뒤 문단 요청 ' + stillPara + '개');
 
-  /* ── 표(5단계) ── */
-
   var cellPara = firstCellPara();
   if (!cellPara) {
     ok('28 표 없는 문서', true, '표가 없어 건너뜀');
   } else {
-    /* ★ 표 옆에서 지우기(TODO 3절) — 표는 한 글자 자리를 차지해서, 막지 않으면 Backspace 한 번에
+    /* ★ 표 옆에서 지우기 — 표는 한 글자 자리를 차지해서, 막지 않으면 Backspace 한 번에
        칸 내용까지 통째로 사라진다. 한글처럼 표는 남고 캐럿이 칸으로 들어가야 한다.
        캐럿만 옮기거나 아무것도 안 지우는 동작이라 뒤 단계가 보는 모델은 그대로다. */
     var tob = cellPara._cell._obj, tHost = hwModel.hostOf(tob);
@@ -398,8 +389,7 @@ function hwUiTest() {
     ok('35 표 요청이 저장에 실린다', nTbl === 3, '표 요청 ' + nTbl + '개');
   }
 
-  /* ── 도구줄을 <b>DOM 이벤트로</b> 눌러 본다 ────────────────────────────────
-     ★ hwFormat 을 직접 부르면 서식 계산만 보게 된다. 도구줄이 통째로 안 먹는 상태 —
+  /* ★ hwFormat 을 직접 부르면 서식 계산만 보게 된다. 도구줄이 통째로 안 먹는 상태 —
        콤보 위에서 mousedown 기본 동작을 막아 목록이 안 펼쳐지는 것 — 은 그 방식으로는
        영영 안 잡힌다(실제로 사용자 화면에서 처음 발견됐다). */
   var picks = ['hwFont', 'hwSize', 'hwLine', 'hwColor'];
@@ -425,8 +415,7 @@ function hwUiTest() {
   ok('38 서식 단추는 캐럿 초점을 안 뺏는다', !!bbtn && bev.defaultPrevented,
      bbtn ? (bev.defaultPrevented ? '기본 동작을 막는다' : '안 막는다') : '단추가 없다');
 
-  /* ── 개체 다루기(8단계) — 눌러 봐야만 나오는 자리다 ──
-     ★ 함수를 직접 부르지 않고 <b>마우스 이벤트</b>로 태운다. hwObj 를 직접 부르면 hwInput 의
+  /* ★ 함수를 직접 부르지 않고 <b>마우스 이벤트</b>로 태운다. hwObj 를 직접 부르면 hwInput 의
        갈래(캐럿보다 먼저 개체를 보는가)를 한 번도 안 지나서, 그림을 눌러도 안 골라지는 상태가
        그대로 통과한다 — T0 이 같은 방식으로 새어 나갔다. */
   /* ★ <b>원본</b> 개체만 고른다. 이 검사 앞에서 accept() 를 부르므로(26-1 자리), 화면이 만든
@@ -526,7 +515,7 @@ function hwUiTest() {
            '원래 자리(' + pos0 + ')에 ' + (objAtPos(sel39.para.id, pos0) ? '있다' : '없다')
              + (now42 ? '' : ', 고르기는 풀렸다'));
 
-        /* ★ 고르기도 되돌린 시점으로 가야 한다(TODO 3절). 옮긴 뒤 자리(to:pos)를 그대로 쥐고 있으면
+        /* ★ 고르기도 되돌린 시점으로 가야 한다. 옮긴 뒤 자리(to:pos)를 그대로 쥐고 있으면
            되돌린 문단의 그 자리에 있는 <b>다른</b> 개체가 골라지거나 고르기가 소리 없이 풀린다. */
         ok('42-1 되돌리면 개체 고르기도 원래 자리로',
            !!now42 && now42.para.id === sel39.para.id && now42.obj.pos === pos0,
@@ -540,7 +529,6 @@ function hwUiTest() {
       ok('42 옮긴 것을 Ctrl+Z 로 되돌림', true, '건너뜀');
     }
 
-    /* 크기 조절 — 오른쪽 아래 조절점을 잡아 끈다. */
     var cur43 = hwObj.current();
     var hse = document.querySelector('.hw-handle[data-dir="se"]');
     if (cur43 && hse) {
@@ -552,7 +540,7 @@ function hwUiTest() {
       ok('43 모서리로 크기 조절', (cur43.obj.wHu || 0) > w0,
          'wHu ' + w0 + '→' + (cur43.obj.wHu || 0));
 
-      /* ★ 최소 크기까지 줄여도 비율이 안 깨지는가(TODO 3절). 하한을 w·h 에 따로 걸면 짧은 쪽만 먼저
+      /* ★ 최소 크기까지 줄여도 비율이 안 깨지는가. 하한을 w·h 에 따로 걸면 짧은 쪽만 먼저
          멈춰 둘 다 최소값이 된다(정사각형). 그래서 정사각형에 가까운 개체로는 못 가린다. */
       var w1 = cur43.obj.wHu || 0, h1 = cur43.obj.hHu || 0;
       var hse1 = document.querySelector('.hw-handle[data-dir="se"]');
@@ -638,8 +626,7 @@ function hwUiTest() {
        hwObj.current() ? '아직 골라져 있다' : '풀림');
   }
 
-  /* ── 찾기·바꾸기(8단계) ──
-     ★ 핵심 판정은 49-50 이다: 모두 바꾸기가 <b>되돌리기 한 칸</b>으로 원상 복구되는가.
+  /* ★ 핵심 판정은 49-50 이다: 모두 바꾸기가 <b>되돌리기 한 칸</b>으로 원상 복구되는가.
        고칠 문단을 직접 넘기지 않으면 캐럿 둘레만 스냅샷에 들어가 Ctrl+Z 가 반만 되돌리는데,
        되돌아오지 않은 문단은 dirty 로 남아 저장 요청에 실린다 — 화면과 파일이 갈라지고 신호가 없다. */
   var text0 = hwDocText();
@@ -672,7 +659,7 @@ function hwUiTest() {
        found && !!fsel && (fsel.toPos - fsel.fromPos) === probe.length,
        '"' + probe + '" ' + (fsel ? (fsel.fromId + ' ' + fsel.fromPos + '~' + fsel.toPos) : '못 찾음'));
 
-    /* ★ 여러 문단에 걸친 선택에서 이전 찾기(TODO 3절) — 선택 <b>앞끝</b> 바로 앞의 그 말이 골라져야 한다.
+    /* ★ 여러 문단에 걸친 선택에서 이전 찾기 — 선택 <b>앞끝</b> 바로 앞의 그 말이 골라져야 한다.
        방금 찾은 자리 끝을 앞끝으로, 다음 문단 끝을 뒤끝(캐럿)으로 둔다. 기대 자리는 방금 찾은 그 자리다. */
     var hitP = fsel ? hwModel.byId(fsel.fromId) : null, hitAt = fsel ? fsel.fromPos : -1;
     var nextP = hitP ? hwModel.after(hitP) : null;
@@ -703,8 +690,7 @@ function hwUiTest() {
   }
   hwFind.close();
 
-  /* ── 고친 것을 C# 에 알리는가(8단계) ──
-     ★ 창을 닫을 때 "저장할까요" 를 물을 <b>유일한</b> 근거다. 화면만 아는 값이라 미리 안 보내면
+  /* ★ 창을 닫을 때 "저장할까요" 를 물을 <b>유일한</b> 근거다. 화면만 아는 값이라 미리 안 보내면
        C# 은 늘 "고친 것 없음" 으로 알고 그냥 닫는다. */
   var sawDirty = -1;
   var realPost = window.hwPost;
@@ -714,7 +700,6 @@ function hwUiTest() {
   window.hwPost = realPost;
   ok('51 고친 것을 C# 에 알린다', sawDirty > 0, 'dirty=' + sawDirty);
 
-  /* ── 최근 문서 목록(8단계) ── */
   var rsel = document.getElementById('hwRecent');
   hwSetRecent([]);
   var emptyOk = !!rsel && rsel.disabled && rsel.options.length === 1;
@@ -738,8 +723,7 @@ function hwUiTest() {
      '콤보 ' + (rev.defaultPrevented ? '막힘(문제)' : '열림') + ' / 단추 '
        + (mev.defaultPrevented ? '초점 지킴' : '초점 뺏김(문제)'));
 
-  /* ── 여백 합이 용지 높이 이상인 구역(TODO 3절) ──
-     본문 높이가 0 이하가 되면 자리 차지 개체의 while 이 영영 안 끝났다. 무한루프면 이 단계에서
+  /* 본문 높이가 0 이하가 되면 자리 차지 개체의 while 이 영영 안 끝났다. 무한루프면 이 단계에서
      멈춰 C# 시한 초과로 걸린다. 모델은 잠깐만 바꾸고 반드시 되돌린다. */
   var sec54 = hwDoc.sections[0], pg54 = sec54.page, mt54 = pg54.mtHu, fp54 = sec54.paras[0], objs54 = fp54.objs;
   var n54 = -1;
@@ -774,9 +758,7 @@ function hwUiTest() {
   });
 }
 
-/* ── 세션 1(FEATURE-PLAN 1부·2부·D1) — 키 표·정렬·IME·끌기·한글 단축키·표 지우기 ─────────────
-   ★ 번호는 FEATURE-PLAN 항목의 검사 번호 그대로다(55~71, 90).
-   ★ 검사용 문단을 본문 끝에 새로 만들어 거기서 본다. 문서마다 모양이 달라서, 쓸 값은 여기서 못 박는다.
+/* ★ 검사용 문단을 본문 끝에 새로 만들어 거기서 본다. 문서마다 모양이 달라서, 쓸 값은 여기서 못 박는다.
    ★ 정렬은 우리 계산식이 아니라 <b>화면에 그려진 글자</b>의 빈 폭으로 판정한다 — 계산식으로 기대값을
      만들면 그 검사는 계산식이 틀려도 통과한다. */
 function hwUiTestS1(t) {
@@ -857,8 +839,7 @@ function hwUiTestS1(t) {
              s: Math.round(worst * 10) / 10 + 'px' + at + ', 누르기 어긋남 ' + bad + why };
   }
 
-  /* ── 검사용 문단: 본문 끝 쪽 <b>원본</b> 문단 뒤에 새로 만들고, 세 줄이 넘을 때까지 채운다 ──
-     ★ 화면이 만든 문단(n…) 뒤에 만들면 안 된다. 26-1 이 저장을 흉내 낸(accept) 뒤라 그 문단을 고치면 저장
+  /* ★ 화면이 만든 문단(n…) 뒤에 만들면 안 된다. 26-1 이 저장을 흉내 낸(accept) 뒤라 그 문단을 고치면 저장
        요청에 문서에 없는 id 로 replace 가 실리고, 그 ops.json 을 --apply 로 원본에 먹이면 거기서 멈춘다. */
   var S0 = hwDoc.sections[0].paras, tail = S0[S0.length - 1];
   for (var ti = S0.length - 1; ti >= 0; ti--) if (S0[ti].id.charAt(0) !== 'n') { tail = S0[ti]; break; }
@@ -877,7 +858,6 @@ function hwUiTestS1(t) {
   hwFormat.applyPara({ align: 'justify', indentHu: 0, mlHu: 0, mrHu: 0, lsType: 'percent', ls: 160 });
   fill(3);
 
-  /* ── 55 키 표·두 타 조합 ── */
   var text55 = hwDocText();
   pick(sp, 2, 4);
   key('k', { ctrl: true });
@@ -903,7 +883,6 @@ function hwUiTestS1(t) {
      s55b ? (s55b.fromId + ':' + s55b.fromPos + ' ~ ' + s55b.toId + ':' + s55b.toPos) : '선택 없음');
   hwCaret.set(sp.id, 0, false);
 
-  /* ── 56 문단 정렬이 화면에 먹는다(A2) ── */
   var worst56 = [], bad56 = 0;
   function alignCase(a) {
     hwCaret.set(sp.id, 0, false);
@@ -943,7 +922,6 @@ function hwUiTestS1(t) {
   hwFormat.setAlign('distribute');
   ok('56-5 배분을 두 번 누르면 양쪽', psOf(sp).align === 'justify', psOf(sp).align);
 
-  /* ── 57 IME 동기 확정(A3) ── */
   hwCaret.set(sp.id, sp.len, false);
   var len57 = sp.len;
   ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
@@ -972,7 +950,6 @@ function hwUiTestS1(t) {
   ok('57-2 조합 끝 바로 뒤 새 조합 — 순서대로 한 번씩', sp.len === len57c + 2 && hwModel.text(sp).slice(-2) === '한글',
      'len ' + len57c + '→' + sp.len + ' 끝 "' + hwModel.text(sp).slice(-2) + '"');
 
-  /* ── 58 끌어 선택이 본문 밖으로 나가도 이어진다(A4) ── */
   hwCaret.set(sp.id, 0, false);
   show();
   var it58 = linesOf(sp)[0], d58 = it58 ? lineDom(it58) : null;
@@ -1006,7 +983,6 @@ function hwUiTestS1(t) {
   }
   hwCaret.set(sp.id, 0, false);
 
-  /* ── 60 글자 크기 키우기·줄이기(B1) ── */
   pick(sp, 0, sp.len);
   hwFormat.applyChar({ sizeHu: 1000 });
   key(']', { ctrl: true });
@@ -1033,7 +1009,6 @@ function hwUiTestS1(t) {
      csAt(sp, 0).sizeHu + ' / ' + csAt(sp, sp.len - 1).sizeHu);
   hwFormat.applyChar({ sizeHu: 1000 });
 
-  /* ── 61 장평·자간(B2) ── */
   hwFormat.applyChar({ ratio: 100, spacing: 0 });
   for (var k61 = 0; k61 < 3; k61++) key('k', { alt: true, shift: true });
   ok('61 장평 100 → Alt+Shift+K 세 번 → 103', csAt(sp, 0).ratio === 103, String(csAt(sp, 0).ratio));
@@ -1046,14 +1021,12 @@ function hwUiTestS1(t) {
   ok('61-2 장평 50% 이하면 늘리기·줄이기 모두 무시', csAt(sp, 0).ratio === 50, String(csAt(sp, 0).ratio));
   hwFormat.applyChar({ ratio: 100, spacing: 0 });
 
-  /* ── 62 굵게 별칭(B3) ── */
   var b62 = !!csAt(sp, 0).bold;
   key('b', { alt: true, shift: true });
   var b62a = !!csAt(sp, 0).bold;
   key('b', { alt: true, shift: true });
   ok('62 Alt+Shift+B 로 굵게 켜고 끄기', b62a !== b62 && !!csAt(sp, 0).bold === b62, b62 + '→' + b62a + '→' + !!csAt(sp, 0).bold);
 
-  /* ── 63 정렬 단축키(B4) ── */
   hwCaret.set(sp.id, 0, false);
   var al63 = [['l', 'left'], ['c', 'center'], ['r', 'right'], ['m', 'justify'], ['t', 'distribute']], got63 = [];
   var ok63 = true;
@@ -1070,7 +1043,6 @@ function hwUiTestS1(t) {
   key('t', { ctrl: true, shift: true });
   ok('63-1 Ctrl+Shift+T 두 번 → 양쪽', psOf(sp).align === 'justify', psOf(sp).align);
 
-  /* ── 64 줄 간격(B5) ── */
   hwFormat.applyPara({ lsType: 'percent', ls: 160 });
   key('z', { alt: true, shift: true });
   var l64 = psOf(sp).ls;
@@ -1081,7 +1053,6 @@ function hwUiTestS1(t) {
   ok('64-1 고정 20pt → Alt+Shift+A → 19pt', psOf(sp).lsType === 'fixed' && psOf(sp).ls === 1900, psOf(sp).lsType + ' ' + psOf(sp).ls);
   hwFormat.applyPara({ lsType: 'percent', ls: 160 });
 
-  /* ── 65 첫 줄·여백 1pt(B6) ── */
   hwFormat.applyPara({ indentHu: 0, mlHu: 0, mrHu: 0 });
   key('F5', { ctrl: true }); key('F5', { ctrl: true }); key('F5', { ctrl: true });
   var i65 = psOf(sp).indentHu;
@@ -1099,7 +1070,6 @@ function hwUiTestS1(t) {
      '폭 ' + Math.round(w65) + ' 오른쪽 ' + mr65 + '→' + psOf(sp).mrHu);
   hwFormat.applyPara({ indentHu: 0, mlHu: 0, mrHu: 0 });
 
-  /* ── 66 글자색 두 타 조합(B7) ── */
   pick(sp, 0, 3);
   key('m', { ctrl: true });
   key('r');
@@ -1116,7 +1086,6 @@ function hwUiTestS1(t) {
      csAt(sp, 0).color + ', 글 ' + (hwDocText() === text66 ? '그대로' : '바뀜(' + hwDocText().length + '자)'));
   hwFormat.applyChar({ color: '#000000' });
 
-  /* ── 67 한 줄 지우기(B8, 결정 ①) ── */
   fill(3);
   var ls67 = linesOf(sp), t67 = hwModel.text(sp);
   var s67 = ls67[1].line.s, e67 = ls67[1].line.e;
@@ -1147,7 +1116,6 @@ function hwUiTestS1(t) {
   ok('67-3 Ctrl+Z 로 그 문단이 돌아온다', hwDoc.sections[0].paras.length === n67 && !!hwModel.byId(one67.id)
      && hwModel.text(hwModel.byId(one67.id)) === '한줄', '문단 ' + hwDoc.sections[0].paras.length);
 
-  /* ── 68 쪽 나누기(B9) ── */
   var pg68 = hwPageCount(), n68 = hwDoc.sections[0].paras.length;
   hwCaret.set(sp.id, linesOf(sp)[1].line.s + 1, false);
   key('Enter', { ctrl: true });
@@ -1178,7 +1146,6 @@ function hwUiTestS1(t) {
      '정의 ' + nh68 + '→' + hid68() + ', 문단 ' + np68b + '→' + hwDoc.sections[0].paras.length);
   if (hwDoc.sections[0].paras.length !== np68b || h68.brk !== brk68) key('z', { ctrl: true });
 
-  /* ── 69 다시 찾기·찾아가기(B10) ── */
   document.getElementById('hwFindText').value = '가나';
   if (hwFind.isOpen()) hwFind.close();
   hwCaret.set(sp.id, 0, false);
@@ -1203,7 +1170,6 @@ function hwUiTestS1(t) {
   ok('69-1 Alt+G 찾아가기 — 쪽 번호로 간다', open69 && !hwFind.isGotoOpen() && !!c69 && c69.pageIdx === want69 - 1,
      (open69 ? '창 열림' : '창 안 열림') + ', 캐럿 ' + (c69 ? (c69.pageIdx + 1) + '쪽' : '없음') + ' (기대 ' + want69 + ')');
 
-  /* ── 70 Alt+방향키 화면 밀기(B11) ── */
   var cv70 = hwRenderer.canvas();
   cv70.scrollTop = 0;
   var at70 = hwCaret.at();
@@ -1215,7 +1181,6 @@ function hwUiTestS1(t) {
      'scrollTop 0→' + top70 + ', 캐럿 ' + (hwCaret.at().pos === at70.pos ? '그대로' : '움직임')
        + ', 기본 동작 막음 ' + e70.defaultPrevented + '/' + e70b.defaultPrevented);
 
-  /* ── 71 칸 옮기기 Tab(B12) ── */
   var cp71 = firstCellPara();
   if (!cp71) {
     ok('71 칸 안 Tab 은 다음 칸으로', true, '표 없는 문서 — 건너뜀');
@@ -1234,8 +1199,7 @@ function hwUiTestS1(t) {
          + ', Shift+Tab → ' + (back71 && back71._cell ? 'r' + back71._cell.r + ' c' + back71._cell.c : '표 밖'));
   }
 
-  /* ── 90 표 지우기(D1) — 도구줄 단추를 눌러서 ──
-     ★ 지운 채로 끝낸다 — 최종 저장 요청을 --apply 에 먹이면 표 수가 하나 줄어야 한다. */
+  /* ★ 지운 채로 끝낸다 — 최종 저장 요청을 --apply 에 먹이면 표 수가 하나 줄어야 한다. */
   var cp90 = firstCellPara();
   if (!cp90) {
     ok('90 표 지우기', true, '표 없는 문서 — 건너뜀');
@@ -1272,9 +1236,7 @@ function hwUiTestS1(t) {
   }
 }
 
-/* 고친 것이 몇 개인지 C# 에 밀어 준다(8단계).
-
-   ★ C# 이 물어볼 방법이 없다 — 스크립트 실행은 비동기인데 창을 닫는 순간에는 기다릴 수가 없다.
+/* ★ C# 이 물어볼 방법이 없다 — 스크립트 실행은 비동기인데 창을 닫는 순간에는 기다릴 수가 없다.
      그래서 바뀔 때마다 미리 보낸다.
    ★ 표 구조 요청도 같이 센다. 문단 dirty 만 보면 <b>행을 넣고 그냥 닫아도</b> 아무것도 안 묻는다 —
      표 편집은 hwInput.status() 를 안 지나가므로 알림을 그 한 곳에만 걸면 통째로 샌다. */
@@ -1288,7 +1250,6 @@ function hwPostDirty() {
   hwPost({ t: 'dirty', n: n });
 }
 
-/* C# 이 최근 연 문서 목록을 밀어 준다(8단계). 메뉴는 문서 안에 있으므로 목록도 여기서 그린다. */
 function hwSetRecent(list) {
   var sel = document.getElementById('hwRecent');
   if (!sel) return;
@@ -1343,7 +1304,6 @@ function hwWorstBox() {
   return worstOver > 1 ? (Math.round(worstOver) + 'px 넘침: ' + worst) : '없음';
 }
 
-/* 문서에서 처음 만나는 표 칸 문단. 표가 없으면 null. */
 function firstCellPara() {
   for (var si = 0; si < hwDoc.sections.length; si++) {
     var paras = hwDoc.sections[si].paras;
@@ -1360,7 +1320,6 @@ function firstCellPara() {
   return null;
 }
 
-/* 화면에 놓인 그림이 다 받아졌는지. 한 장도 없으면 total 0 이다. */
 function hwWaitImages() {
   var imgs = document.querySelectorAll('img.hw-obj-img');
   var jobs = [];
@@ -1427,7 +1386,6 @@ function hwCaretDriftMax() {
   return { px: Math.round(worst * 10) / 10, at: worstAt, probe: hwDriftProbe() };
 }
 
-/* 첫 문단 첫 줄을 글자마다 대조해 어디서부터 갈리는지 본다. */
 function hwDriftProbe() {
   var out = [];
   var p = hwDoc.sections[0].paras[0];
@@ -1537,18 +1495,15 @@ function hwDomRectOfChar(lineEl, n) {
   }
 }
 
-/* --ui-test 가 넣을 그림 경로와 미리보기 주소를 C# 이 미리 꽂아 둔다. */
 var hwUiTestImage = '';
 var hwUiTestSrc = '';
 
-/* C# 이 눌러 주는 "테스트" 버튼. 사람 손 없이 ping 왕복을 태운다. */
 function hwFirePing() {
   hwPingSeq += 1;
   hwPost({ t: 'ping', n: hwPingSeq });
 }
 
-/* ── PDF 내보내기(7단계) ─────────────────────────────────────
-   C# 이 인쇄 직전에 부른다. 가상 스크롤을 끄고 모든 쪽을 채운 뒤 준비됐다고 알린다 —
+/* C# 이 인쇄 직전에 부른다. 가상 스크롤을 끄고 모든 쪽을 채운 뒤 준비됐다고 알린다 —
    ★ 이걸 안 하면 화면 밖 쪽이 빈 채로 PDF 에 나간다(보이는 ±2쪽만 내용이 있다). */
 function hwPrintPrepare() {
   /* ★ 여기서 바로 던져도 printReady 는 보낸다(아래 catch 와 같은 이유) — C# 은 그걸 받아야
@@ -1581,8 +1536,7 @@ function hwPrintDone() {
   hwRenderer.fillAll(false);
 }
 
-/* ── 저장(계획 6절) ─────────────────────────────────────────
-   편집마다 보내지 않는다. 저장할 때 <b>고친 문단과 구조 변경만</b> 모아 한 번에 올린다. */
+/* 편집마다 보내지 않는다. 저장할 때 <b>고친 문단과 구조 변경만</b> 모아 한 번에 올린다. */
 
 function hwSave(saveAs) {
   if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
@@ -1591,7 +1545,7 @@ function hwSave(saveAs) {
   hwPost({
     t: 'save', rev: hwDoc.rev || 1, saveAs: !!saveAs,
     /* ★ 모양 목록을 통째로 같이 보낸다. 화면이 새로 만든 모양이 뒤에 붙어 있고,
-       문서 쪽은 그중 이미 있는 것은 다시 쓰고 없는 것만 등록한다(G-10). */
+       문서 쪽은 그중 이미 있는 것은 다시 쓰고 없는 것만 등록한다. */
     charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
     ops: ops
   });
@@ -1632,8 +1586,6 @@ function hwSaved(r) {
   hwRelayout();
   hwCaret.paint();
 }
-
-/* ── 문서 → C# ───────────────────────────────────────────── */
 
 var hwPingSeq = 0;
 

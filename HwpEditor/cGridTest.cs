@@ -7,8 +7,6 @@ using HwpEditor.Models;
 namespace HwpEditor
 {
     /// <summary>
-    /// 표 격자 편집(<see cref="cTableWriter.EditGrid"/>)만 따로 돌려 보는 검사.
-    ///
     /// ★ <b>실제 문서로는 못 잡는 자리를 본다</b>. 표본 문서의 표는 병합이 얕아서, 본뜰 줄과 넣을 줄이
     ///   두 칸 이상 떨어지는 경우(= 세로 병합된 칸에 커서를 두고 "아래에 행 넣기")가 한 번도 안 나온다.
     ///   그 자리에서만 씨앗이 일부만 덮이는 상황이 생기고, 빈 자리·겹침이 난다.
@@ -22,7 +20,6 @@ namespace HwpEditor
         {
             int bad = 0;
 
-            // ── 리뷰가 지목한 (a): 씨앗 B 가 열 1,2 에 걸쳐 있고 그중 열 1 만 이미 덮인다 ──
             bad += One("세로병합 아래 행 넣기 — 씨앗이 일부만 덮임",
                 new[]
                 {
@@ -31,7 +28,6 @@ namespace HwpEditor
                 },
                 Op("addRow", 2, 0));
 
-            // ── 리뷰가 지목한 (b): 씨앗 B 가 열 0,1 에 걸쳐 있고 열 1 이 이미 덮인다 ──
             bad += One("세로병합 아래 행 넣기 — 겹침",
                 new[]
                 {
@@ -41,7 +37,6 @@ namespace HwpEditor
                 },
                 Op("addRow", 2, 0));
 
-            // ── 가로 병합에서 열을 넣을 때(위의 대칭) ──
             bad += One("가로병합 오른쪽 열 넣기 — 씨앗이 일부만 덮임",
                 new[]
                 {
@@ -50,7 +45,6 @@ namespace HwpEditor
                 },
                 Op("addCol", 2, 0));
 
-            // ── 리뷰가 지목한 2번: 빼고 나면 칸이 하나도 시작 안 하는 행이 남는다 ──
             bad += One("세로병합만 남기고 열 빼기 — 빈 행",
                 new[] { Cell(0, 0, 2, 1), Cell(0, 1, 1, 1), Cell(1, 1, 1, 1) },
                 Op("delCol", 1, -1));
@@ -59,7 +53,6 @@ namespace HwpEditor
                 new[] { Cell(0, 0, 1, 2), Cell(1, 0, 1, 1), Cell(1, 1, 1, 1) },
                 Op("delRow", 1, -1));
 
-            // ── 흔한 모양들 ──
             cGridCell[] plain = { Cell(0, 0, 1, 1), Cell(0, 1, 1, 1), Cell(1, 0, 1, 1), Cell(1, 1, 1, 1) };
             bad += One("2x2 위에 행 넣기", plain, Op("addRow", 0, 0));
             bad += One("2x2 아래에 행 넣기", plain, Op("addRow", 2, 1));
@@ -68,7 +61,6 @@ namespace HwpEditor
             bad += One("2x2 행 빼기", plain, Op("delRow", 0, -1));
             bad += One("2x2 열 빼기", plain, Op("delCol", 1, -1));
 
-            // ── table.hwp 와 같은 모양(가로·세로 병합이 하나씩) ──
             cGridCell[] like = { Cell(0, 0, 1, 1), Cell(0, 1, 1, 1), Cell(0, 2, 2, 1), Cell(1, 0, 1, 2) };
             bad += One("table.hwp 모양 — 행 넣기", like, Op("addRow", 1, 0));
             bad += One("table.hwp 모양 — 열 넣기", like, Op("addCol", 1, 0));

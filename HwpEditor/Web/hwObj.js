@@ -1,9 +1,4 @@
-﻿/* 개체 고르기·옮기기·크기 조절(8단계).
-
-   넣은 그림을 그 뒤에 다룰 수가 없었다 — 눌러도 캐럿이 그 글자 자리로 갈 뿐이었다.
-   여기서 개체를 골라 테두리·조절점을 얹고, 끌어서 옮기고 모서리로 크기를 바꾼다.
-
-   ★ 오버레이는 캐럿·선택과 <b>같은 층 규칙</b>이다 — .hw-body 안에 절대 좌표로 얹고 본문 DOM
+﻿/* ★ 오버레이는 캐럿·선택과 <b>같은 층 규칙</b>이다 — .hw-body 안에 절대 좌표로 얹고 본문 DOM
      사이에 끼워 넣지 않는다. 끼워 넣으면 그 줄이 다시 흐르면서 우리 배치와 화면이 갈라진다.
    ★ 자리는 모델 값이 아니라 <b>실제로 그려진 사각형</b>에서 잰다. 떠 있는 그림은 부모가 줄(.hw-line)이고
      표는 본문(.hw-body)이라 원점이 서로 다른데(hwRender.js 의 objEl / hwPage 의 표 배치), rect 로 재면
@@ -15,7 +10,7 @@
 var hwObj = (function () {
   'use strict';
 
-  var cId = null;      /* 고른 개체가 매달린 문단 id */
+  var cId = null;
   var cPos = -1;       /* 그 개체의 자리(편집 인덱스) */
   var cDrag = null;    /* 끄는 중: { kind, dir, x0, y0, box, preview } */
 
@@ -55,8 +50,6 @@ var hwObj = (function () {
     return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
   }
 
-  /* ── 고르기 ──────────────────────────────────────────── */
-
   function select(id, pos) {
     cId = id;
     cPos = pos;
@@ -88,8 +81,6 @@ var hwObj = (function () {
        안 그러면 Esc 를 누른 뒤 캐럿이 사라진 채로 남는다(다음 키·클릭 때까지). */
     if (window.hwCaret) hwCaret.paint();
   }
-
-  /* ── 그리기 ──────────────────────────────────────────── */
 
   /* ★ 여덟 방향을 다 준다. 글자처럼 취급하는 개체도 마찬가지다 — 그 개체의 <b>자리</b>는 글자
      흐름이 정하지만 왼쪽 위 모서리를 잡아 <b>크기</b>를 줄이는 것은 똑같이 된다.
@@ -144,8 +135,6 @@ var hwObj = (function () {
     var y = dir.indexOf('n') >= 0 ? box.y : (dir.indexOf('s') >= 0 ? box.y + box.h : my);
     return { x: x, y: y };
   }
-
-  /* ── 마우스 ──────────────────────────────────────────── */
 
   /* hwInput.onMouseDown 이 캐럿보다 <b>먼저</b> 부른다. 개체를 먹었으면 true. */
   function onDown(e) {
@@ -311,8 +300,6 @@ var hwObj = (function () {
     }, null, ids);
   }
 
-  /* ── 모델에 반영 ─────────────────────────────────────── */
-
   function clampSize(v) { return Math.max(cMinHu, Math.min(cSaneHu, Math.round(v))); }
   function clampOff(v) { return Math.max(-cSaneHu, Math.min(cSaneHu, Math.round(v))); }
 
@@ -370,8 +357,6 @@ var hwObj = (function () {
       return null;
     }, null, [p.id]);
   }
-
-  /* ── 키 ──────────────────────────────────────────────── */
 
   /* hwInput.onKeyDown 이 캐럿보다 <b>먼저</b> 부른다. 먹었으면 true. */
   function onKey(e) {

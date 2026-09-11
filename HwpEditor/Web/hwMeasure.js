@@ -1,6 +1,4 @@
-﻿/* 글자 폭 측정. 줄 나눔이 오라클과 맞느냐가 전부 여기에 달려 있다.
-
-   ★ 반올림하지 않는다. 글자마다 0.5 HWPUNIT 씩만 잘라도 40글자 줄에서 20 HWPUNIT 이 어긋나고,
+﻿/* ★ 반올림하지 않는다. 글자마다 0.5 HWPUNIT 씩만 잘라도 40글자 줄에서 20 HWPUNIT 이 어긋나고,
      그게 줄 끝 한 글자를 밀어 낸다.
 
    ★ 폰트 크기를 바꿔 가며 재지 않는다. canvas measureText 는 크기에 선형이므로
@@ -120,7 +118,6 @@ var hwMeasure = (function () {
       return w;
     },
 
-    /* 글자 크기(HWPUNIT). 줄 높이 계산의 바탕이다. */
     sizeHu: function (cs) { return cs.sizeHu; },
 
     /* ★ <b>브라우저가 실제로 그릴</b> 폭(HWPUNIT). 장평·자간을 안 얹은 날 것이다.
@@ -130,7 +127,6 @@ var hwMeasure = (function () {
       return width100(fontKey(cs), ch) * cs.sizeHu / 100;
     },
 
-    /* 진단용 — 캐시에 든 패밀리와 글자 수. */
     stats: function () {
       var out = {};
       for (var k in cCache) if (cCache.hasOwnProperty(k)) out[k] = Object.keys(cCache[k]).length;

@@ -1,8 +1,6 @@
-﻿/* 글자·문단 서식(4단계).
-
-   ★ 서식은 글자마다 붙는 것이 아니라 <b>모양 번호</b>로 붙는다. 그래서 굵게 한 번에
+﻿/* ★ 서식은 글자마다 붙는 것이 아니라 <b>모양 번호</b>로 붙는다. 그래서 굵게 한 번에
      "그 속성만 다른 모양"을 찾거나 만들어 글자들이 그것을 가리키게 한다.
-   ★ <b>같은 모양을 두 번 만들지 않는다</b>(G-10). 굵게를 열 번 눌렀다 저장할 때마다 모양이
+   ★ <b>같은 모양을 두 번 만들지 않는다</b>. 굵게를 열 번 눌렀다 저장할 때마다 모양이
      열 개씩 늘면 그 문서는 열 때마다 무거워진다. 그래서 세 단계로 찾는다:
        ① 뿌리(갈라져 나온 원본)와 같아지면 뿌리로 되돌린다 — 굵게 껐다 켰다가 제자리로 온다.
        ② 같은 뿌리에서 갈라진 것 중 속성이 같은 것이 있으면 그것을 쓴다.
@@ -16,7 +14,7 @@ var hwFormat = (function () {
   /* 선택 없이 서식만 누른 경우 — 다음에 칠 글자에 걸 서식. 캐럿이 움직이면 버린다.
      ★ 모양 <b>번호</b>가 아니라 "어느 모양에서 무엇을 바꿀 것인가" 로 들고 있는다. 번호로 들고 있으면
        Ctrl+B 를 눌러 놓고 글자를 안 치고 캐럿만 옮겨도 목록에 쓰지 않는 모양이 하나 남고,
-       그것이 저장할 때 문서에 등록된다(G-10 이 막으려던 바로 그 증식이다). */
+       그것이 저장할 때 문서에 등록된다. */
   var cPending = null;      /* { base: 글자모양번호, over: {바꿀 속성} } */
   var cPendingAt = null;
 
@@ -63,9 +61,6 @@ var hwFormat = (function () {
     return made.id;
   }
 
-  /* ── 글자 서식 ─────────────────────────────────────────── */
-
-  /* 선택 범위의 문단과 그 안의 [from, to) 를 훑는다. 선택이 없으면 캐럿 문단만 빈 범위로 준다. */
   function eachRange(fn) {
     var sel = hwCaret.selection();
     if (!sel) {
@@ -117,8 +112,7 @@ var hwFormat = (function () {
     });
   }
 
-  /* "지금 값에서 한 단계" 인 글자 서식(크기·장평·자간). fn(모양) 이 바꿀 속성을 주거나 null(그대로).
-     ★ 모양마다 따로 간다 — 선택 안에 10pt·14pt 가 섞여 있으면 각자 11pt·15pt 가 된다(한글). 선택 전체에
+  /* ★ 모양마다 따로 간다 — 선택 안에 10pt·14pt 가 섞여 있으면 각자 11pt·15pt 가 된다(한글). 선택 전체에
        값 하나를 걸면 섞인 크기가 한 값으로 뭉개진다.
      ★ 선택이 없으면 캐럿 자리 모양에서 한 단계를 대기 서식으로 건다(applyChar 와 같은 길). */
   function mapChar(fn) {
@@ -175,7 +169,6 @@ var hwFormat = (function () {
     });
   }
 
-  /* 자간 ±1%(−50~50). */
   function stepSpacing(dir) {
     mapChar(function (cs) {
       var s = cs.spacing || 0;
@@ -184,7 +177,6 @@ var hwFormat = (function () {
     });
   }
 
-  /* 켜기/끄기 — 범위가 <b>전부</b> 켜져 있으면 끄고, 하나라도 꺼져 있으면 켠다(한글과 같다). */
   function toggleChar(key) {
     var allOn = true, any = false;
 
@@ -226,7 +218,6 @@ var hwFormat = (function () {
   /* 방금 쓴 글자모양이 대기 서식이었나. 친 뒤에 그 서식을 이어 가려고 기억해 둔다. */
   var cUsedPending = -1;
 
-  /* 입력이 쓸 글자모양. 대기 중인 서식을 여기서 꺼내 쓴다. */
   function shapeForTyping(para, pos) {
     if (pending(para, pos)) {
       /* 여기서 처음으로 <b>진짜</b> 모양을 만든다 — 글자가 실제로 그것을 가리키게 되는 순간이다. */
@@ -251,8 +242,6 @@ var hwFormat = (function () {
     cPending = null;
     cPendingAt = null;
   }
-
-  /* ── 문단 서식 ─────────────────────────────────────────── */
 
   function applyPara(over) {
     if (!hwDoc) return;
@@ -284,7 +273,6 @@ var hwFormat = (function () {
     applyPara({ mlHu: Math.max(0, (ps.mlHu || 0) + dir * cIndentStep) });
   }
 
-  /* "지금 값에서 한 단계" 인 문단 서식. 선택 안 문단마다 제 값에서 간다. fn(모양, 문단) → 바꿀 속성 또는 null. */
   function mapPara(fn) {
     if (!hwDoc) return;
     hwInput.run(function () {
@@ -311,7 +299,6 @@ var hwFormat = (function () {
     return pg.wHu - pg.mlHu - pg.mrHu - (pg.gutHu || 0);
   }
 
-  /* 줄 간격 넓게·좁게. 비율이면 ±10%(50~500), 고정·최소·여백이면 ±1pt. 방식(lsType)은 안 바꾼다. */
   function stepLineSpace(dir) {
     mapPara(function (ps) {
       var v = ps.ls || 0, to;
@@ -346,8 +333,6 @@ var hwFormat = (function () {
       return over;
     });
   }
-
-  /* ── 화면이 보여 줄 현재 상태 ───────────────────────────── */
 
   function state() {
     var p = hwCaret.para();

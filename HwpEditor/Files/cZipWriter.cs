@@ -7,8 +7,6 @@ using System.Text;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 손으로 쓰는 zip 하나. .hwpx 를 저장할 때만 쓴다.
-    ///
     /// ★ <see cref="ZipArchive"/> 를 안 쓰는 이유는 하나뿐이다 — .NET Framework 의 그것은
     ///   <c>CompressionLevel.NoCompression</c> 을 줘도 <b>압축 안 함(method 0)</b> 이 아니라
     ///   <b>수준 0 의 deflate(method 8)</b> 로 쓴다(실측 — 저장본의 첫 항목이 method 8 로 나왔다).
@@ -52,7 +50,6 @@ namespace HwpEditor.Files
             cDate = (ushort)(((now.Year - 1980) << 9) | (now.Month << 5) | now.Day);
         }
 
-        /// <summary>항목 하나. <paramref name="pStore"/> 면 압축하지 않고 그대로 넣는다.</summary>
         internal void Add(string pName, byte[] pData, bool pStore)
         {
             if (pData == null) pData = new byte[0];

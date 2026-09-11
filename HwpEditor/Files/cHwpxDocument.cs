@@ -9,7 +9,7 @@ using HwpEditor.Models;
 
 namespace HwpEditor.Files
 {
-    /// <summary>화면 id → 원본 XML 요소. hwp 쪽 <see cref="cHwpIndex"/> 와 같은 자리다(계획 B-1).</summary>
+    /// <summary>화면 id → 원본 XML 요소. hwp 쪽 <see cref="cHwpIndex"/> 와 같은 자리다.</summary>
     public sealed class cHwpxIndex
     {
         public readonly Dictionary<string, XmlElement> Paras = new Dictionary<string, XmlElement>();
@@ -23,8 +23,6 @@ namespace HwpEditor.Files
     }
 
     /// <summary>
-    /// 열어 둔 .hwpx 하나. hwp 쪽과 같은 약속을 지킨다 — <b>읽은 것을 그대로 들고 있다가 편집분만 되쓴다</b>.
-    ///
     /// ★ 저장은 원본 zip 을 통째로 옮겨 담으면서 <b>바뀐 항목만 갈아 끼운다</b>. 우리가 모르는 항목
     ///   (미리보기·설정·기록)까지 다시 만들려 들면, 우리가 이해 못 한 것부터 조용히 사라진다.
     /// ★ <c>mimetype</c> 은 <b>맨 앞에, 압축하지 않고</b> 넣는다 — OCF 묶음 규칙이고 이걸 어기면
@@ -42,7 +40,6 @@ namespace HwpEditor.Files
         private readonly XmlDocument cHeader;
         private readonly XmlDocument cContent;
 
-        /// <summary>이번 저장에서 새로 넣을 zip 항목(그림 실물). 저장이 끝나면 비운다.</summary>
         private readonly Dictionary<string, byte[]> cAdded = new Dictionary<string, byte[]>();
 
         private readonly cHwpxIndex cIndex = new cHwpxIndex();
@@ -219,7 +216,6 @@ namespace HwpEditor.Files
             return null;
         }
 
-        /// <summary>content.hpf 의 <c>opf:item</c> 을 id → href 로.</summary>
         private Dictionary<string, string> ManifestHrefs()
         {
             Dictionary<string, string> map = new Dictionary<string, string>();
@@ -237,7 +233,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 그림 실물을 묶음에 넣고 <c>binaryItemIDRef</c> 로 쓸 id 를 준다.
         /// ★ 두 곳을 같이 고쳐야 한다 — zip 항목과 content.hpf 의 manifest. 하나만 하면 여는 쪽이 못 찾는다.
         /// </summary>
         internal string AddImage(byte[] pData, string pExtension)
@@ -338,7 +333,7 @@ namespace HwpEditor.Files
 
                     // ★ header.xml 도 우리가 고친 것을 써야 한다. 원본 바이트를 그대로 옮기면
                     //   새로 등록한 글자모양·문단모양이 통째로 사라지고, section*.xml 은 그 번호를
-                    //   가리킨 채 나간다 — 참조가 매달린 파일이 된다(2차 검토 지적).
+                    //   가리킨 채 나간다 — 참조가 매달린 파일이 된다.
                     if (string.Equals(e.FullName, cHeaderEntry, StringComparison.OrdinalIgnoreCase) && cHeader != null)
                     { dst.Add(e.FullName, XmlBytes(cHeader), false); continue; }
 

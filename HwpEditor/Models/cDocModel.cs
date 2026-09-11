@@ -4,10 +4,10 @@ using Newtonsoft.Json;
 namespace HwpEditor.Models
 {
     /// <summary>
-    /// 화면(JS)이 받는 문서 하나. ★ 이 폴더는 WinForms 도 HwpLibSharp 도 참조하지 않는다 —
-    /// hwp 리더와 hwpx 리더가 <b>같은 모델</b>을 채워야 화면이 한 벌로 유지된다(계획 5절).
+    /// ★ 이 폴더는 WinForms 도 HwpLibSharp 도 참조하지 않는다 —
+    /// hwp 리더와 hwpx 리더가 <b>같은 모델</b>을 채워야 화면이 한 벌로 유지된다.
     ///
-    /// JSON 이름은 계획 5절 그대로다. 짧게 쓴 것은 문서 하나가 통째로 오가기 때문이다
+    /// JSON 이름은 짧게 쓴 것은 문서 하나가 통째로 오가기 때문이다
     /// (100쪽 문서면 이름 길이가 그대로 전송량이 된다).
     /// </summary>
     public sealed class DocModel
@@ -63,16 +63,15 @@ namespace HwpEditor.Models
 
     public sealed class ParagraphModel
     {
-        /// <summary>본문 <c>s{섹션}p{원본인덱스}</c>, 셀 내부·신규는 계획 B-1 규칙.</summary>
+        /// <summary>본문 <c>s{섹션}p{원본인덱스}</c>, 셀 내부·신규는 규칙.</summary>
         [JsonProperty("id")] public string Id;
 
-        /// <summary>ParaShape 인덱스.</summary>
         [JsonProperty("ps")] public int Ps;
 
         /// <summary>
         /// 이 문단 앞에서 강제로 나뉘는가. "page" | "column" | "section" | null.
         /// ★ 원본 <c>ParaHeader.DivideSort</c> 값이다 — 이걸 안 보면 쪽이 모자라고, 그 뒤 줄의 y 가
-        ///   통째로 밀려 lineseg 대조가 의미를 잃는다(실측 — aligns.hwp 가 2쪽인데 1쪽으로 나왔다).
+        ///   통째로 밀려 lineseg 대조가 의미를 잃는다 (실측 — aligns.hwp 가 2쪽인데 1쪽으로 나왔다).
         /// </summary>
         [JsonProperty("brk", NullValueHandling = NullValueHandling.Ignore)]
         public string Brk;
@@ -81,7 +80,7 @@ namespace HwpEditor.Models
         [JsonProperty("objs")] public List<InlineObjModel> Objs = new List<InlineObjModel>();
 
         /// <summary>
-        /// lineseg 오라클. ★ 원본 문단에만 있다 — 편집으로 dirty 가 된 문단은 null 이다(계획 B-5).
+        /// lineseg 오라클. ★ 원본 문단에만 있다 — 편집으로 dirty 가 된 문단은 null 이다.
         /// 우리 레이아웃 결과가 아니라 <b>문서에 저장돼 있던 값</b>이므로 읽기 전용으로 다룬다.
         /// </summary>
         [JsonProperty("seg", NullValueHandling = NullValueHandling.Ignore)]
@@ -96,13 +95,13 @@ namespace HwpEditor.Models
         /// <summary>CharShape 인덱스.</summary>
         [JsonProperty("cs")] public int Cs;
 
-        /// <summary>★ 제어문자 없음. 탭은 "\t", 문단 내 줄바꿈은 "\n"(계획 B-3).</summary>
+        /// <summary>★ 제어문자 없음. 탭은 "\t", 문단 내 줄바꿈은 "\n".</summary>
         [JsonProperty("text")] public string Text;
     }
 
     /// <summary>
     /// 문단 안에 박히는 개체. ★ pos 는 <b>편집 인덱스</b>다 — 원시 인덱스에서 확장 컨트롤이
-    /// 8글자인 것을 1글자로 접은 좌표계(계획 B-2).
+    /// 8글자인 것을 1글자로 접은 좌표계.
     /// </summary>
     public sealed class InlineObjModel
     {
@@ -181,7 +180,7 @@ namespace HwpEditor.Models
     }
 
     /// <summary>
-    /// lineseg 한 줄. 필드 이름은 계획 5절 그대로 짧게 간다.
+    /// lineseg 한 줄. 필드 이름은 짧게 간다.
     /// <c>s</c> 는 <b>편집 인덱스로 변환된</b> 줄 시작 위치다.
     /// </summary>
     public sealed class SegModel

@@ -1,14 +1,12 @@
-﻿/* 표 배치(5단계).
-
-   ★ 셀 안의 문단을 <b>보통 줄과 똑같이</b> 만들어 쪽의 줄 목록에 넣는다. 좌표만 본문 기준 절대값으로
+﻿/* ★ 셀 안의 문단을 <b>보통 줄과 똑같이</b> 만들어 쪽의 줄 목록에 넣는다. 좌표만 본문 기준 절대값으로
      바꿔 담으면 캐럿·선택·hit test·그리기가 표를 따로 알 필요가 없다 — 표 전용 캐럿을 또 만들면
      본문과 표에서 동작이 갈린다.
    ★ 행 높이는 <b>원본 값을 먼저 믿고</b>, 셀 내용이 그보다 커질 때만 늘린다. 처음부터 다시 계산하면
-     한글이 잡아 둔 표 모양이 열기만 해도 달라진다(계획 2절 "원본 유지 + 변경분만").
+     한글이 잡아 둔 표 모양이 열기만 해도 달라진다.
    ★ 칸의 자리는 <b>칸이 들고 있는 행·열 번호</b>로 잡는다. 목록 차례로 잡으면 위에서 아래로 걸친
      칸(rowSpan)이 있는 행은 칸이 하나 적어서, 그 행부터 x 가 통째로 왼쪽으로 밀린다.
    ★ 표가 남은 자리에 안 들어가면 <b>통째로</b> 다음 쪽으로 넘긴다. 행 단위로 쪼개 넘기는 것은
-     아직 안 한다(잔여). */
+     아직 안 한다. */
 
 var hwTable = (function () {
   'use strict';
@@ -28,7 +26,6 @@ var hwTable = (function () {
     return n;
   }
 
-  /* 걸친 칸이 요구하는 크기를 그 칸이 덮는 칸들에 나눠 얹는다. 이미 충분하면 아무것도 안 한다. */
   function spread(arr, at, span, want) {
     var have = 0, n = 0;
     for (var k = at; k < at + span && k < arr.length; k++) { have += arr[k]; n++; }
@@ -44,7 +41,7 @@ var hwTable = (function () {
     return out;
   }
 
-  /* 표 한 개의 칸 배치를 잰다. 결과는 obj._grid 에 담아 두고 그리기가 다시 쓴다. */
+  /* 결과는 obj._grid 에 담아 두고 그리기가 다시 쓴다. */
   function measure(obj) {
     var t = obj.table;
     if (!t || !t.cells.length) return { wHu: obj.wHu || 0, hHu: obj.hHu || 0, cells: [] };
@@ -52,7 +49,6 @@ var hwTable = (function () {
     var rows = rowsOf(t), cols = colsOf(t);
     var i, c;
 
-    /* ① 열 폭 — 병합 안 된 칸에서 재고, 걸친 칸이 더 넓으면 모자란 만큼 나눠 얹는다. */
     var colW = [];
     for (i = 0; i < cols; i++) colW.push(0);
     for (i = 0; i < t.cells.length; i++) {
@@ -66,7 +62,6 @@ var hwTable = (function () {
     for (i = 0; i < cols; i++) if (colW[i] <= 0) colW[i] = 1000;
     var colX = prefix(colW);
 
-    /* ② 행 높이 — 파일이 들고 있던 값이 먼저다. */
     var rowH = [];
     for (i = 0; i < rows; i++) rowH.push(0);
     for (i = 0; i < t.cells.length; i++) {
@@ -78,7 +73,7 @@ var hwTable = (function () {
       if (c.rs !== 1) spread(rowH, c.r, c.rs, c.hHu || 0);
     }
 
-    /* ③ 내용이 그보다 크면 그 행을 늘린다 — 글을 넣어 넘칠 때 표가 안 커지면 글이 칸 밖으로 나간다.
+    /* 내용이 그보다 크면 그 행을 늘린다 — 글을 넣어 넘칠 때 표가 안 커지면 글이 칸 밖으로 나간다.
        ★ 폭은 <b>격자에서 나온 폭</b>으로 잰다. 칸이 들고 있는 wHu 로 재면 배치(place)가 쓰는 폭과
          달라져, 여기서 두 줄인 문단이 화면에서는 한 줄이 된다. */
     for (i = 0; i < t.cells.length; i++) {
@@ -120,7 +115,6 @@ var hwTable = (function () {
     return Math.max(200, w - pad(cell, 'ml') - pad(cell, 'mr'));
   }
 
-  /* 셀 안 문단들을 줄로 쪼갰을 때의 높이 합. */
   function contentHeight(cell, widthHu) {
     var h = 0;
     for (var i = 0; i < cell.paras.length; i++) {
@@ -130,13 +124,6 @@ var hwTable = (function () {
     return h;
   }
 
-  /*
-    표 하나를 쪽에 놓는다.
-      obj        : 표 개체
-      originX/Y  : 본문 기준 표 왼쪽 위(HWPUNIT)
-      out        : 줄을 담을 배열(쪽의 lines)
-    반환: 표 전체 크기
-  */
   function place(obj, originX, originY, out, pageIdx, page) {
     var grid = measure(obj);
     if (page) { if (!page.tables) page.tables = []; page.tables.push(obj); }
@@ -171,13 +158,11 @@ var hwTable = (function () {
     return grid;
   }
 
-  /* ── 행·열 넣기·빼기(5단계) ─────────────────────────────
-     ★ 화면 모델을 먼저 고치고 같은 뜻의 요청을 저장 때 같이 보낸다. 저장이 끝나면 C# 이 표를
+  /* ★ 화면 모델을 먼저 고치고 같은 뜻의 요청을 저장 때 같이 보낸다. 저장이 끝나면 C# 이 표를
        다시 세우므로 문단 객체가 전부 새것이 되고, 그때 문서를 다시 읽어 id 를 맞춘다.
      ★ 여기 계산은 C# 의 <c>cTableWriter.EditGrid</c> 와 <b>같은 규칙</b>이어야 한다. 갈리면 저장 전
        화면과 저장 뒤 다시 읽은 문서가 다르게 보이고, 그 차이는 되읽기 전까지 아무 신호가 없다. */
 
-  /* 캐럿이 든 표 칸. 표 밖이면 null. */
   function here() {
     var p = hwCaret.para();
     if (!p || !p._cell) return null;
@@ -214,7 +199,7 @@ var hwTable = (function () {
     return true;
   }
 
-  /* 표 지우기(D1). 캐럿이 든 표를 통째로 뺀다 — 둘레 문단은 남고, 캐럿은 표가 있던 자리로 간다.
+  /* 표 지우기. 캐럿이 든 표를 통째로 뺀다 — 둘레 문단은 남고, 캐럿은 표가 있던 자리로 간다.
      ★ 글자 지우기로는 표가 안 지워진다(hwModel.keeps). 이 명령만 그 막음을 우회한다.
      ★ 저장은 부모 문단 되쓰기로 끝난다 — 되쓰기가 문단의 컨트롤을 비우고 objs 에 있는 것만 다시 넣는다
        (cHwpWriter.Rewrite·cHwpxWriter.Rewrite). 그 표에 쌓인 행·열 요청은 떨어져 나간 표를 고칠 뿐이다.
@@ -237,12 +222,10 @@ var hwTable = (function () {
     return true;
   }
 
-  /* 고친 뒤에도 캐럿을 둘 문단 id — 지금 있던 칸의 첫 문단. */
   function keepId(at) {
     return at.cell.paras.length ? at.cell.paras[0].id : null;
   }
 
-  /* 행·열 하나의 크기. 병합 안 된 칸에서 재고, 없으면 걸친 칸을 나눈다. */
   function rowSize(t, r) {
     var best = 0, span = 0;
     for (var i = 0; i < t.cells.length; i++) {
@@ -281,7 +264,7 @@ var hwTable = (function () {
        통째로 건너뛰어 빈 자리가 생기거나 통째로 복제해 겹침이 생긴다. */
   function runs(seed, covered, at, isRow, newSize) {
     var out = [];
-    var start = isRow ? seed.c : seed.r;         /* 씨앗이 걸쳐 있는 구간 */
+    var start = isRow ? seed.c : seed.r;
     var span = isRow ? seed.cs : seed.rs;
     var whole = (isRow ? seed.wHu : seed.hHu) || 0;
 
@@ -292,7 +275,7 @@ var hwTable = (function () {
       while (k < end && !covered[k]) k++;
       if (k <= run) continue;
 
-      var part = Math.floor(whole * (k - run) / Math.max(1, span));   /* 걸친 만큼 크기도 나눈다 */
+      var part = Math.floor(whole * (k - run) / Math.max(1, span));
       out.push(isRow ? emptyLike(seed, at, run, 1, k - run, part, newSize)
                      : emptyLike(seed, run, at, k - run, 1, newSize, part));
     }
@@ -482,7 +465,6 @@ var hwTable = (function () {
   /* 고친 표를 화면에 반영하고 요청을 쌓는다.
      ★ 캐럿은 <b>있던 칸에 그대로</b> 둔다. 표를 고칠 때마다 첫 칸으로 튀면, 이어서 누르는
        "행 빼기" 가 방금 넣은 행이 아니라 엉뚱한 행을 지운다. 그 칸이 사라졌을 때만 첫 칸으로 간다. */
-  /* 격자를 정리하고 표 크기를 다시 낸다 — 네 갈래가 똑같이 해야 해서 한 자리에 모은다. */
   function resize(obj) {
     var t = obj.table;
     compact(t);

@@ -19,8 +19,6 @@ using HwpLib.Object.BodyText.Paragraph.Text;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 편집분(<see cref="EditOp"/>)을 원본 <see cref="HWPFile"/> 에 되쓴다(계획 6절).
-    ///
     /// ★ 손대는 것은 <b>온 문단뿐</b>이다. 나머지 문단·표·수식·도형은 읽은 객체 그대로 남아 있다가
     ///   그대로 다시 저장된다 — 이것이 "원본 객체 유지 + 변경분만 반영" 의 실체다.
     /// ★ 문단 하나를 되쓸 때도 <b>원본 제어문자와 원본 Control 을 그대로 다시 넣는다</b>.
@@ -38,7 +36,7 @@ namespace HwpEditor.Files
         {
             if (pFile == null || pIndex == null || pReq == null || pReq.Ops == null) return;
 
-            // ★ 모양을 먼저 등록한다. 화면이 매긴 번호와 문서 번호가 다를 수 있고(같은 모양 재사용, G-10),
+            // ★ 모양을 먼저 등록한다. 화면이 매긴 번호와 문서 번호가 다를 수 있고(같은 모양 재사용),
             //   그 표가 있어야 아래에서 runs 의 cs 와 문단의 ps 를 옮겨 적을 수 있다.
             cShapes = new cShapeMap();
             cShapes.Cs = cShapeWriter.RegisterCharShapes(pFile, pReq.CharShapes);
@@ -70,7 +68,6 @@ namespace HwpEditor.Files
             cShapes = null;
         }
 
-        /// <summary>이번 저장에서 쓰는 화면 번호 → 문서 번호 표. 저장 하나가 끝나면 버린다.</summary>
         private sealed class cShapeMap
         {
             public int[] Cs;
@@ -96,7 +93,7 @@ namespace HwpEditor.Files
         {
             cParaRef r;
             if (string.IsNullOrEmpty(pOp.Id)) return;
-            if (!pIndex.Paras.TryGetValue(pOp.Id, out r)) return;   // 이미 없으면 할 일이 없다
+            if (!pIndex.Paras.TryGetValue(pOp.Id, out r)) return;
 
             if (r.List == null) return;
 
@@ -205,9 +202,7 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 문단의 글자열·글자모양·개체·줄 정보를 통째로 다시 만든다.
-        ///
-        /// ★ 원시 인덱스와 편집 인덱스가 여기서 다시 갈린다(계획 B-2). 개체는 화면에서 1글자지만
+        /// ★ 원시 인덱스와 편집 인덱스가 여기서 다시 갈린다. 개체는 화면에서 1글자지만
         ///   파일에서는 8글자다 — 그래서 lineseg 의 시작 위치를 되돌릴 <c>편집 → 원시</c> 표를
         ///   글자를 넣으면서 같이 만든다.
         /// </summary>
@@ -285,7 +280,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 문단 앞 강제 나눔을 화면이 보낸 대로 맞춘다.
         /// ★ 안 맞추면 문단을 복제해 넣을 때 나눔까지 복제된다 — 화면에는 하나인데 파일에는 둘이다.
         /// </summary>
         private static void SetDivide(HwpLib.Object.BodyText.Paragraph.Header.DivideSort pSort, string pBrk)
@@ -299,8 +293,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 탭 한 자리.
-        ///
         /// ★ 탭은 <c>ControlChar</c> 가 아니라 <b><c>ControlInline</c>(8글자)</b> 다.
         ///   1글자짜리로 쓰면 파일에는 한 칸만 나가는데 읽는 쪽은 코드 9를 보고 여덟 칸을 먹어서,
         ///   <b>그 뒤 문단이 통째로 삼켜진다</b>(실측 — 탭 하나 넣고 저장했더니 문단 7개가 2개로 줄었다).
@@ -394,10 +386,8 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 우리 레이아웃이 계산한 줄을 문단에 써 넣는다(계획 6절).
-        ///
         /// ★ 지워서 한글이 다시 계산하게 두는 길도 있지만, 그러면 저장본의 줄 수가 0 이 되어
-        ///   외부 변환기(convert2pdf)로는 우리 배치를 검증할 수 없다 — 2단계 판정 ④ 가 그 자리다.
+        ///   외부 변환기(convert2pdf)로는 우리 배치를 검증할 수 없다.
         /// ★ 파일의 <c>LineHeight</c> 는 <b>글자 높이</b>이고 줄 사이 여분은 <c>LineSpace</c> 로 따로 든다
         ///   (실측 — 160% 문단에서 height 1000 + space 600 = 다음 줄 y 1600).
         /// </summary>
@@ -462,7 +452,7 @@ namespace HwpEditor.Files
             int pw, ph;
             cImageStore.PixelSize(data, out pw, out ph);
 
-            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다(계획 5절 단위).
+            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다.
             int natW = pw > 0 ? pw * 75 : 0;
             int natH = ph > 0 ? ph * 75 : 0;
 
@@ -478,7 +468,6 @@ namespace HwpEditor.Files
             h.YOffset = 0;
             h.ZOrder = NextZOrder(pFile);
 
-            // 글자처럼 취급 — 캐럿이 지나가는 줄 안에 자리를 차지한다(계획 U-5 의 반대쪽).
             h.Property.SetLikeWord(true);
             h.Property.SetTextFlowMethod(TextFlowMethod.TakePlace);
             h.Property.SetHorzRelTo(HorzRelTo.Para);
@@ -539,8 +528,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 화면이 옮기거나 크기를 바꾼 개체를 원본 컨트롤에 반영한다(8단계).
-        ///
         /// ★ 손대는 것은 <b>화면에 놓인</b> 사각형뿐이다. 원본 그림의 사각형(<c>WidthAtCreate</c>·
         ///   네 꼭짓점·<c>ImageWidth</c>)은 그대로 둔다 — 같이 바꾸면 그림이 늘어난 게 아니라 잘린다
         ///   (<see cref="AddPicture"/> 의 실측 주석과 같은 자리다).
@@ -600,7 +587,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 이미 있는 개체보다 위에 놓는다. 없으면 0.
         /// ★ 표 칸 안까지 훑는다. 본문 문단만 보면 칸 안 그림의 순서를 못 봐서 새 그림이 그보다 낮게
         ///   매겨지고, 글자처럼 취급을 끄면(어울림) 겹침 순서가 뒤집힌다.
         /// </summary>

@@ -8,15 +8,10 @@ using Newtonsoft.Json.Linq;
 
 namespace HwpEditor
 {
-    /// <summary>
-    /// 창 하나. WinForms 쪽 역할은 빈 Panel 하나와 파일 대화상자뿐이고,
-    /// 메뉴·툴바·상태줄은 전부 문서 안(cWebHost)에 있다.
-    /// </summary>
     public partial class mdiHwpEditor : Form
     {
         private readonly cWebHost cWeb = new cWebHost();
 
-        /// <summary>명령줄로 받은 문서. 화면이 준비되면(ready) 연다.</summary>
         internal string cStartPath;
 
         public mdiHwpEditor()
@@ -88,7 +83,7 @@ namespace HwpEditor
                 "HwpEditor", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        /// <summary>문서에서 올라온 메시지 한 줄. ★ UI 스레드에서 온다.</summary>
+        /// <summary>★ UI 스레드에서 온다.</summary>
         private void Web_WebMessage(object sender, string pJson)
         {
             try
@@ -213,7 +208,7 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 문서를 열어 화면에 보낸다. ★ 파일을 여는 길은 <see cref="cDocument"/> 하나뿐이다 —
+        /// ★ 파일을 여는 길은 <see cref="cDocument"/> 하나뿐이다 —
         /// CLI 오라클도 같은 길을 지나야 화면에서 본 것과 검사한 것이 같아진다.
         /// </summary>
         internal void OpenDocument(string pPath)
@@ -313,7 +308,7 @@ namespace HwpEditor
         #region 저장 · 그림
 
         /// <summary>
-        /// 화면이 모은 편집분을 받아 원본에 반영하고 저장한다(계획 6절).
+        /// 화면이 모은 편집분을 받아 원본에 반영하고 저장한다.
         ///
         /// ★ 실패를 조용히 삼키지 않는다 — 화면은 ok 를 보고 dirty 집합을 비우므로,
         ///   실패했는데 성공이라고 답하면 사용자가 고친 것이 그 자리에서 사라진다.
@@ -386,8 +381,7 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 그림 파일을 골라 화면에 넘긴다. 실물은 <b>저장할 때</b> 문서에 들어가고, 지금은 미리보기만 간다
-        /// (계획 6절 — 편집마다 왕복하지 않는다).
+        /// 그림 파일을 골라 화면에 넘긴다. 실물은 <b>저장할 때</b> 문서에 들어가고, 지금은 미리보기만 간다.
         /// </summary>
         private void OnInsertImage()
         {
@@ -427,7 +421,7 @@ namespace HwpEditor
 
         #endregion
 
-        #region PDF 내보내기(7단계)
+        #region PDF 내보내기
 
         private string cPdfPath;
         private bool cPdfBusy;   // 대화상자를 지나 hwPrintPrepare 를 부른 뒤 ExportPdf 가 끝날 때까지

@@ -5,15 +5,10 @@ using System.Text;
 
 namespace HwpEditor
 {
-    /// <summary>
-    /// exe 옆 log 폴더에 하루 한 파일. 화면이 WebView2 안에 있어서 초기화가 실패하면
-    /// 사용자에게 보일 자리가 없다 — 그때 사유가 남는 유일한 곳이 여기다.
-    /// </summary>
     internal static class cLog
     {
         private static readonly object cLock = new object();
 
-        /// <summary>로그 폴더의 부모. Program.Run 이 Application.StartupPath 로 세운다.</summary>
         internal static string BaseDir = AppDomain.CurrentDomain.BaseDirectory;
 
         internal static void Write(string pText)

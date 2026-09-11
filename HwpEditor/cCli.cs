@@ -16,10 +16,6 @@ using HwpLib.Tool.TextExtractor;
 
 namespace HwpEditor
 {
-    /// <summary>
-    /// 화면 없이 도는 검증 통로. 오라클 대조가 화면과 <b>같은 코드</b>를 지나야 하므로
-    /// 여기서도 파일은 <see cref="cHwpDocument"/> 로만 열고 저장한다.
-    /// </summary>
     internal static class cCli
     {
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -64,7 +60,6 @@ namespace HwpEditor
 
         /// <summary>
         /// CLI 인자면 처리하고 종료코드(0 이상)를, 아니면 -1 을 준다.
-        /// ★ WinExe 라 콘솔이 없다 — 부모 콘솔에 붙지 않으면 출력이 통째로 사라진다.
         /// </summary>
         internal static int TryRun(string[] pArgs)
         {
@@ -111,7 +106,6 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 화면 밖에서 편집기 문서를 실제로 띄워 0단계 완료 판정을 기계로 찍는다.
         /// ★ WebView2 를 쓰는 유일한 CLI 통로라 여기서만 네이티브 로더를 올린다
         ///   (Program.Main 은 CLI 분기를 로더 준비보다 앞에 둔다 — 나머지 통로는 런타임이 없어도 돌아야 한다).
         /// </summary>
@@ -132,7 +126,7 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 화면 밖에서 실제로 배치·렌더해 lineseg 오라클 일치율을 잰다(1단계 완료 판정 ②③).
+        /// 화면 밖에서 실제로 배치·렌더해 lineseg 오라클 일치율을 잰다.
         /// 사용법: <c>--render-oracle &lt;파일 또는 폴더&gt; [시한초]</c>
         /// </summary>
         private static int RunRenderOracle(string[] pArgs)
@@ -187,7 +181,6 @@ namespace HwpEditor
             return rate >= 90 ? 0 : 1;
         }
 
-        /// <summary>폴더면 .hwp 와 .hwpx 를 모두, 파일이면 그 하나를. 이름 순으로 준다.</summary>
         private static string[] DocFiles(string pPathOrDir)
         {
             if (!Directory.Exists(pPathOrDir)) return new string[] { pPathOrDir };
@@ -231,9 +224,8 @@ namespace HwpEditor
 
                 try
                 {
-                    // ★ 형식을 가리지 않는 문으로 연다. 예전에는 hwp 전용 문으로 열어서 .hwpx 를
-                    //   "Invalid header signature" 로 떨어뜨렸고, 그래서 hwpx 는 이 검사를
-                    //   <b>한 번도 안 지났다</b>(실측 — 폴더를 바꿔 돌려 보고서야 드러났다).
+                    // ★ 형식을 가리지 않는 문으로 연다. hwp 전용 문으로 열면 .hwpx 는 이 검사를
+                    //   <b>한 번도 안 받는다</b>(실측 — 폴더를 바꿔 돌려 보고서야 드러났다).
                     cDocument doc = cDocument.Open(path);
                     DocModel m = doc.Model;
 
@@ -251,7 +243,7 @@ namespace HwpEditor
                                 {
                                     lines++;
                                     if (s.NewPage) pages++;
-                                    // ★ B-2 검사: 편집 인덱스로 옮겼으면 문단 길이를 넘을 수 없다.
+                                    // ★ 편집 인덱스로 옮겼으면 문단 길이를 넘을 수 없다.
                                     if (s.S < 0 || s.S > p.Len) idxBad++;
                                 }
                             }
@@ -285,7 +277,7 @@ namespace HwpEditor
 
         /// <summary>
         /// 우리 runs 를 이어 붙인 글자열이 HwpLibSharp 의 <c>GetNormalString()</c> 과 같은지 센다.
-        /// ★ 탭·줄바꿈은 우리 쪽에만 있으므로 빼고 비교한다(계획 B-3).
+        /// ★ 탭·줄바꿈은 우리 쪽에만 있으므로 빼고 비교한다.
         /// </summary>
         private static int CountTextMismatch(cHwpDocument pDoc, DocModel pModel)
         {
@@ -354,13 +346,12 @@ namespace HwpEditor
             int rounds = pArgs.Length > 3 ? int.Parse(pArgs[3]) : 1;
             Directory.CreateDirectory(dstDir);
 
-            // ★ 암호·배포용 문서는 열기 자체가 실패한다(G-8). 대조 집합에서 뺀다.
+            // ★ 암호·배포용 문서는 열기 자체가 실패한다. 대조 집합에서 뺀다.
             string[] skip = { "password-12345.hwp", "viewtext.hwp" };
 
             int ok = 0, diff = 0, err = 0;
 
-            // ★ hwpx 도 같이 돈다. 그전에는 hwpx 가 <b>한 번도 왕복 검사를 안 받았다</b> —
-            //   "*.hwp" 로 훑고 HWPFile 로 열어 "Invalid header signature" 로 끝나고 있었다(실측).
+            // ★ hwpx 도 같이 돈다.
             string[] files = DocFiles(src);
 
             foreach (string path in files)

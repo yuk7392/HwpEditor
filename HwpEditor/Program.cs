@@ -34,7 +34,6 @@ namespace HwpEditor
             //   미리 올려 두면 Windows 로더가 그것에 바인딩한다. 반드시 WebView2 타입을 건드리기 전에.
             PrepareWebView2Loader();
 
-            // 탐색기에서 문서를 더블클릭했거나 끌어다 놓으면 그 경로가 첫 인자로 온다.
             string startPath = null;
             if (args.Length > 0 && !args[0].StartsWith("--"))
             {
@@ -137,7 +136,6 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// WebView2 런타임이 쓸 수 있는 상태인지 본다.
         /// ★ 레지스트리가 아니라 실제 소비 경로로 판정한다 — 레지스트리는 설치 여부만 알려 주는데,
         ///   우리가 실제로 걸리는 실패에는 PrepareWebView2Loader 가 못 올린 로더도 있다.
         /// </summary>

@@ -8,8 +8,6 @@ using Newtonsoft.Json.Linq;
 namespace HwpEditor
 {
     /// <summary>
-    /// 화면 없이 PDF 로 뽑는 통로(<c>--pdf</c>, 7단계 완료 판정).
-    ///
     /// ★ 사람이 메뉴를 눌러 확인하지 않는다 — 창을 띄우면 사용자가 쓰는 창의 초점을 뺏는다.
     ///   화면 밖에 띄우고 같은 길(hwPrintPrepare → printReady → PrintToPdfAsync)을 그대로 태운다.
     /// </summary>
@@ -125,7 +123,6 @@ namespace HwpEditor
 
     internal static class cPdfRunner
     {
-        /// <summary>사용법: <c>--pdf &lt;문서&gt; &lt;출력.pdf&gt; [시한초]</c></summary>
         internal static int Run(string[] pArgs)
         {
             if (pArgs.Length < 3) { Console.WriteLine("사용법: --pdf <문서> <출력.pdf> [시한초]"); return 2; }

@@ -1,8 +1,6 @@
-﻿/* 쪽 → DOM.
-
-   ★ 줄을 절대 좌표로 놓는다. 브라우저의 줄 나눔에 맡기면 우리가 계산한 줄과 화면이 달라져서,
+﻿/* ★ 줄을 절대 좌표로 놓는다. 브라우저의 줄 나눔에 맡기면 우리가 계산한 줄과 화면이 달라져서,
      오라클이 통과해도 화면이 그것과 다른 상태가 될 수 있다. 화면은 우리 계산의 그림이어야 한다.
-   ★ 가상 스크롤: 보이는 쪽 ±2 쪽만 내용을 채우고 나머지는 빈 상자로 둔다(G-5).
+   ★ 가상 스크롤: 보이는 쪽 ±2 쪽만 내용을 채우고 나머지는 빈 상자로 둔다.
    ★ 캐럿·선택은 본문 위에 <b>따로 얹는다</b> — 글자 사이에 끼워 넣으면 그 문단만 줄이 다시
      흐르면서 우리가 계산한 배치와 어긋난다. */
 
@@ -77,7 +75,6 @@ var hwRenderer = (function () {
     for (var i = 0; i < pg.lines.length; i++) body.appendChild(lineEl(pg.lines[i]));
   }
 
-  /* 표 한 개의 테두리·칸. 글자는 이미 보통 줄로 따로 놓이므로 여기서는 칸만 그린다(5단계). */
   function tableEl(body, obj) {
     var at = obj._at, grid = obj._grid;
     if (!at || !grid) return;
@@ -131,14 +128,14 @@ var hwRenderer = (function () {
       var cw = hwBreak.charWidth(para, k, w);
       var ex = hwBreak.extraAt(para, ln, k);
 
-      if (ch === '\n') continue;                    /* 폭 0, 그릴 것도 없다 */
+      if (ch === '\n') continue;
 
       if (ch === '￼') {
         var o = objAt(para, k);
         var box = objEl(para, k);
 
         if (box) {
-          /* ★ 떠 있는 개체는 줄의 폭을 안 먹는다(계획 U-5). 줄 안에 흘려 넣으면 그 뒤 글자가
+          /* ★ 떠 있는 개체는 줄의 폭을 안 먹는다. 줄 안에 흘려 넣으면 그 뒤 글자가
              개체 폭만큼 오른쪽으로 밀려서, 우리가 계산한 캐럿 자리와 화면이 갈라진다
              (실측 — 표지 문단의 그리기 개체 하나가 캐럿을 한 글자 넘게 밀었다).
              ★ 자리는 줄 상자 기준이다 — 정렬로 줄 상자를 민 만큼 되돌려야 개체가 따라 밀리지 않는다. */
@@ -170,7 +167,7 @@ var hwRenderer = (function () {
       var cs = hwModel.charShape(csId);
 
       /* ★ 우리가 재는 폭과 브라우저가 그리는 폭이 다르다 — 한글·전각은 1em, 공백은 0.5em 으로
-         재는데(계획 U-7) 대체 글꼴(나눔)의 실제 폭은 그보다 좁다. 그 차이를 자간으로 메우지 않으면
+         재는데 대체 글꼴(나눔)의 실제 폭은 그보다 좁다. 그 차이를 자간으로 메우지 않으면
          줄 뒤로 갈수록 캐럿이 글자 앞에 선다. 차이가 같은 글자끼리 묶어 span 하나로 낸다. */
       /* ★ 장평(ratio)은 <b>두 번 세면 안 된다</b>. 우리 폭(cw)에는 이미 장평이 들어 있는데
          화면은 그것을 scaleX 로 또 늘린다 — 자간을 그대로 주면 늘어난 배만큼 벌어져서
@@ -208,7 +205,6 @@ var hwRenderer = (function () {
     return (n > cSaneHu || n < -cSaneHu) ? 0 : n;
   }
 
-  /* 글자가 아닌 자리(탭·안 그리는 개체)를 폭만큼 밀어 준다. */
   function spacer(wHu) {
     var s = el('span', 'hw-gap');
     s.style.width = hwHu2Px(wHu) + 'px';
@@ -233,8 +229,7 @@ var hwRenderer = (function () {
        lineEl 이 그 폭과 실제 글꼴 폭의 차이를 letterSpacing 으로 한 번에 준다. 두 번 주면 겹친다. */
   }
 
-  /* 개체 하나. 그림은 실제로 그리고(3단계), 나머지는 크기만 잡은 회색 상자다.
-     ★ 안 보이는 컨트롤(용지·단 정의)은 <b>아무것도 안 그린다</b> — 자리는 모델에만 있으면 된다.
+  /* ★ 안 보이는 컨트롤(용지·단 정의)은 <b>아무것도 안 그린다</b> — 자리는 모델에만 있으면 된다.
        상자를 그리면 첫 문단 앞에 정체 모를 회색 조각이 두 개 뜬다. */
   function objAt(para, pos) {
     for (var i = 0; i < (para.objs || []).length; i++) if (para.objs[i].pos === pos) return para.objs[i];
@@ -267,7 +262,7 @@ var hwRenderer = (function () {
     return stamp(d, para, pos);
   }
 
-  /* 개체 요소에 신원을 남긴다(8단계). ★ 이게 없으면 눌린 요소에서 모델로 되짚을 길이 없다 —
+  /* ★ 이게 없으면 눌린 요소에서 모델로 되짚을 길이 없다 —
      hwObj 가 고르기·조절점을 여기에 건다.
 
      ★ <b>표에는 안 붙인다.</b> 표는 격자(.hw-table)를 따로 그리지만 이 자리에도 회색 상자를 하나
@@ -283,7 +278,6 @@ var hwRenderer = (function () {
     return el;
   }
 
-  /* 쪽 번호 → 그 쪽의 본문 영역 DOM. 캐럿·선택을 얹을 자리다. 아직 안 채운 쪽이면 null. */
   function bodyOf(pageIdx) {
     var box = cPageEls[pageIdx];
     if (!box || !box._hwFilled) return null;
@@ -294,7 +288,7 @@ var hwRenderer = (function () {
 
   function canvas() { return cCanvas; }
 
-  /* PDF 로 뽑기 전에 모든 쪽을 채운다(7단계). 끝나면 다시 가상 스크롤로 돌아간다. */
+  /* PDF 로 뽑기 전에 모든 쪽을 채운다. 끝나면 다시 가상 스크롤로 돌아간다. */
   function fillAll(on) {
     cFillAll = !!on;
     fillVisible();
@@ -317,7 +311,7 @@ var hwRenderer = (function () {
 function hwRender() { return hwRenderer.render(); }
 function hwRenderRefresh() { return hwRenderer.refresh(); }
 
-/* 편집 뒤 다시 그리기. ★ 배치를 다시 하고 나서 그린다 — 문단 하나가 길어지면 그 뒤 문단의
+/* ★ 배치를 다시 하고 나서 그린다 — 문단 하나가 길어지면 그 뒤 문단의
    쪽이 통째로 밀리므로, 그 문단만 다시 그리는 것으로는 화면이 맞지 않는다.
    비싼 것은 줄 나눔인데 그건 고친 문단만 다시 한다(hwBreak.linesOf 캐시). */
 function hwRelayout() {

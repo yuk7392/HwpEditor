@@ -10,9 +10,6 @@ using HwpLib.Writer;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 열어 둔 .hwp 하나. 읽은 <see cref="HWPFile"/> 를 그대로 들고 있다가 편집분만 되쓴다
-    /// (계획 2절 "원본 객체 유지 + 변경분만 반영"). 미지원 요소는 손대지 않아 보존된다.
-    ///
     /// ★ WinForms 를 참조하지 않는다 — CLI(cCli)도 같은 길로 열고 저장해야 오라클이 화면과 같은 것을 본다.
     /// </summary>
     public sealed class cHwpDocument
@@ -37,8 +34,6 @@ namespace HwpEditor.Files
         public HWPFile File { get { return cFile; } }
 
         /// <summary>
-        /// 화면에 보내는 문서 모델. 처음 쓸 때 만들고 그대로 들고 있는다.
-        ///
         /// ★ 만들면서 <see cref="Index"/>(화면 id → 원본 객체)도 같이 채우고 그림을 파일로 푼다 —
         ///   둘 다 이 모델과 같은 순간의 문서를 봐야 짝이 맞는다.
         /// </summary>
@@ -70,7 +65,7 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 편집분을 메모리의 원본에 반영한다. ★ 반영 뒤에도 <b>다시 읽지 않는다</b> —
+        /// ★ 반영 뒤에도 <b>다시 읽지 않는다</b> —
         /// 다시 읽으면 문단 id 가 새로 매겨져 화면이 들고 있는 id 와 어긋난다.
         /// 대신 <see cref="Index"/> 를 그 자리에서 갱신해 id 를 계속 유효하게 둔다.
         /// </summary>
@@ -125,10 +120,6 @@ namespace HwpEditor.Files
             return ((pValue % 65536) + 65536) % 65536;
         }
 
-        /// <summary>
-        /// 메모리로 한 번 써 보고 되읽어, StyleInfo.ParaShapeId 가 전부 1씩 밀리는 문서인지 판정한다.
-        /// 문서당 한 번만 돈다(<see cref="cNeedsStyleFix"/> 캐시).
-        /// </summary>
         private static bool MeasureStyleShift(HWPFile pFile)
         {
             try

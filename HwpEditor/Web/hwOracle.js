@@ -1,7 +1,5 @@
-﻿/* 오라클 대조. 문서에 저장돼 있던 lineseg(한글이 계산한 줄 정보)와 우리 레이아웃을 견준다.
-
-   ★ 채점 대상은 우리 쪽이다 — seg 를 우리 결과에 맞춰 손보는 순간 이 검사는 아무 의견도 못 낸다.
-   ★ 편집으로 dirty 가 된 문단은 seg 가 null 이므로 대조에서 빠진다(계획 B-5). */
+﻿/* ★ 채점 대상은 우리 쪽이다 — seg 를 우리 결과에 맞춰 손보는 순간 이 검사는 아무 의견도 못 낸다.
+   ★ 편집으로 dirty 가 된 문단은 seg 가 null 이므로 대조에서 빠진다. */
 
 var hwOracle = (function () {
   'use strict';
@@ -38,7 +36,6 @@ var hwOracle = (function () {
     var total = 0, match = 0, details = [];
     var dySum = 0, dyCount = 0, dyMax = 0;
 
-    /* 쪽 배치 결과를 문단별로 다시 모은다. */
     var byPara = {};
     for (var pg = 0; pg < hwPages.length; pg++) {
       var lines = hwPages[pg].lines;

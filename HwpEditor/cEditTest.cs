@@ -10,8 +10,6 @@ using Newtonsoft.Json;
 namespace HwpEditor
 {
     /// <summary>
-    /// 편집 왕복을 화면 없이 재는 통로(2·3단계 완료 판정 ③⑤).
-    ///
     /// ★ 화면과 <b>같은 계약</b>으로 잰다 — 여기서 만드는 것은 화면이 저장할 때 보내는 것과 같은
     ///   <see cref="EditOp"/> 목록이다. 다른 길로 고쳐 놓고 통과했다고 하면 화면은 검사한 적이 없다.
     /// </summary>
@@ -19,11 +17,6 @@ namespace HwpEditor
     {
         #region --edit-test
 
-        /// <summary>
-        /// 첫 문단의 글자만 "테스트123" 으로 바꿔 저장하고 다시 열어 대조한다.
-        /// 개체(용지 정의 같은 것)는 자리를 그대로 두고 글자만 갈아 끼운다 — 화면에서 글자를
-        /// 전부 지우고 새로 치는 것과 같은 요청이다.
-        /// </summary>
         internal static int RunEdit(string[] pArgs)
         {
             if (pArgs.Length < 3) { Console.WriteLine("사용법: --edit-test <입력> <출력> [바꿀글자]"); return 2; }
@@ -51,7 +44,7 @@ namespace HwpEditor
 
             // ★ 두 번째 저장까지 본다. 편집기는 상태를 들고 있는 물건이라 <b>두 번째에 깨진다</b> —
             //   첫 저장 뒤에도 문단 id 표가 살아 있어야 같은 문단을 다시 고칠 수 있고,
-            //   HwpLibSharp 의 스타일 밀림 보정(G-14)도 저장할 때마다 누적되면 안 된다.
+            //   스타일 밀림 보정도 저장할 때마다 누적되면 안 된다.
             string want2 = want + "2";
             string dst2 = Path.Combine(Path.GetDirectoryName(dst) ?? ".",
                 Path.GetFileNameWithoutExtension(dst) + "-2" + Path.GetExtension(dst));
@@ -112,7 +105,6 @@ namespace HwpEditor
 
         #region --image-test
 
-        /// <summary>첫 문단 끝에 그림 하나를 붙여 저장하고, 다시 열어 그림이 하나 늘었는지 본다.</summary>
         internal static int RunImage(string[] pArgs)
         {
             if (pArgs.Length < 4) { Console.WriteLine("사용법: --image-test <입력> <출력> <그림파일>"); return 2; }
@@ -158,8 +150,6 @@ namespace HwpEditor
         #region --obj-test
 
         /// <summary>
-        /// 개체 하나의 크기를 두 배로, 자리를 5000 HWPUNIT 옮겨 저장하고 다시 열어 그 값이 남았는지 본다(8단계).
-        ///
         /// ★ 값이 바뀐 것만 보지 않는다 — <b>손 안 댄 개체와 글자가 그대로인지</b>도 같이 본다.
         ///   되쓰기가 개체를 통째로 덮어써도 "바뀌었다" 는 통과하기 때문이다.
         /// </summary>
@@ -285,7 +275,6 @@ namespace HwpEditor
 
         #region --apply
 
-        /// <summary>화면이 보내는 저장 요청(JSON)을 그대로 먹여 본다.</summary>
         internal static int RunApply(string[] pArgs)
         {
             if (pArgs.Length < 4) { Console.WriteLine("사용법: --apply <입력> <출력> <ops.json>"); return 2; }
@@ -305,7 +294,7 @@ namespace HwpEditor
             Console.WriteLine("  원본 " + b4);
             Console.WriteLine("  저장 " + after);
 
-            // ★ 같은 요청을 한 번 더 먹인다 — <b>모양이 또 느는지</b>만 본다(G-10).
+            // ★ 같은 요청을 한 번 더 먹인다 — <b>모양이 또 느는지</b>만 본다.
             //   같은 서식을 다시 걸 때마다 모양이 늘면 그 문서는 열 때마다 무거워진다.
             //   문단 수는 여기서 안 본다: 이건 화면이 두 번 저장한 것이 아니라 같은 요청을 그대로
             //   다시 먹인 것이라 insertAfter 가 또 도는 것이 맞다(화면은 저장한 뒤 그 요청을 안 낸다).
@@ -329,7 +318,7 @@ namespace HwpEditor
         #region 대조
 
         /// <summary>
-        /// 판정을 한 표로 낸다. ★ "저장이 됐다" 가 아니라 <b>무엇이 그대로이고 무엇만 바뀌었나</b>를 본다 —
+        /// ★ "저장이 됐다" 가 아니라 <b>무엇이 그대로이고 무엇만 바뀌었나</b>를 본다 —
         /// 되쓰기가 조용히 망가뜨리는 것은 우리가 손댄 문단이 아니라 그 옆이다.
         /// </summary>
         private static int Report(string pName, cSnapshot pBefore, cSnapshot pAfter,
@@ -379,7 +368,6 @@ namespace HwpEditor
             return ok;
         }
 
-        /// <summary>문서 하나의 구조 지표. 화면이 받는 모델에서 잰다 — 형식이 hwp 든 hwpx 든 같은 잣대다.</summary>
         private sealed class cSnapshot
         {
             internal int Paras, Objs, Images, Tables, CharShapes, ParaShapes;

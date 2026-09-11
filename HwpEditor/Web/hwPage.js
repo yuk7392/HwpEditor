@@ -1,6 +1,4 @@
-﻿/* 쪽 배치. 문단을 줄로 쪼갠 뒤(hwBreak) 쪽에 쌓는다.
-
-   ★ 결과는 hwPages 에 담긴다:
+﻿/* ★ 결과는 hwPages 에 담긴다:
        [{ secIdx, page(용지·여백), lines:[{ para, line, yHu }] }]
      yHu 는 본문 영역 위쪽에서의 거리다 — lineseg 의 y 와 같은 좌표계라 그대로 대조할 수 있다.
 
@@ -81,7 +79,7 @@ var hwPage = (function () {
         y += ln.hHu;
       }
 
-      /* ★ 표는 칸까지 배치한다(5단계). 표 안 문단의 줄도 <b>본문 기준 절대 좌표</b>로 같은
+      /* ★ 표는 칸까지 배치한다. 표 안 문단의 줄도 <b>본문 기준 절대 좌표</b>로 같은
          줄 목록에 들어간다 — 그래야 캐럿·선택·hit test 가 표를 따로 알 필요가 없다. */
       var tbl = tableObjs(para);
       for (var ti = 0; ti < tbl.length; ti++) {
@@ -90,7 +88,7 @@ var hwPage = (function () {
         var tx = col * (colW + gap) + (to.inline ? 0 : (to.xOffHu || 0));
         var ty = paraTop + (to.yOffHu || 0);
 
-        /* 남은 자리에 안 들어가면 통째로 다음 쪽으로 넘긴다(행 단위로 쪼개 넘기는 것은 잔여). */
+        /* 남은 자리에 안 들어가면 통째로 다음 쪽으로 넘긴다. */
         if (ty + grid.hHu > textH && !(paraTop === 0 && y === 0)) {
           col++;
           if (col >= cols) { cur = newPage(sec, si); col = 0; }
@@ -120,7 +118,6 @@ var hwPage = (function () {
 
   /* 문단에 매달려 자리를 차지하는 떠 있는 개체가 잡아먹는 세로 높이.
      쪽·용지 기준으로 붙은 개체(relV=page/paper)는 본문 흐름과 무관하므로 세지 않는다. */
-  /* 이 문단에 매달린 표 개체들. */
   function tableObjs(para) {
     var out = [];
     for (var i = 0; i < (para.objs || []).length; i++)
@@ -168,7 +165,6 @@ var hwPage = (function () {
   return { layout: layout, buildIndex: buildIndex };
 })();
 
-/* 문단 id → 배치된 줄 목록. hwLayout 이 채운다. */
 var hwLineIndex = {};
 
 function hwLayout() {
@@ -179,8 +175,7 @@ function hwLayout() {
 
 function hwPageCount() { return hwPages.length; }
 
-/* 저장 요청에 실을 줄 정보(계획 6절). ★ 이걸 안 보내면 저장본의 줄 정보가 비어
-   외부 변환기가 줄 0 으로 읽는다 — 2단계 판정 ④ 가 그 자리다.
+/* ★ 이걸 안 보내면 저장본의 줄 정보가 비어 외부 변환기가 줄 0 으로 읽는다.
    h 는 <b>다음 줄까지의 거리</b>, th 는 글자 높이다. C# 이 둘의 차를 줄 사이 여분으로 쓴다. */
 function hwSegOf(paraId) {
   var lines = hwLineIndex[paraId];

@@ -10,9 +10,6 @@ using HwpEditor.Models;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// .hwpx(OWPML) → <see cref="DocModel"/>. hwp 리더와 <b>같은 모델</b>을 채운다 — 화면·레이아웃·
-    /// 오라클이 형식을 몰라도 되게 하려는 것이 이 구조의 목적이다(사용자 지시로 1단계에 편입).
-    ///
     /// ★ 네임스페이스 접두사(hp/hh/hc/hs)는 파일마다 바뀔 수 있으므로 <b>LocalName 으로만</b> 찾는다.
     /// ★ hwpx 는 hwp 와 달리 길이·간격에 <c>unit</c> 이 붙어 있고 값이 2배가 아니다 — 그대로 쓴다
     ///   (hwp 의 ParaShape 여백이 2배였던 것은 그 형식의 사정이다).
@@ -115,7 +112,6 @@ namespace HwpEditor.Files
             return any ? v : int.MaxValue;
         }
 
-        /// <summary>이름공간을 무시하고 자식에서 LocalName 이 맞는 첫 요소.</summary>
         private static XmlElement Child(XmlNode pNode, string pLocal)
         {
             if (pNode == null) return null;
@@ -127,7 +123,6 @@ namespace HwpEditor.Files
             return null;
         }
 
-        /// <summary>깊이 상관없이 LocalName 이 맞는 첫 요소.</summary>
         /// <summary>바로 아래 자식만 본다. 자손까지 뒤지는 <see cref="Find"/> 와 다르다.</summary>
         private static XmlElement Kid(XmlNode pNode, string pLocal)
         {
@@ -233,7 +228,6 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>글자모양 목록만 따로. 저장 뒤 화면에 최종 목록을 돌려줄 때 쓴다(4단계).</summary>
         public static List<CharShapeModel> CharShapesOf(XmlDocument pHeader)
         {
             DocModel tmp = new DocModel();
@@ -502,7 +496,7 @@ namespace HwpEditor.Files
             return r;
         }
 
-        /// <summary>hwpx 의 개체. 표·그림만 갈라 보고 나머지는 opaque 로 둔다(계획 B-4).</summary>
+        /// <summary>hwpx 의 개체. 표·그림만 갈라 보고 나머지는 opaque 로 둔다.</summary>
         private static InlineObjModel ToObject(XmlElement pEl, string pParaId, int pIndex, int pPos, cHwpxIndex pMap)
         {
             string local = pEl.LocalName;

@@ -7,8 +7,6 @@ using HwpLib.Object.BodyText.Paragraph.Text;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 화면이 쓰는 id 를 원본 객체로 되돌리는 표(계획 B-1).
-    ///
     /// ★ <b>인덱스가 아니라 객체 참조</b>로 잡는다. 문단을 넣거나 지우면 인덱스는 밀리는데,
     ///   화면은 자기가 처음 받은 id 를 계속 쓰기 때문이다. 참조로 잡아 두면 s0p12 는
     ///   문서가 어떻게 바뀌어도 그때 그 문단을 가리킨다.
@@ -25,7 +23,6 @@ namespace HwpEditor.Files
         }
     }
 
-    /// <summary>문단 하나와 그것이 든 곳.</summary>
     public sealed class cParaRef
     {
         public cParaRef(Paragraph pPara, Section pSec) : this(pPara, pSec, pSec) { }
@@ -43,7 +40,7 @@ namespace HwpEditor.Files
         public readonly Section Sec;
 
         /// <summary>
-        /// 이 문단이 든 목록. 본문이면 구역 자신이고 표 셀 안이면 그 칸의 문단 목록이다(5단계).
+        /// 이 문단이 든 목록. 본문이면 구역 자신이고 표 셀 안이면 그 칸의 문단 목록이다.
         /// ★ 넣기·지우기가 이걸 쓴다 — 구역만 보면 셀 안에서는 아무것도 못 한다.
         /// </summary>
         public readonly IParagraphList List;

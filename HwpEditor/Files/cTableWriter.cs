@@ -9,9 +9,6 @@ using HwpLib.Object.BodyText.Paragraph.LineSeg;
 
 namespace HwpEditor.Files
 {
-    /// <summary>
-    /// 표 격자에서 칸 하나. hwp·hwpx 가 같은 알고리즘을 쓰도록 <b>실물을 <c>Tag</c> 에 담아</b> 옮긴다.
-    /// </summary>
     public sealed class cGridCell
     {
         /// <summary>실물. hwp 는 칸 스냅샷, hwpx 는 <c>hp:tc</c> 요소다.</summary>
@@ -20,14 +17,11 @@ namespace HwpEditor.Files
         public int R, C, Rs, Cs;
         public long W, H;
 
-        /// <summary>이번에 새로 생긴 칸인가. 그러면 <see cref="Seed"/> 를 본떠 실물을 만든다.</summary>
         public bool Made;
         public cGridCell Seed;
     }
 
     /// <summary>
-    /// 표의 행·열을 넣고 뺀다(5단계).
-    ///
     /// ★ <b>표를 통째로 다시 세운다</b>. HwpLibSharp 는 행을 <c>AddNewRow</c> 로 <b>맨 뒤에만</b> 붙일 수 있고
     ///   가운데 끼워 넣는 문이 없다. 그래서 내용을 다 떠서 원하는 차례로 다시 쌓는다 —
     ///   행 하나를 넣겠다고 뒤 행들의 내용을 손으로 밀면 병합된 칸에서 반드시 어긋난다.
@@ -42,7 +36,6 @@ namespace HwpEditor.Files
         /// <summary>보통 줄 조각의 태그 값(cHwpWriter 와 같은 값이다).</summary>
         private const uint cSegTagNormal = 0x00060000;
 
-        /// <summary>hwp 쪽 칸 하나를 떠 놓은 것.</summary>
         private sealed class cCellSnap
         {
             public ListHeaderForCell Header;
@@ -70,7 +63,6 @@ namespace HwpEditor.Files
             return n;
         }
 
-        /// <summary>행 하나의 높이. 병합 안 된 칸에서 재고, 없으면 걸친 칸을 행 수로 나눈다.</summary>
         private static long RowSize(List<cGridCell> pCells, int pRow)
         {
             long best = 0, span = 0;
@@ -94,7 +86,7 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 요청대로 격자를 고친다. 고친 것이 없으면 false. <paramref name="pGrow"/> 는 표가 커진 폭·높이다.
+        /// 고친 것이 없으면 false. <paramref name="pGrow"/> 는 표가 커진 폭·높이다.
         /// 새로 생긴 칸은 <see cref="cGridCell.Made"/> 로 표시되고 <see cref="cGridCell.Seed"/> 에 본이 담긴다.
         /// </summary>
         public static bool EditGrid(List<cGridCell> pCells, EditOp pOp, out long pGrow)
@@ -118,13 +110,12 @@ namespace HwpEditor.Files
                         int from = Clamp(pOp.From >= 0 ? pOp.From : (at > 0 ? at - 1 : 0), 0, rows - 1);
                         long size = RowSize(pCells, from);
 
-                        // ① 새 행 자리를 이미 가로지르는 칸이 덮는 열에는 칸을 새로 만들지 않는다.
                         HashSet<int> covered = new HashSet<int>();
                         foreach (cGridCell s in pCells)
                             if (s.R < at && s.R + s.Rs > at)
                                 for (int k = 0; k < s.Cs; k++) covered.Add(s.C + k);
 
-                        // ② 본뜰 행을 덮는 칸에서 빈 칸을 뜬다. ★ 번호를 미는 것보다 <b>먼저</b> 판단해야
+                        // ★ 본뜰 행을 덮는 칸에서 빈 칸을 뜬다. 번호를 미는 것보다 <b>먼저</b> 판단해야
                         //    방금 민 칸을 본뜨지 않는다.
                         List<cGridCell> made = new List<cGridCell>();
                         foreach (cGridCell s in pCells)
@@ -155,7 +146,7 @@ namespace HwpEditor.Files
                         {
                             if (s.R == at)
                             {
-                                if (s.Rs <= 1) continue;              // 통째로 빠진다
+                                if (s.Rs <= 1) continue;
                                 s.Rs--; s.H -= size;                   // 시작 행만 줄면 R 이 곧 다음 행이다
                             }
                             else if (s.R < at && s.R + s.Rs > at) { s.Rs--; s.H -= size; }
@@ -247,7 +238,7 @@ namespace HwpEditor.Files
                 while (k < end && !pCovered.Contains(k)) k++;
                 if (k <= run) continue;
 
-                long part = size * (k - run) / Math.Max(1, span);      // 걸친 만큼 크기도 나눈다
+                long part = size * (k - run) / Math.Max(1, span);
                 made.Add(pRow ? New(pSeed, pAt, run, 1, k - run, part, pSize)
                               : New(pSeed, run, pAt, k - run, 1, pSize, part));
             }
@@ -293,7 +284,6 @@ namespace HwpEditor.Files
             return false;
         }
 
-        /// <summary>격자에서 나온 표 폭·높이. 병합 안 된 칸에서 재고 걸친 칸은 모자란 만큼 나눠 얹는다.</summary>
         public static long GridWidth(List<cGridCell> pCells) { return Extent(pCells, false); }
         public static long GridHeight(List<cGridCell> pCells) { return Extent(pCells, true); }
 
@@ -326,7 +316,7 @@ namespace HwpEditor.Files
             return all;
         }
 
-        /// <summary>격자를 행 → 열 차례로 세운다. 다시 쌓는 쪽은 이 차례를 그대로 따라간다.</summary>
+        /// <summary>다시 쌓는 쪽은 이 차례를 그대로 따라간다.</summary>
         public static void SortGrid(List<cGridCell> pCells)
         {
             pCells.Sort(delegate (cGridCell a, cGridCell b) { return a.R != b.R ? a.R - b.R : a.C - b.C; });
@@ -353,7 +343,7 @@ namespace HwpEditor.Files
 
         #region hwp
 
-        /// <summary>표 구조를 바꾸는 요청을 반영한다. 하나라도 반영했으면 true(문서를 다시 읽어야 한다).</summary>
+        /// <summary>하나라도 반영했으면 true(문서를 다시 읽어야 한다).</summary>
         public static bool Apply(cHwpIndex pIndex, IList<EditOp> pOps)
         {
             bool any = false;
@@ -409,7 +399,6 @@ namespace HwpEditor.Files
             return all;
         }
 
-        /// <summary>같은 모양의 빈 칸 하나. 글은 비우고 크기·테두리는 본떠 온다.</summary>
         private static cCellSnap EmptyLike(cCellSnap pFrom)
         {
             cCellSnap s = new cCellSnap();
@@ -417,7 +406,7 @@ namespace HwpEditor.Files
             s.Header.Copy(pFrom.Header);
             s.Header.ParaCount = 1;
 
-            // 빈 문단 하나. 원본 문단을 복제해 글자만 비우면 글자모양·문단모양을 그대로 물려받는다.
+            // 원본 문단을 복제해 글자만 비우면 글자모양·문단모양을 그대로 물려받는다.
             Paragraph seed = pFrom.Paras.Count > 0 ? pFrom.Paras[0].Clone() : new Paragraph();
             if (seed.Text == null) seed.CreateText();
             seed.Text.Clear();

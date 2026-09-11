@@ -14,7 +14,7 @@ namespace HwpEditor
     ///
     /// ★ 왜 디자이너에 안 올리는가: 디자이너 프로세스는 32비트인데 네이티브 로더는 x64 만 임베드했고,
     ///   Program.PrepareWebView2Loader 는 디자이너에서 돌지 않는다. 폼에 올리는 순간 깨진다.
-    ///   디자이너에는 빈 Panel 만 두고 여기서 코드로 채운다(G-7).
+    ///   디자이너에는 빈 Panel 만 두고 여기서 코드로 채운다.
     /// </summary>
     public sealed class cWebHost
     {
@@ -22,7 +22,6 @@ namespace HwpEditor
         private const string cPage = "editor.html";
 
         /// <summary>
-        /// 문서가 &lt;link&gt;·&lt;script src&gt; 로 끌어가는 화면 자산.
         /// ★ csproj 에 EmbeddedResource 로 넣는 것만으로는 안 풀린다 — 여기에도 이름을 넣어야 한다.
         ///   빠뜨리면 404 라 화면에는 "스타일이 안 먹는다 / 버튼이 안 눌린다" 로만 보인다.
         /// </summary>
@@ -51,7 +50,7 @@ namespace HwpEditor
         /// <summary>초기화·로드가 실패했을 때. 실패는 비동기로 오므로 Attach 반환값으로는 알 수 없다.</summary>
         public event EventHandler Failed;
 
-        /// <summary>문서가 postMessage 로 올려보낸 JSON 한 줄. ★ UI 스레드에서 발생한다.</summary>
+        /// <summary>★ UI 스레드에서 발생한다.</summary>
         public event EventHandler<string> WebMessage;
 
         #region 환경 · 자산
@@ -100,8 +99,6 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 문서가 끌어가는 자산 주소에 판 번호를 붙인다.
-        ///
         /// ★ 이게 없으면 <b>고친 스크립트가 안 먹는다</b>. 브라우저가 지난 판을 캐시에서 그대로 내주고
         ///   파일은 새것이라 눈으로는 구분이 안 된다(실측 — 고친 줄이 화면에 안 나타나서 같은 자리를
         ///   두 번 고쳤다). 자산 크기 합을 판 번호로 쓰면 내용이 바뀔 때만 주소가 바뀐다.
@@ -157,7 +154,6 @@ namespace HwpEditor
 
         #endregion
 
-        /// <summary>pHost(디자이너가 만든 빈 Panel) 안에 WebView2 를 만들고 비동기 초기화를 시작한다.</summary>
         public void Attach(Control pHost)
         {
             if (pHost == null) throw new ArgumentNullException("pHost");
@@ -284,7 +280,7 @@ namespace HwpEditor
         }
 
         /// <summary>
-        /// 지금 떠 있는 문서를 PDF 로 찍는다(7단계).
+        /// 지금 떠 있는 문서를 PDF 로 찍는다.
         ///
         /// ★ 용지 크기를 <b>인치</b>로 준다(HWPUNIT / 7200). 여백은 0 이다 — 우리 쪽 상자가 곧 용지이고
         ///   본문 여백은 이미 그 안의 배치에 들어 있다. 여백을 또 주면 한 쪽이 두 쪽으로 쪼개진다.

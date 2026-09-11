@@ -10,9 +10,7 @@ using HwpLib.Object.DocInfo.ParaShape;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 화면이 새로 만든 글자모양·문단모양을 문서에 등록한다(4단계).
-    ///
-    /// ★ <b>같은 모양이 이미 있으면 그것을 쓴다</b>(G-10). 안 그러면 굵게를 열 번 눌렀다 저장할 때마다
+    /// ★ <b>같은 모양이 이미 있으면 그것을 쓴다</b>. 안 그러면 굵게를 열 번 눌렀다 저장할 때마다
     ///   모양 목록이 열 개씩 늘고, 그 문서는 다시 열 때마다 조금씩 무거워진다.
     /// ★ 새 모양은 <b>갈라져 나온 원본을 복제해서</b> 만든다. 빈 것에서 채우면 우리가 모델에 안 담은
     ///   필드(그림자·외곽선·밑줄색·탭 정의·문단 머리)가 전부 기본값으로 바뀌어, 고친 적 없는 성질이
@@ -168,7 +166,6 @@ namespace HwpEditor.Files
             return true;
         }
 
-        /// <summary>전 필드가 같은 글자모양의 번호. 없으면 -1.</summary>
         private static int FindChar(IReadOnlyList<CharShapeInfo> pList, CharShapeInfo pWant)
         {
             for (int i = 0; i < pList.Count; i++) if (SameChar(pList[i], pWant)) return i;
@@ -222,7 +219,7 @@ namespace HwpEditor.Files
         #region 문단모양
 
         /// <summary>
-        /// ★ 여백·들여쓰기·줄간격은 파일에 <b>lineseg 좌표의 2배</b>로 들어 있다(계획 U-1·U-2).
+        /// ★ 여백·들여쓰기·줄간격은 파일에 <b>lineseg 좌표의 2배</b>로 들어 있다.
         ///   읽을 때 반으로 줄였으니 쓸 때 두 배로 되돌린다. 안 그러면 저장할 때마다 여백이 반씩 준다.
         /// </summary>
         private static void ApplyPara(ParaShapeInfo pTo, ParaShapeModel pFrom)

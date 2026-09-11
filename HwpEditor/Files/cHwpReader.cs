@@ -19,7 +19,6 @@ using HwpLib.Object.DocInfo.ParaShape;
 
 namespace HwpEditor.Files
 {
-    /// <summary>.hwp(5.0 바이너리) → <see cref="DocModel"/>.</summary>
     public static class cHwpReader
     {
         public static DocModel Read(HWPFile pFile, string pPath)
@@ -68,7 +67,6 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>글자모양 목록만 따로. 저장 뒤 화면에 최종 목록을 돌려줄 때 쓴다(4단계).</summary>
         public static List<CharShapeModel> CharShapesOf(DocInfo pInfo)
         {
             DocModel tmp = new DocModel();
@@ -147,8 +145,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 문단모양의 여백·들여쓰기를 lineseg 와 같은 좌표계(HWPUNIT)로 바꾼다.
-        ///
         /// ★ <b>실측(2026-09-07)</b>: ParaShape 의 왼쪽·오른쪽 여백과 문단 위·아래 간격은
         ///   lineseg 좌표의 <b>정확히 2배</b>로 들어 있다. 샘플 36개에서 왼쪽 여백이 0 이 아닌
         ///   문단 90개를 훑어 <c>seg[0].x</c> 와 비교했더니 <b>71개가 ml/2 와 일치, ml 과 일치는 0개</b>였다
@@ -289,12 +285,10 @@ namespace HwpEditor.Files
 
         #endregion
 
-        #region B-2 원시 인덱스 ↔ 편집 인덱스
+        #region 원시 인덱스 ↔ 편집 인덱스
 
         /// <summary>
-        /// 문단 텍스트를 runs 로 만들면서 <b>원시 → 편집</b> 인덱스 변환표를 같이 만든다.
-        ///
-        /// ★ 계획 B-2 의 핵심이다. HWP 원시 인덱스에서 확장·인라인 컨트롤 문자는 <b>8글자</b>를 차지하지만
+        /// ★ HWP 원시 인덱스에서 확장·인라인 컨트롤 문자는 <b>8글자</b>를 차지하지만
         ///   화면에서 개체는 <b>1글자</b>다. 이 표가 없으면 lineseg 의 시작 위치와 개체 위치가 통째로 밀려
         ///   긴 문단일수록 줄이 어긋난다(convert2pdf 의 Hwp5Parser.cs 가 같은 자리에서 겪은 버그).
         ///
@@ -393,7 +387,6 @@ namespace HwpEditor.Files
             return r;
         }
 
-        /// <summary>원시 인덱스를 편집 인덱스로. 범위를 벗어나면 양 끝으로 잘라 준다.</summary>
         private static int ToEdit(int[] pMap, long pRaw)
         {
             if (pMap == null || pMap.Length == 0) return 0;
@@ -407,8 +400,6 @@ namespace HwpEditor.Files
         #region 개체 · lineseg
 
         /// <summary>
-        /// 문단 안의 개체 자리를 전부 훑는다.
-        ///
         /// ★ 화면에 안 보이는 것(용지·단 정의, 필드 같은 인라인 제어문자)도 <b>빠짐없이 목록에 넣는다</b>.
         ///   되쓰기가 runs·objs 만 보고 원시 글자열을 다시 만들기 때문에, 목록에 없는 컨트롤은
         ///   그 문단을 한 번 고치는 순간 사라진다(첫 문단이면 그 구역의 용지 정의가 통째로 날아간다).
@@ -450,7 +441,6 @@ namespace HwpEditor.Files
             }
         }
 
-        /// <summary>자리는 차지하지만 화면에는 아무것도 없는 개체.</summary>
         private static InlineObjModel Hidden(string pParaId, int pIndex, int pPos, string pCtrl, string pLabel)
         {
             InlineObjModel o = new InlineObjModel();
@@ -506,7 +496,7 @@ namespace HwpEditor.Files
             if (pic != null)
             {
                 o.Kind = "image";
-                return o;   // src 는 3단계에서 BinData 를 풀어 채운다
+                return o;   // src 는 cImageStore 가 채운다
             }
 
             ControlTable tbl = pControl as ControlTable;
@@ -517,7 +507,7 @@ namespace HwpEditor.Files
                 return o;
             }
 
-            // ★ 나머지는 opaque(계획 B-4) — 크기와 라벨만 갖고 회색 상자로 그린다.
+            // ★ 나머지는 opaque — 크기와 라벨만 갖고 회색 상자로 그린다.
             //   원본 Control 은 HWPFile 안에 그대로 남아 있으므로 저장할 때 손대지 않는다.
             o.Kind = "opaque";
             o.Ctrl = pControl.Type.ToString();
@@ -633,7 +623,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// lineseg 를 편집 인덱스로 옮겨 담는다.
         /// ★ 이 값은 <b>한글이 계산해 저장해 둔 결과</b>다 — 우리 레이아웃의 채점 기준이므로
         ///   여기서 손대거나 보정하지 않는다.
         /// </summary>
@@ -659,8 +648,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 쪽 넘김 <b>힌트</b>. 원본이 어디서 쪽을 넘겼는지 표시해 둔다.
-        ///
         /// ★ 파일의 <c>IsFirstLineAtPage</c>·<c>IsFirstLineAtColumn</c> 태그는 36개 샘플에서 전부 0 이라
         ///   못 쓴다(실측 — tag 값이 늘 0x00060000, 즉 줄의 처음·끝 비트뿐이다). 대신 두 가지로 센다:
         ///   <b>y 가 직전 줄보다 작아지는 자리</b>와 <b>두 번째 이후 섹션의 첫 줄</b>.
@@ -668,7 +655,7 @@ namespace HwpEditor.Files
         /// ★ <b>다단 문서에서는 과다 계산된다</b> — 단이 넘어갈 때도 y 가 0 으로 돌아가는데
         ///   lineseg 만으로는 그것이 몇 번째 단인지 알 수 없다(x 는 단 기준 상대좌표라 늘 0 이다).
         ///   실측: multicolumns.hwp 는 2쪽인데 4번 리셋, multicolumns-layout.hwp 는 3쪽인데 7번.
-        ///   그래서 이 값은 <b>쪽 수 판정에 쓰지 않는다</b> — 쪽 수 오라클은 convert2pdf CLI 다(계획 8절 ①).
+        ///   그래서 이 값은 <b>쪽 수 판정에 쓰지 않는다</b> — 쪽 수 오라클은 convert2pdf CLI 다.
         ///   단이 하나인 문서 33개에서는 CLI 쪽 수와 완전히 일치한다.
         /// </summary>
         private static void MarkPageBreaks(DocModel pDoc)

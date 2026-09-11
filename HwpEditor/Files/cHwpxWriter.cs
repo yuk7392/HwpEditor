@@ -9,11 +9,11 @@ using HwpEditor.Models;
 namespace HwpEditor.Files
 {
     /// <summary>
-    /// 편집분을 .hwpx 의 <c>section*.xml</c> 에 되쓴다. hwp 쪽 <see cref="cHwpWriter"/> 와 같은 약속이다 —
+    /// hwp 쪽 <see cref="cHwpWriter"/> 와 같은 약속이다 —
     /// <b>손댄 문단만</b> 다시 만들고 나머지 XML 은 읽은 그대로 다시 저장한다.
     ///
     /// ★ hwpx 는 위치 계산이 hwp 보다 쉽다 — 개체가 파일에서도 한 글자라 편집 인덱스가 곧 <c>textpos</c> 다
-    ///   (hwp 는 확장 제어문자가 8글자라 변환표가 필요했다, 계획 B-2).
+    ///   (hwp 는 확장 제어문자가 8글자라 변환표가 필요했다).
     /// ★ 대신 <c>hp:secPr</c>·<c>hp:ctrl</c> 처럼 <b>자리를 안 차지하는 요소</b>가 run 안에 섞여 있다.
     ///   이건 모델에 안 실리므로 문단을 다시 만들 때 따로 챙겨 두었다가 앞에 되돌려 놓는다.
     /// </summary>
@@ -28,7 +28,7 @@ namespace HwpEditor.Files
         {
             if (pDoc == null || pIndex == null || pReq == null || pReq.Ops == null) return;
 
-            // ★ 모양을 먼저 등록한다(4단계). 화면 번호와 문서 번호가 다를 수 있고(같은 모양 재사용, G-10),
+            // ★ 모양을 먼저 등록한다. 화면 번호와 문서 번호가 다를 수 있고(같은 모양 재사용),
             //   그 표가 있어야 아래에서 cs·ps 를 옮겨 적을 수 있다.
             cShapes = new cShapeMap();
             cShapes.Cs = cHwpxShapeWriter.RegisterCharShapes(pDoc.Header, pReq.CharShapes);
@@ -56,7 +56,6 @@ namespace HwpEditor.Files
             cShapes = null;
         }
 
-        /// <summary>이번 저장에서 쓰는 화면 번호 → 문서 번호 표. 저장 하나가 끝나면 버린다.</summary>
         private sealed class cShapeMap
         {
             public int[] Cs;
@@ -116,7 +115,6 @@ namespace HwpEditor.Files
             Rewrite(pDoc, pIndex, np, pOp, pImages, pResult);
         }
 
-        /// <summary>글만 지우고 정의 요소(구역·단·컨트롤)는 남긴다.</summary>
         private static void ClearButCarried(XmlElement pPara)
         {
             List<XmlElement> carry = new List<XmlElement>();
@@ -142,7 +140,6 @@ namespace HwpEditor.Files
             WriteLineSeg(pPara, new EditOp());
         }
 
-        /// <summary>자리를 안 차지하는 정의 요소(구역·단·컨트롤)를 전부 떼어 낸다.</summary>
         private static void StripCarried(XmlElement pPara)
         {
             foreach (XmlElement run in ChildElements(pPara, "run"))
@@ -181,7 +178,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 문단 id 는 문서 안에서 안 겹치기만 하면 된다. 이미 쓰는 것 중 가장 큰 값 +1.
         /// ★ 표 칸 안의 문단까지 본다(<see cref="NextParagraphIdDeep"/>). 구역 루트의 직계만 보면
         ///   칸 문단 id 가 더 큰 문서(끝이 표로 끝나는 문서)에서 이미 있는 id 를 또 만든다.
         /// </summary>
@@ -266,7 +262,6 @@ namespace HwpEditor.Files
             WriteLineSeg(pP, pOp);
         }
 
-        /// <summary>원본 개체 요소를 그대로 쓰거나(oid), 새 그림을 만든다(tmpId).</summary>
         private static XmlElement ObjectElement(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP,
                                                 EditObj pObj, Dictionary<string, EditOp> pImages, SaveResult pResult)
         {
@@ -337,7 +332,6 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// <c>hp:run</c> 을 글자모양이 바뀔 때마다 끊어 가며 만든다.
         /// ★ 글은 <c>hp:t</c> 안에 모으고 탭·줄바꿈·개체가 끼면 그 자리에서 끊는다 — 한 <c>hp:t</c> 에
         ///   이어 붙이면 그 사이에 있던 탭이 사라진다.
         /// </summary>
@@ -404,9 +398,8 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 우리 레이아웃이 계산한 줄을 <c>hp:linesegarray</c> 로 써 넣는다.
         /// ★ hwpx 는 줄 간격이 <c>spacing</c> 으로 따로 실린다 — 다음 줄 vertpos = vertpos + textheight + spacing
-        ///   (계획 U-4 실측). 그래서 우리 줄 높이(다음 줄까지의 거리)에서 글자 높이를 뺀 값이 spacing 이다.
+        ///   (실측). 그래서 우리 줄 높이(다음 줄까지의 거리)에서 글자 높이를 뺀 값이 spacing 이다.
         /// </summary>
         private static void WriteLineSeg(XmlElement pP, EditOp pOp)
         {
@@ -453,10 +446,10 @@ namespace HwpEditor.Files
 
         #endregion
 
-        #region 표 행·열(5단계)
+        #region 표 행·열
 
         /// <summary>
-        /// 표의 행·열을 넣고 뺀다. 격자 계산은 <see cref="cTableWriter.EditGrid"/> 가 hwp 와 <b>같은 것</b>을 쓴다 —
+        /// 격자 계산은 <see cref="cTableWriter.EditGrid"/> 가 hwp 와 <b>같은 것</b>을 쓴다 —
         /// 두 벌로 짜면 병합된 표에서 두 형식의 결과가 갈리고, 갈린 것은 눈으로 안 보인다.
         ///
         /// ★ 넣거나 뺀 뒤 <c>cellAddr</c>·<c>cellSpan</c>·<c>cellSz</c> 와 <c>rowCnt</c>·<c>colCnt</c>·<c>hp:sz</c>
@@ -587,7 +580,6 @@ namespace HwpEditor.Files
             return null;
         }
 
-        /// <summary>새로 뜬 칸의 문단에 새 id 를 주고 줄 폭을 칸에 맞춘다.</summary>
         private static void FixMadeCell(XmlElement pCell, cGridCell pGrid, ref long pNextId)
         {
             XmlElement mg = Kid(pCell, "cellMargin");
@@ -646,7 +638,6 @@ namespace HwpEditor.Files
             return made;
         }
 
-        /// <summary>칸 안의 문단을 빈 것 하나만 남긴다.</summary>
         private static void ClearCell(XmlElement pCell)
         {
             XmlElement sub = null;
@@ -670,12 +661,10 @@ namespace HwpEditor.Files
         }
 
         /// <summary>
-        /// 화면이 옮기거나 크기를 바꾼 개체를 원본 요소에 반영한다(8단계).
-        ///
         /// ★ <b>직계 자식만</b> 본다. <see cref="Find"/> 는 재귀라, 표나 묶음 개체에 걸면 안쪽 자식의
-        ///   <c>sz</c> 를 고쳐 엉뚱한 개체가 늘어난다(3차 검토 U3 이 리더에서 겪은 함정과 같은 자리다).
+        ///   <c>sz</c> 를 고쳐 엉뚱한 개체가 늘어난다(리더가 표 칸 번호에서 겪은 함정과 같다).
         /// ★ 원본에 없는 요소는 <b>만들지 않는다</b>. OWPML 은 자식 차례가 정해져 있어서 아무 데나
-        ///   끼워 넣으면 저장은 되고 여는 쪽에서만 깨진다(T14 와 같다).
+        ///   끼워 넣으면 저장은 되고 여는 쪽에서만 깨진다.
         /// ★ 원본 그림의 사각형(<c>orgSz</c>·<c>imgRect</c>·<c>imgClip</c>·<c>imgDim</c>)은 그대로 둔다 —
         ///   같이 바꾸면 그림이 늘어난 게 아니라 잘린다.
         /// </summary>
@@ -757,7 +746,7 @@ namespace HwpEditor.Files
             int pw, ph;
             cImageStore.PixelSize(data, out pw, out ph);
 
-            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다(계획 5절 단위).
+            // 화면 픽셀 → HWPUNIT 은 96dpi 기준 75배다.
             long natW = pw > 0 ? pw * 75L : 0;
             long natH = ph > 0 ? ph * 75L : 0;
             long w = pImg.WHu > 0 ? pImg.WHu : (natW > 0 ? natW : 20000);
@@ -878,7 +867,6 @@ namespace HwpEditor.Files
             return e;
         }
 
-        /// <summary>개체 id 는 문서 안에서만 안 겹치면 된다.</summary>
         private static string NewObjectId(XmlDocument pXml)
         {
             cObjIdSeed++;

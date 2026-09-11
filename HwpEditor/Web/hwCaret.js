@@ -1,6 +1,4 @@
-﻿/* 캐럿과 선택.
-
-   ★ 브라우저 선택을 쓰지 않는다(본문은 user-select:none). 우리 줄 나눔과 브라우저의 줄 나눔이
+﻿/* ★ 브라우저 선택을 쓰지 않는다(본문은 user-select:none). 우리 줄 나눔과 브라우저의 줄 나눔이
      다르면 캐럿이 글자 사이가 아니라 엉뚱한 데 서기 때문이다. 좌표는 전부 우리 배치(hwPages)에서 낸다.
    ★ 글자 폭은 hwBreak.charWidth 하나만 쓴다 — 줄을 나눌 때와 캐럿을 놓을 때 다른 자를 쓰면
      줄 끝에서만 한 글자씩 어긋난다. */
@@ -8,7 +6,6 @@
 var hwCaret = (function () {
   'use strict';
 
-  /* 캐럿 위치와 선택 기준점. 둘이 같으면 선택이 없는 것이다. */
   var cId = null, cPos = 0;
   var cAnchorId = null, cAnchorPos = 0;
 
@@ -49,7 +46,6 @@ var hwCaret = (function () {
     paint();
   }
 
-  /* 선택 범위를 문서 순서로 정렬해 준다. 없으면 null. */
   function selection() {
     if (cId === null || cAnchorId === null) return null;
     if (cId === cAnchorId && cPos === cAnchorPos) return null;
@@ -61,8 +57,6 @@ var hwCaret = (function () {
   }
 
   function clearSelection() { cAnchorId = cId; cAnchorPos = cPos; }
-
-  /* ── 좌표 ────────────────────────────────────────────── */
 
   /* 문단 안의 위치가 놓인 줄. 줄 경계에서는 <b>다음 줄의 머리</b>를 고른다(한글과 같다). */
   function lineOf(id, pos) {
@@ -89,7 +83,6 @@ var hwCaret = (function () {
     return x;
   }
 
-  /* 화면에 놓을 자리. 그 쪽이 아직 안 채워졌으면 null. */
   function coord(id, pos) {
     var item = lineOf(id, pos);
     if (!item) return null;
@@ -102,8 +95,6 @@ var hwCaret = (function () {
       hHu: item.line.thHu
     };
   }
-
-  /* ── 그리기 ──────────────────────────────────────────── */
 
   function paint() {
     if (window.hwUi) hwUi.refresh();
@@ -179,8 +170,6 @@ var hwCaret = (function () {
     }
   }
 
-  /* ── 화면 좌표 → 문서 위치 ───────────────────────────── */
-
   function hitTest(clientX, clientY) {
     var el = document.elementFromPoint(clientX, clientY);
     var pageEl = el && el.closest ? el.closest('.hw-page') : null;
@@ -227,8 +216,6 @@ var hwCaret = (function () {
     var isLast = last && last[last.length - 1] === item;
     return isLast ? p.len : ln.e;
   }
-
-  /* ── 움직이기 ────────────────────────────────────────── */
 
   function moveH(delta, extend) {
     var p = para();

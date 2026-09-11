@@ -105,6 +105,13 @@ var hwModel = (function () {
     for (var i = 0; i < objs.length; i++) if (objs[i].table) fn(objs[i].table, objs[i]);
   }
 
+  /* 개체(표)를 달고 있는 문단. 칸 안에서 표 바깥으로 거슬러 올라갈 때 쓴다. 못 찾으면 null. */
+  function hostOf(obj) {
+    var all = allParas();
+    for (var i = 0; i < all.length; i++) if ((all[i].objs || []).indexOf(obj) >= 0) return all[i];
+    return null;
+  }
+
   /* 문서 안의 모든 표 칸. 되돌리기가 칸의 문단 목록을 통째로 담을 때 쓴다. */
   function allCells() {
     var out = [];
@@ -510,6 +517,7 @@ var hwModel = (function () {
     isFresh: function (id) { return !!cFresh[id]; },
     allParas: allParas,
     allCells: allCells,
+    hostOf: hostOf,
     listOf: listOf,
     droppedChars: function () { return cDropped; },
     byId: function (id) { return cById[id]; },

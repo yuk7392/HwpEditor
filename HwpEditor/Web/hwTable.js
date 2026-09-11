@@ -201,6 +201,42 @@ var hwTable = (function () {
     return best ? best.paras[last ? best.paras.length - 1 : 0] : null;
   }
 
+  /* 칸 옮기기(Tab·Shift+Tab). 행 우선 차례로 다음·앞 칸의 첫 문단 머리로 간다. 끝 칸이면 그대로 둔다.
+     ★ cells 배열 차례를 믿지 않는다 — 행·열을 넣으면 새 칸이 뒤에 붙는다(edgePara 와 같은 이유). */
+  function nextCell(dir) {
+    var at = here();
+    if (!at) return false;
+    var cells = at.obj.table.cells.slice().sort(function (a, b) { return a.r - b.r || a.c - b.c; });
+    var i = cells.indexOf(at.cell) + dir;
+    if (i < 0 || i >= cells.length || !cells[i].paras.length) return true;
+    hwCaret.set(cells[i].paras[0].id, 0, false);
+    hwCaret.scrollIntoView();
+    return true;
+  }
+
+  /* 표 지우기(D1). 캐럿이 든 표를 통째로 뺀다 — 둘레 문단은 남고, 캐럿은 표가 있던 자리로 간다.
+     ★ 글자 지우기로는 표가 안 지워진다(hwModel.keeps). 이 명령만 그 막음을 우회한다.
+     ★ 저장은 부모 문단 되쓰기로 끝난다 — 되쓰기가 문단의 컨트롤을 비우고 objs 에 있는 것만 다시 넣는다
+       (cHwpWriter.Rewrite·cHwpxWriter.Rewrite). 그 표에 쌓인 행·열 요청은 떨어져 나간 표를 고칠 뿐이다.
+     ★ 되돌리기 한 칸이다. 스냅샷이 부모 문단의 objs 를 얕게 담으므로 표 객체가 칸·글자째 돌아온다. */
+  function removeTable() {
+    var at = here();
+    if (!at) return false;
+    var obj = at.obj, host = hwModel.hostOf(obj);
+    if (!host) { hwSetStatus({ text: '이 표를 단 문단을 못 찾아 지우지 않았습니다' }); return false; }
+
+    hwInput.run(function () {
+      var a = hwModel.items(host), pos = -1;
+      for (var i = 0; i < a.length; i++) if (a[i].obj === obj) { pos = i; a.splice(i, 1); break; }
+      if (pos < 0) return null;
+      hwModel.setItems(host, a);
+      hwModel.reindex();                 /* 지운 표의 칸 문단이 색인에 남으면 캐럿·찾기가 그리로 간다 */
+      hwCaret.set(host.id, pos, false);
+      return null;
+    }, null, [host.id]);
+    return true;
+  }
+
   /* 고친 뒤에도 캐럿을 둘 문단 id — 지금 있던 칸의 첫 문단. */
   function keepId(at) {
     return at.cell.paras.length ? at.cell.paras[0].id : null;
@@ -482,6 +518,7 @@ var hwTable = (function () {
 
   return {
     measure: measure, place: place, textWidth: textWidth, pad: pad,
-    here: here, edgePara: edgePara, addRow: addRow, delRow: delRow, addCol: addCol, delCol: delCol
+    here: here, edgePara: edgePara, addRow: addRow, delRow: delRow, addCol: addCol, delCol: delCol,
+    nextCell: nextCell, removeTable: removeTable
   };
 })();

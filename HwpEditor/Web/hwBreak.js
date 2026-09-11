@@ -7,7 +7,9 @@
      - 첫 줄 들여쓰기(음수면 내어쓰기), 문단 좌우 여백.
      - 탭은 다음 탭 자리로 건너뛴다.
 
-   ★ 아직 안 넣은 것: 문단별 탭 정의(tabdef), 양쪽 정렬의 글자 늘림, 하이픈 자동 넣기.
+   ★ 문단 정렬은 줄 나눔이 끝난 뒤 줄마다 "앞 여백(lead)·늘릴 몫(gap)" 으로 단다(alignLines).
+     정렬은 줄을 다시 나누지 않는다 — 나눌 자리는 왼쪽 정렬과 똑같다.
+   ★ 아직 안 넣은 것: 문단별 탭 정의(tabdef), 하이픈 자동 넣기.
      탭은 기본 간격으로 근사한다 — 이것이 tabdef.hwp 의 일치율에 영향을 준다. */
 
 var hwBreak = (function () {
@@ -82,6 +84,7 @@ var hwBreak = (function () {
     if (n === 0) {
       lines.push(makeLine(para, 0, 0, left + Math.max(0, indent),
                           widthHu - left - right - Math.max(0, indent), 0));
+      alignLines(para, lines);
       return lines;
     }
 
@@ -98,7 +101,74 @@ var hwBreak = (function () {
       first = false;
     }
 
+    alignLines(para, lines);
     return lines;
+  }
+
+  /* ── 문단 정렬 ──────────────────────────────────────────
+     줄마다 셋을 단다:
+       lead    : 줄 앞에 비울 폭(가운데·오른쪽)
+       gap     : 늘릴 자리 하나에 더할 폭(양쪽·배분)
+       gapMode : 'space' 면 공백에만, 'char' 면 글자 사이마다. gapFrom·gapTo 가 늘릴 구간이다.
+     ★ 그리기(hwRender.lineEl)·캐럿(hwCaret.offsetIn·posInLine)이 <b>같은 값</b>을 쓴다 — 셋이 각자 재면
+       정렬된 줄에서만 캐럿이 글자 사이가 아니라 엉뚱한 자리에 선다.
+     ★ 폭은 뒤 공백·강제 줄바꿈을 뺀 "보이는 폭" 이다. 뒤 공백까지 세면 가운데 줄이 공백 폭 절반만큼 쏠린다.
+     ★ 양쪽 정렬은 문단 마지막 줄과 강제 줄바꿈으로 끝난 줄을 늘리지 않는다. 배분은 마지막 줄까지 늘린다.
+       공백이 없는 줄(한글만 붙어 있는 줄)은 양쪽 정렬도 글자 사이에 나눈다. */
+  function alignLines(para, lines) {
+    var ps = hwModel.paraShape(para.ps);
+    var a = ps.align || 'justify';
+    var text = hwModel.text(para);
+
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      ln.lead = 0; ln.gap = 0; ln.gapMode = null; ln.gapFrom = ln.s; ln.gapTo = ln.s;
+      if (a === 'left') continue;
+
+      /* 보이는 끝 — 뒤 공백·줄바꿈을 뺀다. 첫 글자 — 앞 공백은 늘릴 자리로 안 센다. */
+      var te = ln.e;
+      while (te > ln.s && (text.charAt(te - 1) === '\n' || isSpace(text.charAt(te - 1)))) te--;
+      var tf = ln.s;
+      while (tf < te && isSpace(text.charAt(tf))) tf++;
+
+      var used = 0, spaces = 0, chars = 0, lastChar = -1;
+      for (var k = ln.s; k < te; k++) {
+        used += charWidth(para, k, used);
+        if (k > tf && isSpace(text.charAt(k))) spaces++;
+        if (stretchable(para, text, k)) { chars++; lastChar = k; }
+      }
+
+      var room = ln.availHu - used;
+      if (room <= 0) continue;
+
+      if (a === 'center') { ln.lead = room / 2; continue; }
+      if (a === 'right') { ln.lead = room; continue; }
+
+      var isLast = i === lines.length - 1;
+      var hard = ln.e > ln.s && text.charAt(ln.e - 1) === '\n';
+      if (a === 'justify' && (isLast || hard)) continue;
+
+      if (a === 'justify' && spaces > 0) {
+        ln.gapMode = 'space'; ln.gap = room / spaces; ln.gapFrom = tf; ln.gapTo = te;
+      } else if (chars > 1) {
+        ln.gapMode = 'char'; ln.gap = room / (chars - 1); ln.gapFrom = ln.s; ln.gapTo = lastChar;
+      }
+    }
+  }
+
+  /* 글자 사이를 벌릴 수 있는 자리인가 — 폭이 없는 것(떠 있는 개체·안 보이는 컨트롤·줄바꿈)은 뺀다. */
+  function stretchable(para, text, k) {
+    var ch = text.charAt(k);
+    if (ch === '' || ch === '\n') return false;
+    return ch !== '￼' || objWidth(para, k) > 0;
+  }
+
+  /* 줄 안 k 번째 글자 <b>뒤에</b> 더 붙는 폭(정렬 몫). 그리기·캐럿이 글자 폭에 이것을 더한다. */
+  function extraAt(para, ln, k) {
+    if (!ln.gap || k < ln.gapFrom || k >= ln.gapTo) return 0;
+    var text = hwModel.text(para);
+    if (ln.gapMode === 'space') return (k > ln.gapFrom && isSpace(text.charAt(k))) ? ln.gap : 0;
+    return stretchable(para, text, k) ? ln.gap : 0;
   }
 
   /* i 에서 시작해 avail 폭에 들어가는 마지막 위치(끝 제외)를 찾는다. */
@@ -208,6 +278,7 @@ var hwBreak = (function () {
     breakPara: breakPara,
     linesOf: linesOf,
     charWidth: charWidth,
+    extraAt: extraAt,
     tabHu: function (v) { if (v !== undefined) cTabHu = v; return cTabHu; }
   };
 })();

@@ -72,7 +72,7 @@ var hwUi = (function () {
     if (fmt) { hwFormat.toggleChar(fmt); hwInput.focus(); return; }
 
     var align = btn.getAttribute('data-align');
-    if (align) { hwFormat.applyPara({ align: align }); hwInput.focus(); return; }
+    if (align) { hwFormat.setAlign(align); hwInput.focus(); return; }
 
     var ind = btn.getAttribute('data-indent');
     if (ind) { hwFormat.indent(parseInt(ind, 10)); hwInput.focus(); return; }
@@ -92,6 +92,7 @@ var hwUi = (function () {
       else if (tbl === 'delRow') hwTable.delRow();
       else if (tbl === 'addCol') hwTable.addCol(1);
       else if (tbl === 'delCol') hwTable.delCol();
+      else if (tbl === 'delTable') hwTable.removeTable();
       hwInput.focus();
       return;
     }

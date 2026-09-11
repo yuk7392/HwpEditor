@@ -117,6 +117,73 @@ var hwFormat = (function () {
     });
   }
 
+  /* "지금 값에서 한 단계" 인 글자 서식(크기·장평·자간). fn(모양) 이 바꿀 속성을 주거나 null(그대로).
+     ★ 모양마다 따로 간다 — 선택 안에 10pt·14pt 가 섞여 있으면 각자 11pt·15pt 가 된다(한글). 선택 전체에
+       값 하나를 걸면 섞인 크기가 한 값으로 뭉개진다.
+     ★ 선택이 없으면 캐럿 자리 모양에서 한 단계를 대기 서식으로 건다(applyChar 와 같은 길). */
+  function mapChar(fn) {
+    if (!hwDoc) return;
+
+    if (!hwCaret.selection()) {
+      var cur = currentShape(hwCaret.para(), hwCaret.at().pos);
+      var over0 = cur ? fn(cur) : null;
+      if (over0) applyChar(over0);
+      return;
+    }
+
+    hwInput.run(function () {
+      var memo = {};
+      eachRange(function (p, from, to) {
+        if (to <= from) return;
+        var a = hwModel.items(p), changed = false;
+        for (var k = from; k < to && k < a.length; k++) {
+          if (a[k].ch === undefined) continue;
+          var id = a[k].cs;
+          if (!memo.hasOwnProperty(id)) {
+            var over = fn(hwDoc.charShapes[id] || hwDoc.charShapes[0]);
+            memo[id] = over ? shapeFor(hwDoc.charShapes, id, over, cCharKeys) : id;
+          }
+          if (memo[id] !== id) { a[k].cs = memo[id]; changed = true; }
+        }
+        if (changed) hwModel.setItems(p, a);
+      });
+      return null;
+    });
+  }
+
+  /* 크기 목록(pt). 키우기·줄이기는 이 목록의 다음·앞 값으로 간다 — 목록 밖 값(9.5pt)에서도 가장 가까운 다음 값. */
+  var cSizeSteps = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 32, 48, 72];
+
+  function stepSize(dir) {
+    mapChar(function (cs) {
+      var pt = (cs.sizeHu || 1000) / 100, to = null;
+      for (var i = 0; i < cSizeSteps.length; i++) {
+        if (dir > 0 && cSizeSteps[i] > pt) { to = cSizeSteps[i]; break; }
+        if (dir < 0 && cSizeSteps[i] < pt) to = cSizeSteps[i];
+      }
+      return to === null ? null : { sizeHu: to * 100 };
+    });
+  }
+
+  /* 장평 ±1%(50~200). ★ 지금 장평이 50% 이하면 늘리기·줄이기 모두 안 한다. */
+  function stepRatio(dir) {
+    mapChar(function (cs) {
+      var r = cs.ratio || 100;
+      if (r <= 50) return null;
+      var to = Math.max(50, Math.min(200, r + dir));
+      return to === r ? null : { ratio: to };
+    });
+  }
+
+  /* 자간 ±1%(−50~50). */
+  function stepSpacing(dir) {
+    mapChar(function (cs) {
+      var s = cs.spacing || 0;
+      var to = Math.max(-50, Math.min(50, s + dir));
+      return to === s ? null : { spacing: to };
+    });
+  }
+
   /* 켜기/끄기 — 범위가 <b>전부</b> 켜져 있으면 끄고, 하나라도 꺼져 있으면 켠다(한글과 같다). */
   function toggleChar(key) {
     var allOn = true, any = false;
@@ -199,6 +266,14 @@ var hwFormat = (function () {
     });
   }
 
+  /* 정렬. ★ 배분을 이미 배분인 문단에 또 누르면 양쪽으로 돌아간다(한글) — 단추·단축키가 같은 길을 탄다. */
+  function setAlign(a) {
+    var p = hwCaret.para();
+    if (!p) return;
+    if (a === 'distribute' && hwModel.paraShape(p.ps).align === 'distribute') a = 'justify';
+    applyPara({ align: a });
+  }
+
   /* 들여쓰기 한 칸(HWPUNIT). 10pt 글자 하나 폭이다. */
   var cIndentStep = 1000;
 
@@ -207,6 +282,69 @@ var hwFormat = (function () {
     if (!p) return;
     var ps = hwModel.paraShape(p.ps);
     applyPara({ mlHu: Math.max(0, (ps.mlHu || 0) + dir * cIndentStep) });
+  }
+
+  /* "지금 값에서 한 단계" 인 문단 서식. 선택 안 문단마다 제 값에서 간다. fn(모양, 문단) → 바꿀 속성 또는 null. */
+  function mapPara(fn) {
+    if (!hwDoc) return;
+    hwInput.run(function () {
+      eachRange(function (p) {
+        var over = fn(hwModel.paraShape(p.ps), p);
+        if (!over) return;
+        p.ps = shapeFor(hwDoc.paraShapes, p.ps, over, cParaKeys);
+        hwModel.markDirty(p.id);
+      });
+      return null;
+    });
+  }
+
+  /* 1pt(HWPUNIT). 여백·첫 줄·고정 줄 간격이 이 단위로 움직인다. */
+  var cPt = 100;
+  /* 여백 합 상한(580.3pt)과 여백을 늘린 뒤에도 남겨야 할 본문 폭(5mm). */
+  var cMaxMargins = 58030, cMinBody = 1417;
+
+  /* 문단이 흐르는 폭 — 본문이면 단 폭, 칸이면 칸 안 폭. 배치가 줄마다 적어 둔 값을 쓴다. */
+  function flowWidth(p) {
+    var ls = window.hwLineIndex ? hwLineIndex[p.id] : null;
+    if (ls && ls.length && ls[0].colWHu) return ls[0].colWHu;
+    var pg = hwDoc.sections[p._sec || 0].page;
+    return pg.wHu - pg.mlHu - pg.mrHu - (pg.gutHu || 0);
+  }
+
+  /* 줄 간격 넓게·좁게. 비율이면 ±10%(50~500), 고정·최소·여백이면 ±1pt. 방식(lsType)은 안 바꾼다. */
+  function stepLineSpace(dir) {
+    mapPara(function (ps) {
+      var v = ps.ls || 0, to;
+      if (!ps.lsType || ps.lsType === 'percent') to = Math.max(50, Math.min(500, (v || 100) + dir * 10));
+      else to = Math.max(0, v + dir * cPt);
+      return to === v ? null : { ls: to };
+    });
+  }
+
+  /* 첫 줄 들여쓰기(+)·내어쓰기(−) 1pt 씩. ★ 첫 줄(내어쓰기면 둘째 줄부터)이 차지할 폭이 남아야 한다 —
+     왼쪽 여백 + |첫 줄 값| 이 (흐름 폭 − 오른쪽 여백 − 5mm) 를 넘으면 더 안 간다. */
+  function stepIndent(dir) {
+    mapPara(function (ps, p) {
+      var v = ps.indentHu || 0, to = v + dir * cPt;
+      var grows = Math.abs(to) > Math.abs(v);
+      if (grows && (ps.mlHu || 0) + Math.abs(to) > flowWidth(p) - (ps.mrHu || 0) - cMinBody) return null;
+      return { indentHu: to };
+    });
+  }
+
+  /* 왼쪽(mlHu)·오른쪽(mrHu) 여백 1pt 씩. ★ 늘릴 때는 두 여백 합 ≤ 580.3pt, 남는 본문 폭 ≥ 5mm 일 때만. */
+  function stepMargin(key, dir) {
+    mapPara(function (ps, p) {
+      var v = ps[key] || 0, to = Math.max(0, v + dir * cPt);
+      if (to === v) return null;
+      if (to > v) {
+        var sum = (ps.mlHu || 0) + (ps.mrHu || 0) + (to - v);
+        if (sum > cMaxMargins || flowWidth(p) - sum < cMinBody) return null;
+      }
+      var over = {};
+      over[key] = to;
+      return over;
+    });
   }
 
   /* ── 화면이 보여 줄 현재 상태 ───────────────────────────── */
@@ -224,7 +362,14 @@ var hwFormat = (function () {
     applyChar: applyChar,
     toggleChar: toggleChar,
     applyPara: applyPara,
+    setAlign: setAlign,
     indent: indent,
+    stepSize: stepSize,
+    stepRatio: stepRatio,
+    stepSpacing: stepSpacing,
+    stepLineSpace: stepLineSpace,
+    stepIndent: stepIndent,
+    stepMargin: stepMargin,
     shapeForTyping: shapeForTyping,
     advancePending: advancePending,
     clearPending: clearPending,

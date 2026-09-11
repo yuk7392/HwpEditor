@@ -72,12 +72,15 @@ function hwUiTest() {
 
   function ok(name, cond, got) { steps.push({ name: name, ok: !!cond, got: String(got) }); }
 
+  /* ★ code 는 싣지 않는다 — 키 이름을 code 로 먼저 읽는 쪽(hwInput.keyName)이 e.key 로 물러서는
+     길까지 같이 지난다. 한글 모드에서 오는 key='Process' 는 opt.code 로 따로 태운다. */
   function key(k, opt) {
     var e = new KeyboardEvent('keydown', {
-      key: k, bubbles: true, cancelable: true,
-      shiftKey: !!(opt && opt.shift), ctrlKey: !!(opt && opt.ctrl)
+      key: k, code: (opt && opt.code) || '', bubbles: true, cancelable: true,
+      shiftKey: !!(opt && opt.shift), ctrlKey: !!(opt && opt.ctrl), altKey: !!(opt && opt.alt)
     });
     ime.dispatchEvent(e);
+    return e;
   }
 
   function typeIn(t) {
@@ -150,8 +153,9 @@ function hwUiTest() {
   ok('8 Ctrl+Z 로 문단 되돌림', hwDoc.sections[0].paras.length === paras0,
      '문단 ' + hwDoc.sections[0].paras.length);
 
-  key('y', { ctrl: true });
-  ok('9 Ctrl+Y 로 다시', hwDoc.sections[0].paras.length === paras0 + 1,
+  /* 다시 실행은 Ctrl+Shift+Z 다 — Ctrl+Y 는 한글처럼 "한 줄 지우기" 로 옮겼다(FEATURE-PLAN 결정 ①). */
+  key('z', { ctrl: true, shift: true });
+  ok('9 Ctrl+Shift+Z 로 다시', hwDoc.sections[0].paras.length === paras0 + 1,
      '문단 ' + hwDoc.sections[0].paras.length);
 
   key('z', { ctrl: true });
@@ -283,8 +287,7 @@ function hwUiTest() {
     /* ★ 표 옆에서 지우기(TODO 3절) — 표는 한 글자 자리를 차지해서, 막지 않으면 Backspace 한 번에
        칸 내용까지 통째로 사라진다. 한글처럼 표는 남고 캐럿이 칸으로 들어가야 한다.
        캐럿만 옮기거나 아무것도 안 지우는 동작이라 뒤 단계가 보는 모델은 그대로다. */
-    var tob = cellPara._cell._obj, tHost = null, tAll = hwModel.allParas();
-    for (var th = 0; th < tAll.length && !tHost; th++) if ((tAll[th].objs || []).indexOf(tob) >= 0) tHost = tAll[th];
+    var tob = cellPara._cell._obj, tHost = hwModel.hostOf(tob);
     var tableKept = function () { return !!tHost && (tHost.objs || []).indexOf(tob) >= 0; };
     var inTob = function () { var q = hwCaret.para(); return !!q && !!q._cell && q._cell._obj === tob ? q : null; };
 
@@ -751,6 +754,13 @@ function hwUiTest() {
   }
   ok('54 여백 합이 용지 높이 이상이어도 배치가 끝난다', n54 > 0, n54 + '쪽 (되돌린 뒤 ' + hwPageCount() + '쪽)');
 
+  /* ★ 예외는 실패 단계로 찍는다 — 여기서 던지면 결과를 못 보내 C# 쪽에는 "시한 초과" 로만 보인다. */
+  try {
+    hwUiTestS1({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+  } catch (eS1) {
+    ok('S1 세션 1 검사 중 예외', false, String(eS1 && eS1.stack ? eS1.stack : eS1).replace(/\s+/g, ' ').slice(0, 400));
+  }
+
   /* ★ 그림은 늦게 온다 — 그린 직후에 재면 아직 안 받아 온 것까지 "실패" 로 찍힌다.
      다 붙거나 실패할 때까지 기다렸다가 판정한다. */
   hwWaitImages().then(function (r) {
@@ -762,6 +772,504 @@ function hwUiTest() {
       charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes
     });
   });
+}
+
+/* ── 세션 1(FEATURE-PLAN 1부·2부·D1) — 키 표·정렬·IME·끌기·한글 단축키·표 지우기 ─────────────
+   ★ 번호는 FEATURE-PLAN 항목의 검사 번호 그대로다(55~71, 90).
+   ★ 검사용 문단을 본문 끝에 새로 만들어 거기서 본다. 문서마다 모양이 달라서, 쓸 값은 여기서 못 박는다.
+   ★ 정렬은 우리 계산식이 아니라 <b>화면에 그려진 글자</b>의 빈 폭으로 판정한다 — 계산식으로 기대값을
+     만들면 그 검사는 계산식이 틀려도 통과한다. */
+function hwUiTestS1(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn, ime = t.ime;
+
+  function st() { var s = document.getElementById('hwStatus'); return s ? s.textContent : ''; }
+  function linesOf(p) { return hwLineIndex[p.id] || []; }
+  function csAt(p, k) { return hwDoc.charShapes[hwModel.shapeAt(p, k || 0)]; }
+  function psOf(p) { return hwDoc.paraShapes[p.ps]; }
+  function pick(p, a, b) { hwCaret.set(p.id, a, false); hwCaret.set(p.id, b, true); }
+  /* ★ 캐럿만 화면에 넣으면 문단 아랫줄은 캔버스 밖에 남는다 — 그 자리를 누르면 elementFromPoint 가 null 이라
+     "누르기 어긋남" 이 거짓으로 찍힌다(실측 noori.hwp: 점 y=922, 캔버스 58~878). 문단 첫 줄을 화면 위쪽으로 올린다. */
+  function show() {
+    hwCaret.scrollIntoView();
+    hwRenderRefresh();
+    var ls = hwLineIndex[sp.id] || [], d = ls.length ? lineDom(ls[0]) : null, cv = hwRenderer.canvas();
+    if (d && cv) {
+      cv.scrollTop += d.el.getBoundingClientRect().top - cv.getBoundingClientRect().top - 20;
+      hwRenderRefresh();
+    }
+  }
+  function tableCount() {
+    var n = 0, all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) for (var j = 0; j < (all[i].objs || []).length; j++) if (all[i].objs[j].table) n++;
+    return n;
+  }
+
+  function lineDom(it) {
+    var body = hwRenderer.bodyOf(it.pageIdx);
+    if (!body) return null;
+    var el = body.querySelector('.hw-line[data-id="' + it.para.id + '"][data-li="' + it.li + '"]');
+    return el ? { el: el, br: body.getBoundingClientRect() } : null;
+  }
+
+  /* 줄 칸 왼쪽 ~ 첫 글자, 보이는 마지막 글자 ~ 줄 칸 오른쪽 사이의 빈 폭(px). */
+  function gaps(p, it) {
+    var d = lineDom(it);
+    if (!d) return null;
+    var text = hwModel.text(p), ln = it.line, te = ln.e;
+    while (te > ln.s && (text.charAt(te - 1) === '\n' || text.charAt(te - 1) === ' ')) te--;
+    if (te <= ln.s) return null;
+    var r0 = hwDomRectOfChar(d.el, 0);
+    var r1 = hwDomRectOfChar(d.el, hwFlowIndex(p, ln.s, te - 1));
+    if (!r0 || !r1) return null;
+    var x0 = d.br.left + hwHu2Px(it.xHu), x1 = d.br.left + hwHu2Px(it.xHu + ln.availHu);
+    return { left: Math.round((r0.left - x0) * 10) / 10, right: Math.round((x1 - r1.right) * 10) / 10 };
+  }
+  function g2s(g) { return g ? ('왼 ' + g.left + ' 오 ' + g.right + 'px') : '줄이 안 그려짐'; }
+
+  /* 문단 줄마다 (캐럿 x − 그려진 글자 x) 최대값, 그리고 글자를 눌렀을 때 캐럿이 그 글자에 안 서는 수. */
+  function drift(p) {
+    var worst = 0, bad = 0, at = '', why = '', ls = linesOf(p);
+    var cvr = hwRenderer.canvas().getBoundingClientRect();
+    for (var i = 0; i < ls.length; i++) {
+      var it = ls[i], ln = it.line, d = lineDom(it);
+      if (!d) { bad++; continue; }
+      var er = d.el.getBoundingClientRect();
+      for (var k = ln.s; k < ln.e; k++) {
+        var r = hwDomRectOfChar(d.el, hwFlowIndex(p, ln.s, k));
+        var c = hwCaret.coord(p.id, k);
+        if (!r || !c) continue;
+        var dd = Math.abs(d.br.left + hwHu2Px(c.xHu) - r.left);
+        if (dd > worst) { worst = dd; at = ' @줄' + i + ' 글자' + k; }
+        var hy = er.top + er.height / 2;
+        var h = hwCaret.hitTest(r.left + 1, hy);
+        if (!h || h.id !== p.id || h.pos !== k) {
+          if (!bad) {
+            var efp = document.elementFromPoint(r.left + 1, hy);
+            why = ' [첫 어긋남 줄' + i + ' 글자' + k + ' → ' + (h ? h.id + ':' + h.pos : 'null')
+                + ' 점 ' + Math.round(r.left + 1) + ',' + Math.round(hy) + ' 캔버스 ' + Math.round(cvr.top) + '~' + Math.round(cvr.bottom)
+                + ' 요소 ' + (efp ? (efp.className || efp.tagName) : 'null') + ']';
+          }
+          bad++;
+        }
+      }
+    }
+    return { px: Math.round(worst * 10) / 10, bad: bad,
+             s: Math.round(worst * 10) / 10 + 'px' + at + ', 누르기 어긋남 ' + bad + why };
+  }
+
+  /* ── 검사용 문단: 본문 끝 쪽 <b>원본</b> 문단 뒤에 새로 만들고, 세 줄이 넘을 때까지 채운다 ──
+     ★ 화면이 만든 문단(n…) 뒤에 만들면 안 된다. 26-1 이 저장을 흉내 낸(accept) 뒤라 그 문단을 고치면 저장
+       요청에 문서에 없는 id 로 replace 가 실리고, 그 ops.json 을 --apply 로 원본에 먹이면 거기서 멈춘다. */
+  var S0 = hwDoc.sections[0].paras, tail = S0[S0.length - 1];
+  for (var ti = S0.length - 1; ti >= 0; ti--) if (S0[ti].id.charAt(0) !== 'n') { tail = S0[ti]; break; }
+  hwCaret.set(tail.id, tail.len, false);
+  key('Enter');
+  var sp = hwCaret.para();
+  var chunk = '가나다라 마바사아 자차카타 파하 ';
+  function fill(n) {
+    hwCaret.set(sp.id, sp.len, false);
+    for (var g = 0; g < 80 && linesOf(sp).length < n; g++) typeIn(chunk);
+  }
+  fill(3);
+  pick(sp, 0, sp.len);
+  hwFormat.applyChar({ sizeHu: 1000, ratio: 100, spacing: 0, bold: false, italic: false, underline: 0, strike: false });
+  hwCaret.set(sp.id, 0, false);
+  hwFormat.applyPara({ align: 'justify', indentHu: 0, mlHu: 0, mrHu: 0, lsType: 'percent', ls: 160 });
+  fill(3);
+
+  /* ── 55 키 표·두 타 조합 ── */
+  var text55 = hwDocText();
+  pick(sp, 2, 4);
+  key('k', { ctrl: true });
+  ok('55 Ctrl+K 는 둘째 키를 기다린다', st().indexOf('Ctrl+K') >= 0, st());
+  key('Escape');
+  var s55 = hwCaret.selection();
+  ok('55-1 대기 중 Esc 는 대기만 푼다(글·선택 그대로)',
+     hwDocText() === text55 && !!s55 && s55.fromPos === 2 && s55.toPos === 4 && st().indexOf('Ctrl+K') < 0,
+     (hwDocText() === text55 ? '글 그대로' : '글이 바뀜') + ', 선택 ' + (s55 ? s55.fromPos + '~' + s55.toPos : '없음'));
+
+  var saw55 = null, real55 = window.hwPost;
+  window.hwPost = function (o) { if (o && o.t === 'save') saw55 = o; return real55(o); };
+  key('s', { ctrl: true, shift: true });
+  window.hwPost = real55;
+  ok('55-2 Ctrl+Shift+S 는 다른 이름으로 저장', !!saw55 && saw55.saveAs === true,
+     saw55 ? ('saveAs=' + saw55.saveAs) : '저장 요청이 안 나감');
+
+  hwCaret.set(sp.id, 3, false);
+  key('Home', { ctrl: true, shift: true });
+  var s55b = hwCaret.selection(), first55 = hwModel.allParas()[0];
+  ok('55-3 Ctrl+Shift+Home 은 문서 머리까지 고른다',
+     !!s55b && s55b.fromId === first55.id && s55b.fromPos === 0 && s55b.toId === sp.id && s55b.toPos === 3,
+     s55b ? (s55b.fromId + ':' + s55b.fromPos + ' ~ ' + s55b.toId + ':' + s55b.toPos) : '선택 없음');
+  hwCaret.set(sp.id, 0, false);
+
+  /* ── 56 문단 정렬이 화면에 먹는다(A2) ── */
+  var worst56 = [], bad56 = 0;
+  function alignCase(a) {
+    hwCaret.set(sp.id, 0, false);
+    hwFormat.applyPara({ align: a });
+    show();
+    var ls = linesOf(sp);
+    return { first: gaps(sp, ls[0]), last: gaps(sp, ls[ls.length - 1]), d: drift(sp) };
+  }
+
+  var ac = alignCase('center');
+  ok('56 가운데 정렬 — 마지막 줄 왼쪽·오른쪽 빈 폭이 같다',
+     !!ac.last && ac.last.left > 5 && Math.abs(ac.last.left - ac.last.right) <= 1.5, g2s(ac.last));
+  worst56.push('가운데 ' + ac.d.s); bad56 += ac.d.bad + (ac.d.px > 1.5 ? 1 : 0);
+
+  var ar = alignCase('right');
+  ok('56-1 오른쪽 정렬 — 마지막 줄이 오른쪽 끝에 닿는다',
+     !!ar.last && ar.last.left > 5 && Math.abs(ar.last.right) <= 1.5, g2s(ar.last));
+  worst56.push('오른쪽 ' + ar.d.s); bad56 += ar.d.bad + (ar.d.px > 1.5 ? 1 : 0);
+
+  var aj = alignCase('justify');
+  ok('56-2 양쪽 정렬 — 첫 줄은 양 끝에 닿고 마지막 줄은 왼쪽',
+     !!aj.first && !!aj.last && Math.abs(aj.first.left) <= 1.5 && Math.abs(aj.first.right) <= 1.5
+       && Math.abs(aj.last.left) <= 1.5 && aj.last.right > 5,
+     '첫 줄 ' + g2s(aj.first) + ' / 마지막 줄 ' + g2s(aj.last));
+  worst56.push('양쪽 ' + aj.d.s); bad56 += aj.d.bad + (aj.d.px > 1.5 ? 1 : 0);
+
+  var ad = alignCase('distribute');
+  ok('56-3 배분 정렬 — 마지막 줄까지 양 끝에 닿는다',
+     !!ad.last && Math.abs(ad.last.left) <= 1.5 && Math.abs(ad.last.right) <= 1.5, g2s(ad.last));
+  worst56.push('배분 ' + ad.d.s); bad56 += ad.d.bad + (ad.d.px > 1.5 ? 1 : 0);
+
+  var al = alignCase('left');
+  worst56.push('왼쪽 ' + al.d.s); bad56 += al.d.bad + (al.d.px > 1.5 ? 1 : 0);
+  ok('56-4 다섯 정렬 모두 캐럿 x = 그려진 글자 x, 누른 글자에 캐럿이 선다', bad56 === 0, worst56.join(' / '));
+
+  hwFormat.setAlign('distribute');
+  hwFormat.setAlign('distribute');
+  ok('56-5 배분을 두 번 누르면 양쪽', psOf(sp).align === 'justify', psOf(sp).align);
+
+  /* ── 57 IME 동기 확정(A3) ── */
+  hwCaret.set(sp.id, sp.len, false);
+  var len57 = sp.len;
+  ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+  ime.dispatchEvent(new CompositionEvent('compositionupdate', { data: 'ㅎ', bubbles: true }));
+  ime.textContent = '하';
+  ime.dispatchEvent(new CompositionEvent('compositionend', { data: '하', bubbles: true }));
+  ok('57 조합 끝에서 바로 확정된다(input·타이머 없이)', sp.len === len57 + 1 && hwModel.text(sp).slice(-1) === '하',
+     'len ' + len57 + '→' + sp.len + ' 끝 "' + hwModel.text(sp).slice(-1) + '"');
+
+  var len57b = sp.len;
+  ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+  ime.dispatchEvent(new CompositionEvent('compositionupdate', { data: 'ㅎ', bubbles: true }));
+  ime.textContent = '';
+  ime.dispatchEvent(new CompositionEvent('compositionend', { data: '', bubbles: true }));
+  ok('57-1 취소된 조합(빈 data, 빈 수신기)은 아무것도 안 넣는다',
+     sp.len === len57b && !document.querySelector('.hw-composing'), 'len ' + len57b + '→' + sp.len);
+
+  var len57c = sp.len;
+  ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+  ime.textContent = '한';
+  ime.dispatchEvent(new CompositionEvent('compositionend', { data: '한', bubbles: true }));
+  ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+  ime.textContent = '글';
+  ime.dispatchEvent(new CompositionEvent('compositionend', { data: '글', bubbles: true }));
+  ime.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  ok('57-2 조합 끝 바로 뒤 새 조합 — 순서대로 한 번씩', sp.len === len57c + 2 && hwModel.text(sp).slice(-2) === '한글',
+     'len ' + len57c + '→' + sp.len + ' 끝 "' + hwModel.text(sp).slice(-2) + '"');
+
+  /* ── 58 끌어 선택이 본문 밖으로 나가도 이어진다(A4) ── */
+  hwCaret.set(sp.id, 0, false);
+  show();
+  var it58 = linesOf(sp)[0], d58 = it58 ? lineDom(it58) : null;
+  if (!d58) {
+    ok('58 본문 밖으로 끌어도 선택이 이어진다', false, '검사용 문단 첫 줄이 안 그려짐');
+  } else {
+    var r58 = hwDomRectOfChar(d58.el, 0), er58 = d58.el.getBoundingClientRect();
+    var h58 = hwCaret.hitTest(r58.left + 1, er58.top + er58.height / 2);
+    t.down(d58.el, r58.left + 1, er58.top + er58.height / 2);
+    var cv58 = hwRenderer.canvas().getBoundingClientRect();
+    t.move(r58.left + 20, cv58.bottom + 30);
+    var s58 = hwCaret.selection();
+    t.up();
+    /* ★ 끝 자리를 문서 순서로 기대하지 않는다 — 다단 문서는 앞 문단이 화면상 더 아래에 놓이기도 해서
+       (multicolumns-widths.hwp), 아래로 끌면 문서 순서로 <b>앞</b> 자리가 잡히는 게 맞다. 누른 자리가 한쪽
+       끝이고 캐럿이 거기서 떠났으면 끌기가 캔버스 밖에서도 이어진 것이다(예전 수신기로는 선택이 아예 없었다). */
+    var cur58 = hwCaret.at();
+    var anchored58 = !!s58 && !!h58 && ((s58.fromId === h58.id && s58.fromPos === h58.pos)
+                                        || (s58.toId === h58.id && s58.toPos === h58.pos));
+    ok('58 본문 밖(아래)으로 끌어도 선택이 이어진다',
+       anchored58 && (cur58.id !== h58.id || cur58.pos !== h58.pos),
+       (s58 ? (s58.fromId + ':' + s58.fromPos + ' ~ ' + s58.toId + ':' + s58.toPos) : '선택 없음')
+         + ' (검사 문단 ' + sp.id + ', 누른 점 ' + (h58 ? h58.id + ':' + h58.pos : 'null')
+         + ' y ' + Math.round(er58.top) + ')');
+    var keep58 = hwCaret.selection();
+    t.move(r58.left + 40, cv58.bottom + 60);
+    var after58 = hwCaret.selection();
+    ok('58-1 놓은 뒤 움직임은 선택을 안 바꾼다',
+       !!keep58 && !!after58 && keep58.toId === after58.toId && keep58.toPos === after58.toPos,
+       after58 ? (after58.toId + ':' + after58.toPos) : '선택 없음');
+  }
+  hwCaret.set(sp.id, 0, false);
+
+  /* ── 60 글자 크기 키우기·줄이기(B1) ── */
+  pick(sp, 0, sp.len);
+  hwFormat.applyChar({ sizeHu: 1000 });
+  key(']', { ctrl: true });
+  key(']', { ctrl: true });
+  var z1 = csAt(sp, 0).sizeHu;
+  key('[', { ctrl: true });
+  var z2 = csAt(sp, 0).sizeHu;
+  key('e', { alt: true, shift: true });
+  var z3 = csAt(sp, 0).sizeHu;
+  ok('60 Ctrl+] 두 번 10→12pt, Ctrl+[ 11pt, Alt+Shift+E 12pt', z1 === 1200 && z2 === 1100 && z3 === 1200,
+     z1 + ' → ' + z2 + ' → ' + z3);
+
+  hwFormat.applyChar({ sizeHu: 7200 });
+  key(']', { ctrl: true });
+  ok('60-1 72pt 에서 Ctrl+] 는 그대로', csAt(sp, 0).sizeHu === 7200, String(csAt(sp, 0).sizeHu));
+
+  var half = Math.floor(sp.len / 2);
+  pick(sp, 0, half); hwFormat.applyChar({ sizeHu: 1000 });
+  pick(sp, half, sp.len); hwFormat.applyChar({ sizeHu: 1400 });
+  pick(sp, 0, sp.len);
+  key(']', { ctrl: true });
+  ok('60-2 섞인 크기는 모양마다 한 단계씩(10→11, 14→15)',
+     csAt(sp, 0).sizeHu === 1100 && csAt(sp, sp.len - 1).sizeHu === 1500,
+     csAt(sp, 0).sizeHu + ' / ' + csAt(sp, sp.len - 1).sizeHu);
+  hwFormat.applyChar({ sizeHu: 1000 });
+
+  /* ── 61 장평·자간(B2) ── */
+  hwFormat.applyChar({ ratio: 100, spacing: 0 });
+  for (var k61 = 0; k61 < 3; k61++) key('k', { alt: true, shift: true });
+  ok('61 장평 100 → Alt+Shift+K 세 번 → 103', csAt(sp, 0).ratio === 103, String(csAt(sp, 0).ratio));
+  key('w', { alt: true, shift: true });
+  key('w', { alt: true, shift: true });
+  ok('61-1 자간 0 → Alt+Shift+W 두 번 → 2', csAt(sp, 0).spacing === 2, String(csAt(sp, 0).spacing));
+  hwFormat.applyChar({ ratio: 50 });
+  key('j', { alt: true, shift: true });
+  key('k', { alt: true, shift: true });
+  ok('61-2 장평 50% 이하면 늘리기·줄이기 모두 무시', csAt(sp, 0).ratio === 50, String(csAt(sp, 0).ratio));
+  hwFormat.applyChar({ ratio: 100, spacing: 0 });
+
+  /* ── 62 굵게 별칭(B3) ── */
+  var b62 = !!csAt(sp, 0).bold;
+  key('b', { alt: true, shift: true });
+  var b62a = !!csAt(sp, 0).bold;
+  key('b', { alt: true, shift: true });
+  ok('62 Alt+Shift+B 로 굵게 켜고 끄기', b62a !== b62 && !!csAt(sp, 0).bold === b62, b62 + '→' + b62a + '→' + !!csAt(sp, 0).bold);
+
+  /* ── 63 정렬 단축키(B4) ── */
+  hwCaret.set(sp.id, 0, false);
+  var al63 = [['l', 'left'], ['c', 'center'], ['r', 'right'], ['m', 'justify'], ['t', 'distribute']], got63 = [];
+  var ok63 = true;
+  for (var i63 = 0; i63 < al63.length; i63++) {
+    key(al63[i63][0], { ctrl: true, shift: true });
+    got63.push(psOf(sp).align);
+    if (psOf(sp).align !== al63[i63][1]) ok63 = false;
+  }
+  key('c', { ctrl: true, alt: true });
+  got63.push('Ctrl+Alt+C:' + psOf(sp).align);
+  if (psOf(sp).align !== 'center') ok63 = false;
+  ok('63 Ctrl+Shift+L/C/R/M/T · Ctrl+Alt+C 정렬', ok63, got63.join(' '));
+  key('t', { ctrl: true, shift: true });
+  key('t', { ctrl: true, shift: true });
+  ok('63-1 Ctrl+Shift+T 두 번 → 양쪽', psOf(sp).align === 'justify', psOf(sp).align);
+
+  /* ── 64 줄 간격(B5) ── */
+  hwFormat.applyPara({ lsType: 'percent', ls: 160 });
+  key('z', { alt: true, shift: true });
+  var l64 = psOf(sp).ls;
+  key('q', { ctrl: true, shift: true });
+  ok('64 160% → Alt+Shift+Z 170 → Ctrl+Shift+Q 160', l64 === 170 && psOf(sp).ls === 160, l64 + ' → ' + psOf(sp).ls);
+  hwFormat.applyPara({ lsType: 'fixed', ls: 2000 });
+  key('a', { alt: true, shift: true });
+  ok('64-1 고정 20pt → Alt+Shift+A → 19pt', psOf(sp).lsType === 'fixed' && psOf(sp).ls === 1900, psOf(sp).lsType + ' ' + psOf(sp).ls);
+  hwFormat.applyPara({ lsType: 'percent', ls: 160 });
+
+  /* ── 65 첫 줄·여백 1pt(B6) ── */
+  hwFormat.applyPara({ indentHu: 0, mlHu: 0, mrHu: 0 });
+  key('F5', { ctrl: true }); key('F5', { ctrl: true }); key('F5', { ctrl: true });
+  var i65 = psOf(sp).indentHu;
+  key('F6', { ctrl: true });
+  key('F5', { ctrl: true, alt: true });
+  key('F7', { ctrl: true, alt: true });
+  ok('65 Ctrl+F5 세 번 +300, Ctrl+F6 −100, Ctrl+Alt+F5·F7 여백 +100',
+     i65 === 300 && psOf(sp).indentHu === 200 && psOf(sp).mlHu === 100 && psOf(sp).mrHu === 100,
+     '첫 줄 ' + i65 + '→' + psOf(sp).indentHu + ' 왼 ' + psOf(sp).mlHu + ' 오 ' + psOf(sp).mrHu);
+  var w65 = linesOf(sp)[0].colWHu;
+  hwFormat.applyPara({ indentHu: 0, mlHu: 0, mrHu: Math.round(w65 - 1417 - 50) });
+  var mr65 = psOf(sp).mrHu;
+  key('F7', { ctrl: true, alt: true });
+  ok('65-1 남는 본문 폭이 5mm 밑으로 가면 여백을 더 안 늘린다', psOf(sp).mrHu === mr65,
+     '폭 ' + Math.round(w65) + ' 오른쪽 ' + mr65 + '→' + psOf(sp).mrHu);
+  hwFormat.applyPara({ indentHu: 0, mlHu: 0, mrHu: 0 });
+
+  /* ── 66 글자색 두 타 조합(B7) ── */
+  pick(sp, 0, 3);
+  key('m', { ctrl: true });
+  key('r');
+  ok('66 Ctrl+M, R → 빨강', csAt(sp, 0).color === '#FF0000', csAt(sp, 0).color);
+  var text66 = hwDocText();
+  key('m', { ctrl: true });
+  key('Process', { code: 'KeyB' });
+  ime.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+  ime.dispatchEvent(new CompositionEvent('compositionupdate', { data: 'ㅠ', bubbles: true }));
+  ime.textContent = 'ㅠ';
+  ime.dispatchEvent(new CompositionEvent('compositionend', { data: 'ㅠ', bubbles: true }));
+  ok('66-1 한글 모드 둘째 키(Process/KeyB) → 파랑, 그 키가 연 조합은 글자로 안 들어간다',
+     csAt(sp, 0).color === '#0000FF' && hwDocText() === text66 && ime.textContent === '',
+     csAt(sp, 0).color + ', 글 ' + (hwDocText() === text66 ? '그대로' : '바뀜(' + hwDocText().length + '자)'));
+  hwFormat.applyChar({ color: '#000000' });
+
+  /* ── 67 한 줄 지우기(B8, 결정 ①) ── */
+  fill(3);
+  var ls67 = linesOf(sp), t67 = hwModel.text(sp);
+  var s67 = ls67[1].line.s, e67 = ls67[1].line.e;
+  hwCaret.set(sp.id, s67 + 1, false);
+  key('y', { ctrl: true });
+  ok('67 둘째 줄에서 Ctrl+Y → 그 줄 글자만 빠진다', hwModel.text(sp) === t67.slice(0, s67) + t67.slice(e67),
+     '길이 ' + t67.length + '→' + hwModel.text(sp).length + ' (줄 ' + s67 + '~' + e67 + ')');
+  key('z', { ctrl: true });
+
+  var t67b = hwModel.text(sp), e67b = linesOf(sp)[0].line.e;
+  hwCaret.set(sp.id, 2, false);
+  key('y', { alt: true });
+  ok('67-1 Alt+Y 는 캐럿부터 그 줄 끝까지', hwModel.text(sp) === t67b.slice(0, 2) + t67b.slice(e67b),
+     '길이 ' + t67b.length + '→' + hwModel.text(sp).length);
+  key('z', { ctrl: true });
+
+  hwCaret.set(sp.id, sp.len, false);
+  key('Enter'); typeIn('한줄');
+  var one67 = hwCaret.para();
+  key('Enter'); typeIn('다음');
+  var next67 = hwCaret.para(), n67 = hwDoc.sections[0].paras.length;
+  hwCaret.set(one67.id, 1, false);
+  key('y', { ctrl: true });
+  ok('67-2 한 줄짜리 문단은 문단째 없어지고 다음 문단이 올라온다',
+     hwDoc.sections[0].paras.length === n67 - 1 && !hwModel.byId(one67.id) && hwCaret.at().id === next67.id,
+     '문단 ' + n67 + '→' + hwDoc.sections[0].paras.length + ', 캐럿 ' + hwCaret.at().id);
+  key('z', { ctrl: true });
+  ok('67-3 Ctrl+Z 로 그 문단이 돌아온다', hwDoc.sections[0].paras.length === n67 && !!hwModel.byId(one67.id)
+     && hwModel.text(hwModel.byId(one67.id)) === '한줄', '문단 ' + hwDoc.sections[0].paras.length);
+
+  /* ── 68 쪽 나누기(B9) ── */
+  var pg68 = hwPageCount(), n68 = hwDoc.sections[0].paras.length;
+  hwCaret.set(sp.id, linesOf(sp)[1].line.s + 1, false);
+  key('Enter', { ctrl: true });
+  var np68 = hwCaret.para();
+  ok('68 Ctrl+Enter — 쪽이 하나 늘고 새 문단에 쪽 나눔', hwPageCount() === pg68 + 1 && np68 !== sp && np68.brk === 'page',
+     '쪽 ' + pg68 + '→' + hwPageCount() + ', brk ' + np68.brk);
+  var ops68 = hwBuildOps(), sent68 = false;
+  for (var o68 = 0; o68 < ops68.length; o68++) if (ops68[o68].id === np68.id && ops68[o68].brk === 'page') sent68 = true;
+  key('z', { ctrl: true });
+  var undone68 = hwPageCount() === pg68 && hwDoc.sections[0].paras.length === n68;
+  key('z', { ctrl: true, shift: true });
+  var re68 = hwModel.byId(np68.id);
+  ok('68-1 저장 요청에 나눔이 실리고, 되돌리기·다시 하기가 나눔까지 맞춘다',
+     sent68 && undone68 && !!re68 && re68.brk === 'page' && hwPageCount() === pg68 + 1,
+     '요청 ' + (sent68 ? '실림' : '안 실림') + ', 되돌림 ' + (undone68 ? '맞음' : '틀림')
+       + ', 다시 ' + (re68 ? re68.brk : '문단 없음') + ' ' + hwPageCount() + '쪽');
+  key('z', { ctrl: true });
+
+  /* 구역 머리(안 보이는 구역·단 정의 앞)에서 Ctrl+Enter — 정의가 새 문단으로 넘어가면 문서가 깨진다. */
+  var h68 = hwDoc.sections[0].paras[0], hid68 = function () {
+    var n = 0; for (var i = 0; i < (h68.objs || []).length; i++) if (h68.objs[i].hidden) n++; return n;
+  };
+  var nh68 = hid68(), np68b = hwDoc.sections[0].paras.length, brk68 = h68.brk;
+  hwCaret.set(h68.id, 0, false);
+  key('Enter', { ctrl: true });
+  ok('68-2 구역 머리에서 Ctrl+Enter 는 구역·단 정의를 옮기지 않는다',
+     hid68() === nh68 && hwDoc.sections[0].paras[0] === h68,
+     '정의 ' + nh68 + '→' + hid68() + ', 문단 ' + np68b + '→' + hwDoc.sections[0].paras.length);
+  if (hwDoc.sections[0].paras.length !== np68b || h68.brk !== brk68) key('z', { ctrl: true });
+
+  /* ── 69 다시 찾기·찾아가기(B10) ── */
+  document.getElementById('hwFindText').value = '가나';
+  if (hwFind.isOpen()) hwFind.close();
+  hwCaret.set(sp.id, 0, false);
+  key('q', { ctrl: true }); key('l');
+  var f69 = hwCaret.selection();
+  key('q', { ctrl: true }); key('l');
+  var f69b = hwCaret.selection();
+  var txt69 = f69 ? hwModel.text(hwModel.byId(f69.fromId)).slice(f69.fromPos, f69.toPos) : '';
+  ok('69 찾기 창이 닫혀도 Ctrl+Q, L 로 다음 "가나"', txt69 === '가나' && !!f69b
+       && (f69b.fromId !== f69.fromId || f69b.fromPos !== f69.fromPos) && !hwFind.isOpen(),
+     f69 ? ('"' + txt69 + '" ' + f69.fromId + ':' + f69.fromPos + ' → ' + (f69b ? f69b.fromId + ':' + f69b.fromPos : '없음')) : '못 찾음');
+
+  var want69 = hwPageCount() >= 2 ? 2 : 1;
+  key('g', { alt: true });
+  var gin = document.getElementById('hwGotoPage');
+  var open69 = hwFind.isGotoOpen();
+  if (gin) {
+    gin.value = String(want69);
+    gin.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  }
+  var c69 = hwCaret.coord(hwCaret.at().id, hwCaret.at().pos);
+  ok('69-1 Alt+G 찾아가기 — 쪽 번호로 간다', open69 && !hwFind.isGotoOpen() && !!c69 && c69.pageIdx === want69 - 1,
+     (open69 ? '창 열림' : '창 안 열림') + ', 캐럿 ' + (c69 ? (c69.pageIdx + 1) + '쪽' : '없음') + ' (기대 ' + want69 + ')');
+
+  /* ── 70 Alt+방향키 화면 밀기(B11) ── */
+  var cv70 = hwRenderer.canvas();
+  cv70.scrollTop = 0;
+  var at70 = hwCaret.at();
+  var e70 = key('ArrowDown', { alt: true });
+  var top70 = cv70.scrollTop;
+  var e70b = key('ArrowLeft', { alt: true });
+  ok('70 Alt+↓ 는 화면만 민다(캐럿 그대로), Alt+← 는 뒤로 가기로 안 샌다',
+     top70 > 0 && hwCaret.at().id === at70.id && hwCaret.at().pos === at70.pos && e70.defaultPrevented && e70b.defaultPrevented,
+     'scrollTop 0→' + top70 + ', 캐럿 ' + (hwCaret.at().pos === at70.pos ? '그대로' : '움직임')
+       + ', 기본 동작 막음 ' + e70.defaultPrevented + '/' + e70b.defaultPrevented);
+
+  /* ── 71 칸 옮기기 Tab(B12) ── */
+  var cp71 = firstCellPara();
+  if (!cp71) {
+    ok('71 칸 안 Tab 은 다음 칸으로', true, '표 없는 문서 — 건너뜀');
+  } else {
+    var cells71 = cp71._cell._obj.table.cells.slice().sort(function (a, b) { return a.r - b.r || a.c - b.c; });
+    hwCaret.set(cells71[0].paras[0].id, 0, false);
+    var len71 = cells71[0].paras[0].len;
+    key('Tab');
+    var q71 = hwCaret.para();
+    var tabOk = cells71.length < 2 || (!!q71 && q71._cell === cells71[1]);
+    key('Tab', { shift: true });
+    var back71 = hwCaret.para();
+    ok('71 칸 안 Tab 은 다음 칸, Shift+Tab 은 앞 칸(탭 글자 안 들어감)',
+       tabOk && back71 === cells71[0].paras[0] && cells71[0].paras[0].len === len71,
+       '칸 ' + cells71.length + '개, Tab → ' + (q71 && q71._cell ? 'r' + q71._cell.r + ' c' + q71._cell.c : '표 밖')
+         + ', Shift+Tab → ' + (back71 && back71._cell ? 'r' + back71._cell.r + ' c' + back71._cell.c : '표 밖'));
+  }
+
+  /* ── 90 표 지우기(D1) — 도구줄 단추를 눌러서 ──
+     ★ 지운 채로 끝낸다 — 최종 저장 요청을 --apply 에 먹이면 표 수가 하나 줄어야 한다. */
+  var cp90 = firstCellPara();
+  if (!cp90) {
+    ok('90 표 지우기', true, '표 없는 문서 — 건너뜀');
+  } else {
+    var tob90 = cp90._cell._obj, tbl90 = tob90.table, host90 = hwModel.hostOf(tob90);
+    var hostText90 = hwModel.text(host90).replace(/￼/g, ''), n90 = tableCount();
+    var cellText90 = function () {
+      var s = '';
+      for (var ci = 0; ci < tbl90.cells.length; ci++)
+        for (var cj = 0; cj < tbl90.cells[ci].paras.length; cj++) s += hwModel.text(tbl90.cells[ci].paras[cj]) + '|';
+      return s;
+    };
+    var ct90 = cellText90();
+    var has90 = function () { for (var i = 0; i < (host90.objs || []).length; i++) if (host90.objs[i].table === tbl90) return true; return false; };
+
+    hwCaret.set(cp90.id, 0, false);
+    var btn90 = document.querySelector('[data-tbl="delTable"]');
+    if (btn90) btn90.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('90 표 지우기 단추 — 표만 빠지고 둘레 글은 그대로, 캐럿은 표 자리',
+       tableCount() === n90 - 1 && !has90() && hwModel.text(host90).replace(/￼/g, '') === hostText90 && hwCaret.at().id === host90.id,
+       '표 ' + n90 + '→' + tableCount() + ', 캐럿 ' + hwCaret.at().id + (btn90 ? '' : ' (단추 없음)'));
+
+    key('z', { ctrl: true });
+    ok('90-1 Ctrl+Z 로 표와 칸 글이 돌아온다', tableCount() === n90 && has90() && cellText90() === ct90,
+       '표 ' + tableCount() + ', 칸 글 ' + (cellText90() === ct90 ? '같음' : '다름'));
+
+    key('z', { ctrl: true, shift: true });
+    var ops90 = hwBuildOps(), rep90 = null;
+    for (var o90 = 0; o90 < ops90.length; o90++) if (ops90[o90].id === host90.id) rep90 = ops90[o90];
+    var left90 = false;
+    for (var r90 = 0; rep90 && r90 < rep90.objs.length; r90++) if (rep90.objs[r90].oid === tob90.oid) left90 = true;
+    ok('90-2 다시 지우면 부모 문단 요청에서 표가 빠진다', tableCount() === n90 - 1 && !!rep90 && !left90,
+       rep90 ? (rep90.op + ' objs ' + rep90.objs.length + '개, 표 ' + (left90 ? '남음' : '빠짐')) : '부모 문단 요청 없음');
+  }
 }
 
 /* 고친 것이 몇 개인지 C# 에 밀어 준다(8단계).
@@ -982,8 +1490,13 @@ function hwCaretDrift() {
 
 /* 줄 DOM 안에서 n 번째 글자의 왼쪽 화면 좌표. 개체는 한 글자로 센다. */
 function hwDomXOfChar(lineEl, n) {
+  var r = hwDomRectOfChar(lineEl, n);
+  return r ? r.left : null;
+}
+
+/* 줄 DOM 안에서 n 번째 글자의 화면 사각형. 정렬 검사가 줄 끝 글자의 오른쪽 끝을 볼 때 쓴다. */
+function hwDomRectOfChar(lineEl, n) {
   var at = 0;
-  var stack = [lineEl];
 
   for (var ci = 0; ci < lineEl.childNodes.length; ci++) {
     var kid = lineEl.childNodes[ci];
@@ -994,7 +1507,7 @@ function hwDomXOfChar(lineEl, n) {
     if (kid.nodeType === 1 && kid.style && kid.style.position === 'absolute') continue;
 
     if (cls.indexOf('hw-obj') >= 0 || cls.indexOf('hw-gap') >= 0) {
-      if (at === n) return kid.getBoundingClientRect().left;
+      if (at === n) return kid.getBoundingClientRect();
       at++;
       continue;
     }
@@ -1006,8 +1519,7 @@ function hwDomXOfChar(lineEl, n) {
         var r = document.createRange();
         r.setStart(node, n - at);
         r.setEnd(node, n - at + 1);
-        var rect = r.getBoundingClientRect();
-        return rect.left;
+        return r.getBoundingClientRect();
       }
       at += node.length;
     }

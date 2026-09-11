@@ -76,12 +76,17 @@ var hwCaret = (function () {
     return lines[lines.length - 1];
   }
 
-  /* 줄 안에서 위치까지의 가로 거리(HWPUNIT). */
+  /* 줄 안에서 위치까지의 가로 거리(HWPUNIT). 정렬 몫(앞 여백·늘린 폭)까지 들어간다.
+     ★ 탭 폭은 <b>정렬 몫을 뺀</b> 누적 폭으로 잰다 — 줄 나눔(hwBreak)이 그 값으로 탭 자리를 정했다. */
   function offsetIn(item, pos) {
     var p = item.para, ln = item.line;
-    var w = 0;
-    for (var k = ln.s; k < pos && k < ln.e; k++) w += hwBreak.charWidth(p, k, w);
-    return w;
+    var w = 0, x = ln.lead || 0;
+    for (var k = ln.s; k < pos && k < ln.e; k++) {
+      var cw = hwBreak.charWidth(p, k, w);
+      w += cw;
+      x += cw + hwBreak.extraAt(p, ln, k);
+    }
+    return x;
   }
 
   /* 화면에 놓을 자리. 그 쪽이 아직 안 채워졌으면 null. */
@@ -209,11 +214,13 @@ var hwCaret = (function () {
   /* 줄 안에서 x 에 가장 가까운 글자 경계. 글자의 절반을 넘기면 그 다음 자리다. */
   function posInLine(item, dx) {
     var p = item.para, ln = item.line;
-    var w = 0;
+    var w = 0, x = ln.lead || 0;
     for (var k = ln.s; k < ln.e; k++) {
       var cw = hwBreak.charWidth(p, k, w);
-      if (dx < w + cw / 2) return k;
+      var adv = cw + hwBreak.extraAt(p, ln, k);
+      if (dx < x + adv / 2) return k;
       w += cw;
+      x += adv;
     }
     /* 마지막 줄이 아니면 줄바꿈 자리에 캐럿을 두지 않는다 — 다음 줄 머리와 겹친다. */
     var last = hwLineIndex[p.id];

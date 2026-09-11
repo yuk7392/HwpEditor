@@ -324,6 +324,9 @@ body {
   overflow: hidden;
   white-space: pre;
   z-index: 10;
+  /* ★ 누르기는 통과시킨다. 캐럿이 마지막으로 있던 화면 좌표에 줄 높이만큼 남아 있어서, 스크롤한 뒤 그 자리
+     글자를 누르면 본문이 아니라 이 상자가 받아 캐럿이 안 움직였다(실측 facename.hwp). 초점은 스크립트로 준다. */
+  pointer-events: none;
 }
 
 /* ─ PDF 내보내기(7단계) ─

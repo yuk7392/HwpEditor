@@ -16,7 +16,9 @@ var hwUndo = (function () {
     var runs = [], objs = [];
     for (var i = 0; i < p.runs.length; i++) runs.push({ cs: p.runs[i].cs, text: p.runs[i].text });
     for (var k = 0; k < (p.objs || []).length; k++) objs.push(copy(p.objs[k]));
-    return { ref: p, ps: p.ps, len: p.len, seg: p.seg, runs: runs, objs: objs };
+    /* ★ 쪽 나눔(brk)도 담는다. 빠지면 Ctrl+Enter 를 되돌려도 나눔이 남고, 다시 하기로 새 문단을 살리면
+       나눔 없이 돌아온다 — 저장 요청에도 그 상태가 그대로 실린다. */
+    return { ref: p, ps: p.ps, brk: p.brk, len: p.len, seg: p.seg, runs: runs, objs: objs };
   }
 
   function copy(o) {
@@ -28,6 +30,7 @@ var hwUndo = (function () {
   function restorePara(c) {
     var p = c.ref;
     p.ps = c.ps;
+    if (c.brk) p.brk = c.brk; else delete p.brk;
     p.len = c.len;
     p.seg = c.seg;
     p.runs = [];
@@ -71,11 +74,13 @@ var hwUndo = (function () {
   }
 
   function apply(s) {
-    if (s.lists) {
-      for (var i = 0; i < s.lists.length; i++) s.lists[i].on.paras = s.lists[i].v.slice();
-      hwModel.reindex();
-    }
-    for (var i = 0; i < s.paras.length; i++) restorePara(s.paras[i]);
+    if (s.lists) for (var i = 0; i < s.lists.length; i++) s.lists[i].on.paras = s.lists[i].v.slice();
+    for (var j = 0; j < s.paras.length; j++) restorePara(s.paras[j]);
+
+    /* ★ 색인은 문단을 되돌린 <b>뒤에</b> 한다. restorePara 가 objs 를 새 객체로 담으므로, 먼저 색인하면 칸의
+       _cell._obj 가 옛 표 객체를 가리킨 채 남아 hostOf 가 부모를 못 찾는다 — 되돌리기를 한 번 거친 표에서
+       "표 지우기" 가 조용히 아무 일도 안 했다(실측 blank.hwpx). */
+    hwModel.reindex();
     hwModel.restoreState(s.state);
 
     /* ★ 개체 고르기도 그 시점으로 — 캐럿처럼 되돌린 상태의 한 부분이다(hwObj.state 참고).

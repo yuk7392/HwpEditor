@@ -45,6 +45,7 @@
   <button class="hw-tool" data-tbl="delRow" title="이 행 지우기">행−</button>
   <button class="hw-tool" data-tbl="addCol" title="오른쪽에 열 넣기">열+</button>
   <button class="hw-tool" data-tbl="delCol" title="이 열 지우기">열−</button>
+  <button class="hw-tool" data-tbl="delTable" title="이 표 지우기">표−</button>
 </div>
 
 <!-- 찾기·바꾸기(8단계). 도구줄 안에 두지 않는다 — 도구줄은 초점을 안 뺏으려고 mousedown 을 막는데
@@ -64,6 +65,17 @@
   <div class="hw-find-row">
     <label><input id="hwFindCase" type="checkbox"> 대소문자 구분</label>
     <span id="hwFindInfo" class="hw-find-info"></span>
+  </div>
+</div>
+
+<!-- 찾아가기(Alt+G). 찾기 창과 같은 층이다 — 초점을 받아야 하고 캔버스 높이를 안 건드린다.
+     ★ window.prompt 로 묻지 않는다. WebView2 에서는 네이티브 모달이라 창 전체가 멈춘다. -->
+<div id="hwGoto" class="hw-find" hidden>
+  <div class="hw-find-row">
+    <label>쪽 <input id="hwGotoPage" type="number" min="1" step="1"></label>
+    <button data-goto="go">이동</button>
+    <button data-goto="close" title="닫기 (Esc)">✕</button>
+    <span id="hwGotoInfo" class="hw-find-info"></span>
   </div>
 </div>
 

@@ -12,6 +12,7 @@ var hwFind = (function () {
   'use strict';
 
   var cPanel, cText, cRepl, cReplRow, cCase, cInfo;
+  var cGoto, cGotoPage, cGotoInfo;
 
   function el(id) { return document.getElementById(id); }
 
@@ -27,10 +28,27 @@ var hwFind = (function () {
 
     cPanel.addEventListener('click', onClick);
     cPanel.addEventListener('keydown', onKey);
+
+    cGoto = el('hwGoto');
+    cGotoPage = el('hwGotoPage');
+    cGotoInfo = el('hwGotoInfo');
+    if (cGoto) {
+      cGoto.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('button') : null;
+        if (!btn) return;
+        if (btn.getAttribute('data-goto') === 'go') goFromInput();
+        else closeGoto();
+      });
+      cGoto.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeGoto(); }
+        else if (e.key === 'Enter') { e.preventDefault(); goFromInput(); }
+      });
+    }
   }
 
   function open(withReplace) {
     if (!cPanel) return;
+    if (cGoto) cGoto.hidden = true;     /* 같은 자리에 뜨는 창이라 하나만 연다 */
     cPanel.hidden = false;
     if (cReplRow) cReplRow.hidden = !withReplace;
 
@@ -150,6 +168,55 @@ var hwFind = (function () {
     return false;
   }
 
+  /* 다시 찾기(Ctrl+Q→L) — 마지막 찾을 말로 다음을 찾는다. 찾기 창이 닫혀 있어도 된다(찾을 말 칸은 닫혀도
+     값을 들고 있다). 찾을 말이 없으면 찾기 창을 연다. */
+  function repeat() {
+    if (!needle()) { open(false); return false; }
+    var found = search(+1);
+    if (!found && !isOpen()) hwSetStatus({ text: '"' + needle() + '" 을(를) 찾지 못했습니다' });
+    return found;
+  }
+
+  function isOpen() { return !!cPanel && !cPanel.hidden; }
+
+  /* ── 찾아가기(Alt+G) — 쪽 번호로 간다 ─────────────────── */
+
+  function openGoto() {
+    if (!cGoto || !hwDoc) return;
+    if (cPanel) cPanel.hidden = true;
+    cGoto.hidden = false;
+    var c = hwCaret.coord(hwCaret.at().id, hwCaret.at().pos);
+    cGotoPage.max = String(hwPageCount());
+    cGotoPage.value = String(c ? c.pageIdx + 1 : 1);
+    if (cGotoInfo) cGotoInfo.textContent = '/ ' + hwPageCount() + '쪽';
+    cGotoPage.focus();
+    cGotoPage.select();
+  }
+
+  function closeGoto() {
+    if (!cGoto) return;
+    cGoto.hidden = true;
+    hwInput.focus();
+  }
+
+  function goFromInput() {
+    if (gotoPage(parseInt(cGotoPage.value, 10))) closeGoto();
+  }
+
+  /* n 쪽(1부터)의 첫 줄 머리로 캐럿을 옮긴다. 없는 쪽이면 false. */
+  function gotoPage(n) {
+    if (!hwDoc || !(n >= 1 && n <= hwPageCount())) {
+      if (cGotoInfo) cGotoInfo.textContent = '1~' + hwPageCount() + '쪽 사이로 넣으세요';
+      return false;
+    }
+    var lines = hwPages[n - 1].lines;
+    if (!lines.length) return false;
+    if (window.hwObj) hwObj.clear();
+    hwCaret.set(lines[0].para.id, lines[0].line.s, false);
+    hwCaret.scrollIntoView();
+    return true;
+  }
+
   /* ── 바꾸기 ──────────────────────────────────────────── */
 
   /* 지금 고른 것이 찾는 말이면 바꾸고, 아니면 먼저 찾는다(한글과 같은 차례다). */
@@ -237,6 +304,11 @@ var hwFind = (function () {
     search: search,
     replaceOne: replaceOne,
     replaceAll: replaceAll,
-    isOpen: function () { return !!cPanel && !cPanel.hidden; }
+    repeat: repeat,
+    openGoto: openGoto,
+    closeGoto: closeGoto,
+    gotoPage: gotoPage,
+    isOpen: isOpen,
+    isGotoOpen: function () { return !!cGoto && !cGoto.hidden; }
   };
 })();

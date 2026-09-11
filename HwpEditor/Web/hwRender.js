@@ -101,13 +101,17 @@ var hwRenderer = (function () {
     body.appendChild(box);
   }
 
+  /* ★ 정렬 몫(hwBreak.alignLines)은 두 가지로 그린다 — 앞 여백은 줄 상자를 그만큼 오른쪽에 두고,
+       늘릴 몫은 그 글자의 자간(개체면 오른쪽 여백, 탭이면 폭)에 더한다. 앞 여백을 빈 span 으로 넣으면
+       화면 글자 번호가 하나 밀려 캐럿 대조(hwDomXOfChar)가 통째로 어긋난다. */
   function lineEl(item) {
     var para = item.para, ln = item.line;
+    var lead = ln.lead || 0;
     var d = el('div', 'hw-line');
-    d.style.left = hwHu2Px(item.xHu) + 'px';
+    d.style.left = hwHu2Px(item.xHu + lead) + 'px';
     d.style.top = hwHu2Px(item.yHu) + 'px';
     d.style.height = hwHu2Px(ln.hHu) + 'px';
-    d.style.width = hwHu2Px(ln.availHu) + 'px';
+    d.style.width = hwHu2Px(Math.max(0, ln.availHu - lead)) + 'px';
     d.setAttribute('data-id', para.id);
     d.setAttribute('data-li', String(item.li));
 
@@ -125,6 +129,7 @@ var hwRenderer = (function () {
     for (var k = ln.s; k < ln.e; k++) {
       var ch = text.charAt(k);
       var cw = hwBreak.charWidth(para, k, w);
+      var ex = hwBreak.extraAt(para, ln, k);
 
       if (ch === '\n') continue;                    /* 폭 0, 그릴 것도 없다 */
 
@@ -135,11 +140,14 @@ var hwRenderer = (function () {
         if (box) {
           /* ★ 떠 있는 개체는 줄의 폭을 안 먹는다(계획 U-5). 줄 안에 흘려 넣으면 그 뒤 글자가
              개체 폭만큼 오른쪽으로 밀려서, 우리가 계산한 캐럿 자리와 화면이 갈라진다
-             (실측 — 표지 문단의 그리기 개체 하나가 캐럿을 한 글자 넘게 밀었다). */
+             (실측 — 표지 문단의 그리기 개체 하나가 캐럿을 한 글자 넘게 밀었다).
+             ★ 자리는 줄 상자 기준이다 — 정렬로 줄 상자를 민 만큼 되돌려야 개체가 따라 밀리지 않는다. */
           if (o && !o.inline) {
             box.style.position = 'absolute';
-            box.style.left = hwHu2Px(sane(o.xOffHu)) + 'px';
+            box.style.left = hwHu2Px(sane(o.xOffHu) - lead) + 'px';
             box.style.top = hwHu2Px(sane(o.yOffHu)) + 'px';
+          } else if (ex) {
+            box.style.marginRight = hwHu2Px(ex) + 'px';
           }
           d.appendChild(box);
         }
@@ -153,7 +161,7 @@ var hwRenderer = (function () {
          당겨져서, 우리가 계산한 캐럿 자리와 화면이 한 글자 넘게 어긋난다(실측 340px). */
       if (ch === '\t') {
         closeRun();
-        d.appendChild(spacer(cw));
+        d.appendChild(spacer(cw + ex));
         w += cw;
         continue;
       }
@@ -169,7 +177,7 @@ var hwRenderer = (function () {
          장평 200% 구간에서 캐럿이 33px 앞에 섰다(실측 sample-5017.hwp). 안쪽에는 <b>늘어나기 전</b>
          값을 주고, 늘어난 결과가 cw 가 되게 한다. */
       var ratio = (cs.ratio && cs.ratio !== 100) ? cs.ratio / 100 : 1;
-      var extra = cw / ratio - hwMeasure.naturalHu(ch, cs);
+      var extra = (cw + ex) / ratio - hwMeasure.naturalHu(ch, cs);
       var key = csId + '|' + Math.round(extra * 100);
 
       if (key !== curKey || !cur) {
@@ -182,7 +190,7 @@ var hwRenderer = (function () {
         curRatio = ratio;
       }
       cur.appendChild(document.createTextNode(ch));
-      curW += cw;
+      curW += cw + ex;
       w += cw;
     }
 

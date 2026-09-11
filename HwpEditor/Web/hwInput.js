@@ -33,13 +33,13 @@ var hwInput = (function () {
     var canvas = document.getElementById('hwCanvas');
     if (canvas) {
       canvas.addEventListener('mousedown', onMouseDown);
-      canvas.addEventListener('mousemove', onMouseMove);
       canvas.addEventListener('dblclick', onDoubleClick);
     }
-    /* ★ 개체 끌기는 <b>문서</b>에서 받는다. 캔버스에만 걸면 끌다가 도구줄·상태줄 위로 나갔을 때
-       움직임도 놓는 것도 안 오고, 개체가 마지막 자리에 붙은 채 끌기 상태로 남는다. */
+    /* ★ 끌기는 개체든 글자 선택이든 <b>문서</b>에서 받는다. 캔버스에만 걸면 끌다가 도구줄·상태줄 위로
+       나갔을 때 움직임도 놓는 것도 안 오고, 개체는 마지막 자리에 붙은 채, 선택은 거기서 멈춘다. */
     document.addEventListener('mousemove', function (e) {
-      if (window.hwObj && hwObj.dragging()) hwObj.onMove(e);
+      if (window.hwObj && hwObj.dragging()) { hwObj.onMove(e); return; }
+      onMouseMove(e);
     });
     document.addEventListener('mouseup', function () {
       cDragging = false;
@@ -189,16 +189,9 @@ var hwInput = (function () {
     var tbl = cellPara._cell._obj;
     for (var q = p; q && q._cell; ) {
       if (q._cell._obj === tbl) return true;
-      q = hostOf(q._cell._obj);
+      q = hwModel.hostOf(q._cell._obj);
     }
     return false;
-  }
-
-  /* 표 개체를 단 문단. */
-  function hostOf(obj) {
-    var all = hwModel.allParas();
-    for (var i = 0; i < all.length; i++) if ((all[i].objs || []).indexOf(obj) >= 0) return all[i];
-    return null;
   }
 
   /* 글자 지우기로는 안 지워지는 개체(용지·단 정의, 표)를 달고 있는가. */
@@ -293,6 +286,92 @@ var hwInput = (function () {
     });
   }
 
+  /* 한 줄 지우기(Ctrl+Y·Ctrl+T)와 줄 끝까지 지우기(Alt+Y). 줄은 <b>화면 줄</b>이다 — 캐럿이 선 줄을 배치에서 찾는다.
+     ★ 한 줄짜리 문단을 지우면 문단째 없어지고 다음 문단이 올라온다(한글). 여러 줄 문단의 줄은 글자만 지운다 —
+       마지막 줄에서 문단 나눔까지 지우면 다음 문단 글이 윗줄 끝에 붙어 버린다.
+     ★ 표·안 보이는 컨트롤은 지우지 않는다(deleteRange 가 keeps 로 지킨다). 그런 것이 남은 문단은 없애지 않고
+       다음 문단을 끌어 붙이되 모양은 <b>다음 문단 것</b>을 쓴다 — 지운 줄의 모양이 남으면 올라온 글이 모양을 잃는다. */
+  function deleteLine(toEndOnly) {
+    var p = hwCaret.para();
+    var at = hwCaret.at();
+    var c = p ? hwCaret.coord(at.id, at.pos) : null;
+    if (!c) return;
+
+    var lines = hwLineIndex[p.id] || [];
+    var single = lines.length <= 1;
+    var s = c.item.line.s, e = lines[lines.length - 1] === c.item ? p.len : c.item.line.e;
+
+    edit(function () {
+      hwCaret.clearSelection();
+
+      if (toEndOnly) {
+        /* 강제 줄바꿈은 남긴다 — 지우면 다음 줄이 이 줄에 붙는다. */
+        var end = (e > at.pos && hwModel.text(p).charAt(e - 1) === '\n') ? e - 1 : e;
+        hwModel.deleteRange(p, at.pos, end);
+        hwCaret.set(p.id, at.pos, false);
+        return null;
+      }
+
+      var kept = (e - s) - hwModel.deleteRange(p, s, e);
+      var next = single ? hwModel.after(p) : null;
+      if (next && next._sec !== p._sec) next = null;
+
+      if (next && kept === 0 && p.len === 0 && hwModel.listOf(p).length > 1) {
+        hwModel.removePara(p);
+        hwCaret.set(next.id, 0, false);
+      } else if (next && p.len === kept) {
+        p.ps = next.ps;
+        hwModel.mergeNext(p);
+        hwCaret.set(p.id, kept, false);
+      } else {
+        hwCaret.set(p.id, Math.min(s + kept, p.len), false);
+      }
+      return null;
+    });
+  }
+
+  /* 쪽 나누기(Ctrl+Enter·Ctrl+J). 캐럿 자리에서 문단을 나누고 <b>새 문단</b>에 쪽 나눔을 건다.
+     ★ 문단 머리에서 누르면 나누지 않고 그 문단에 건다 — 빈 문단이 하나 더 생기면 안 된다.
+     ★ 표 칸 안에서는 안 한다. 칸 배치는 나눔을 안 보고, 되쓰기는 칸 문단에 나눔 표시를 그대로 적는다. */
+  function pageBreak() {
+    var p = hwCaret.para();
+    if (!p) return;
+    if (p._cell) { hwSetStatus({ text: '표 안에서는 쪽을 나눌 수 없습니다' }); return; }
+
+    edit(function () {
+      dropSelection();
+      var q = hwCaret.para(), pos = hwCaret.at().pos;
+      if (!q) return null;
+
+      /* ★ 안 보이는 컨트롤(구역·단 정의) 앞에서 나누면 그것이 새 문단으로 넘어가 구역 머리 문단이 정의를
+         잃는다 — 그 뒤로 물린다. 그 자리가 곧 "문단 머리" 다. */
+      var lead = hwModel.items(q);
+      while (pos < lead.length && lead[pos].obj && lead[pos].obj.hidden) pos++;
+      var head = true;
+      for (var h = 0; h < pos; h++) if (!(lead[h].obj && lead[h].obj.hidden)) { head = false; break; }
+
+      if (head && q.brk) return null;           /* 이미 나눔이 걸린 문단 머리 — 할 것이 없다 */
+      if (head) {
+        q.brk = 'page';
+        hwModel.markDirty(q.id);
+        return null;
+      }
+      var np = hwModel.splitPara(q, pos);
+      np.brk = 'page';
+      hwCaret.set(np.id, 0, false);
+      return [np.id];
+    });
+  }
+
+  /* Alt+방향키 — 캐럿은 두고 한 화면의 80% 만큼 민다. */
+  function scrollView(dx, dy) {
+    var canvas = hwRenderer.canvas();
+    if (!canvas) return;
+    if (dy) canvas.scrollTop += dy * Math.round(canvas.clientHeight * 0.8);
+    if (dx) canvas.scrollLeft += dx * Math.round(canvas.clientWidth * 0.8);
+    hwRenderRefresh();
+  }
+
   /* ── 그림 넣기(3단계) ─────────────────────────────────── */
 
   function insertImage(info) {
@@ -320,36 +399,165 @@ var hwInput = (function () {
     });
   }
 
-  /* ── 키 ──────────────────────────────────────────────── */
+  /* ── 키 ──────────────────────────────────────────────────
+     ★ 단축키는 <b>표 한 장</b>이다: "C·A·S 머리 + 키 이름" → 동작. 한글 손버릇 키는 같은 동작에 여러
+       이름이 붙는다(Ctrl+B · Alt+Shift+B). 방향키처럼 Shift 를 인자로 받는 이동 키는 아래 switch 에 둔다.
+     ★ 동작이 <c>false</c> 를 돌려주면 "여기서는 안 한다" 는 뜻이다 — 칸 밖의 Tab 처럼 아래로 흘려보낸다.
+     ★ Ctrl+C·X·V 는 표에 <b>안 넣는다</b>. 기본 동작을 막으면 copy·cut·paste 이벤트가 안 온다. */
+
+  var cKeys = null;
+
+  /* 두 타 조합(Ctrl+K·Ctrl+Q·Ctrl+M 뒤 한 글자). 첫 키를 누르면 여기에 담아 두고 다음 키 하나를 둘째 키로 본다. */
+  var cChords = null;
+  var cChord = null;
+
+  /* ★ 한글 모드에서 둘째 키를 누르면 keydown 을 막아도 IME 가 그 키로 조합을 시작한다('ㄱ').
+     그 조합 하나는 글자로 넣지 않고 버린다 — 안 버리면 Ctrl+M, R 뒤에 'ㄱ' 이 문서에 들어간다. */
+  var cSwallow = false, cSwallowing = false;
+
+  function keys() {
+    if (cKeys) return cKeys;
+    cKeys = {};
+    function on(names, fn) { for (var i = 0; i < names.length; i++) cKeys[names[i]] = fn; }
+    function fmt(name) { return function () { hwFormat.toggleChar(name); }; }
+    function align(a) { return function () { hwFormat.setAlign(a); }; }
+    function scroll(dx, dy) { return function () { scrollView(dx, dy); }; }
+
+    /* 편집·파일 */
+    on(['C+z'], function () { if (hwUndo.undo()) status(); });
+    on(['CS+z'], function () { if (hwUndo.redo()) status(); });
+    on(['C+a'], function () { hwCaret.selectAll(); });
+    on(['C+s'], function () { hwSave(false); });
+    on(['CS+s'], function () { hwSave(true); });
+    on(['C+Home'], function () { toDocEdge(-1, false); });
+    on(['CS+Home'], function () { toDocEdge(-1, true); });
+    on(['C+End'], function () { toDocEdge(+1, false); });
+    on(['CS+End'], function () { toDocEdge(+1, true); });
+    on(['C+y', 'C+t'], function () { deleteLine(false); });
+    on(['A+y'], function () { deleteLine(true); });
+    on(['C+Enter', 'C+j'], function () { pageBreak(); });
+    on(['C+f', '+F2'], function () { if (window.hwFind) hwFind.open(false); });
+    on(['C+h', 'C+F2'], function () { if (window.hwFind) hwFind.open(true); });
+    on(['A+g'], function () { if (window.hwFind) hwFind.openGoto(); });
+    on(['C+k'], function () { startChord('C+k', 'Ctrl+K'); });
+    on(['C+q'], function () { startChord('C+q', 'Ctrl+Q'); });
+    on(['C+m'], function () { startChord('C+m', 'Ctrl+M'); });
+
+    /* 글자 모양 */
+    on(['C+b', 'AS+b'], fmt('bold'));
+    on(['C+i', 'AS+i'], fmt('italic'));
+    on(['C+u', 'AS+u'], fmt('underline'));
+    on(['C+]', 'AS+e'], function () { hwFormat.stepSize(+1); });
+    on(['C+[', 'AS+r'], function () { hwFormat.stepSize(-1); });
+    on(['AS+k'], function () { hwFormat.stepRatio(+1); });
+    on(['AS+j'], function () { hwFormat.stepRatio(-1); });
+    on(['AS+w'], function () { hwFormat.stepSpacing(+1); });
+    on(['AS+n'], function () { hwFormat.stepSpacing(-1); });
+
+    /* 문단 모양 */
+    on(['CS+l', 'CA+l'], align('left'));
+    on(['CS+c', 'CA+c'], align('center'));
+    on(['CS+r', 'CA+r'], align('right'));
+    on(['CS+m', 'CA+m'], align('justify'));
+    on(['CS+t', 'CA+t'], align('distribute'));
+    on(['AS+z', 'CS+u'], function () { hwFormat.stepLineSpace(+1); });
+    on(['AS+a', 'CS+q'], function () { hwFormat.stepLineSpace(-1); });
+    on(['C+F5', 'CS+i'], function () { hwFormat.stepIndent(+1); });
+    on(['C+F6', 'CS+o'], function () { hwFormat.stepIndent(-1); });
+    on(['C+F7'], function () { hwFormat.indent(+1); });
+    on(['C+F8'], function () { hwFormat.indent(-1); });
+    on(['CA+F5'], function () { hwFormat.stepMargin('mlHu', +1); });
+    on(['CA+F6'], function () { hwFormat.stepMargin('mlHu', -1); });
+    on(['CA+F7'], function () { hwFormat.stepMargin('mrHu', +1); });
+    on(['CA+F8'], function () { hwFormat.stepMargin('mrHu', -1); });
+
+    /* 보기 — 캐럿은 두고 화면만 민다. ★ Alt+← 는 WebView2 의 "뒤로 가기" 다 — 표에 있어야 막힌다. */
+    on(['A+ArrowUp'], scroll(0, -1));
+    on(['A+ArrowDown'], scroll(0, +1));
+    on(['A+ArrowLeft'], scroll(-1, 0));
+    on(['A+ArrowRight'], scroll(+1, 0));
+
+    /* 표 — 칸 안에서만 칸을 옮긴다. 칸 밖이면 false 로 흘려 탭 글자가 들어간다. */
+    on(['+Tab'], function () { return hwTable.here() ? hwTable.nextCell(+1) || true : false; });
+    on(['S+Tab'], function () { return hwTable.here() ? hwTable.nextCell(-1) || true : false; });
+
+    cChords = {
+      'C+k': {},
+      'C+q': {
+        l: function () { if (window.hwFind) hwFind.repeat(); },
+        f: function () { if (window.hwFind) hwFind.open(false); },
+        a: function () { if (window.hwFind) hwFind.open(true); }
+      },
+      'C+m': {
+        k: color('#000000'), r: color('#FF0000'), b: color('#0000FF'), d: color('#800080'),
+        g: color('#008000'), y: color('#FFFF00'), c: color('#00FFFF'), h: color('#FFFFFF')
+      }
+    };
+    function color(v) { return function () { hwFormat.applyChar({ color: v }); }; }
+    return cKeys;
+  }
+
+  /* 키 이름. ★ <b>code 를 먼저</b> 본다 — 한글 모드에서 글자 키의 key 는 'Process' 이고, Shift 를 누르면
+     ']' 가 '}' 로 온다. code 가 없으면(합성 이벤트) key 로 물러선다. */
+  function keyName(e) {
+    var c = e.code || '', m;
+    if ((m = /^Key([A-Z])$/.exec(c))) return m[1].toLowerCase();
+    if ((m = /^Digit([0-9])$/.exec(c))) return m[1];
+    if (c === 'BracketLeft') return '[';
+    if (c === 'BracketRight') return ']';
+    var k = e.key || '';
+    return k.length === 1 ? k.toLowerCase() : k;
+  }
+
+  function comboOf(e) {
+    return ((e.ctrlKey || e.metaKey) ? 'C' : '') + (e.altKey ? 'A' : '') + (e.shiftKey ? 'S' : '') + '+' + keyName(e);
+  }
+
+  function isModifier(k) { return k === 'Control' || k === 'Shift' || k === 'Alt' || k === 'Meta'; }
+
+  function startChord(name, label) {
+    cChord = name;
+    hwSetStatus({ text: label + ' — 다음 키를 누르세요 (Esc 취소)' });
+  }
+
+  /* 대기를 푼다. 상태줄도 원래대로 — 대기 문구가 남아 있으면 아직 기다리는 줄 안다. */
+  function clearChord() {
+    if (!cChord) return;
+    cChord = null;
+    if (hwDoc) status();
+  }
 
   function onKeyDown(e) {
     if (!hwDoc) return;
     if (e.isComposing || cComposing) return;   /* 조합 중에는 IME 가 키를 가져간다 */
+    if (isModifier(e.key)) return;             /* Ctrl 을 떼었다 누르는 것만으로 대기가 풀리면 안 된다 */
+
+    keys();
+    cSwallow = false;
+
+    /* ★ 대기 중인 두 타 조합이 <b>무엇보다 먼저</b>다 — Esc 도 여기서 끝나야 선택까지 그대로 남는다. */
+    if (cChord) {
+      e.preventDefault();
+      var fn2 = cChords[cChord][keyName(e)];
+      clearChord();
+      if (e.key === 'Process' || e.keyCode === 229) cSwallow = true;
+      if (fn2 && e.key !== 'Escape') fn2();
+      return;
+    }
 
     var ctrl = e.ctrlKey || e.metaKey;
-    var shift = e.shiftKey;
 
     /* ★ 개체를 골랐으면 방향키·Delete·Esc 가 <b>개체</b>의 것이다. 캐럿보다 먼저 보되 Ctrl 조합은
        넘긴다 — Ctrl+S·Ctrl+Z 는 개체를 고른 채로도 그대로 들어야 한다. */
     if (!ctrl && window.hwObj && hwObj.onKey(e)) { e.preventDefault(); return; }
 
-    if (ctrl && !e.altKey) {
-      switch (e.key.toLowerCase()) {
-        case 'z': e.preventDefault(); if (hwUndo.undo()) status(); return;
-        case 'y': e.preventDefault(); if (hwUndo.redo()) status(); return;
-        case 'a': e.preventDefault(); hwCaret.selectAll(); return;
-        case 'b': e.preventDefault(); hwFormat.toggleChar('bold'); return;
-        case 'i': e.preventDefault(); hwFormat.toggleChar('italic'); return;
-        case 'u': e.preventDefault(); hwFormat.toggleChar('underline'); return;
-        case 's': e.preventDefault(); hwSave(shift); return;
-        case 'f': e.preventDefault(); if (window.hwFind) hwFind.open(false); return;
-        case 'h': e.preventDefault(); if (window.hwFind) hwFind.open(true); return;
-        case 'c': case 'x': case 'v': return;   /* copy/cut/paste 이벤트에서 처리한다 */
-        case 'home': e.preventDefault(); toDocEdge(-1, shift); return;
-        case 'end': e.preventDefault(); toDocEdge(+1, shift); return;
-      }
+    var fn = cKeys[comboOf(e)];
+    if (fn) {
+      e.preventDefault();
+      if (fn() !== false) return;
     }
 
+    var shift = e.shiftKey;
     switch (e.key) {
       case 'ArrowLeft': e.preventDefault(); hwCaret.moveH(-1, shift); return;
       case 'ArrowRight': e.preventDefault(); hwCaret.moveH(+1, shift); return;
@@ -379,21 +587,52 @@ var hwInput = (function () {
 
   function onCompStart() {
     cComposing = true;
+
+    /* 두 타 조합의 둘째 키가 연 조합이다 — 글자로 안 넣고 끊는다. ★ 그냥 두면 IME 는 'ㄱ' 을 조합 중으로
+       들고 있어서, 이어 친 'ㅏ' 가 '가' 가 되고 그 글자까지 통째로 버려진다. 초점을 한 번 뺐다 돌려
+       조합을 끝낸다(끝나는 compositionend 는 아래에서 버린다). */
+    if (cSwallow) {
+      cSwallow = false;
+      cSwallowing = true;
+      setTimeout(function () {
+        if (!cSwallowing || !cIme) return;
+        cIme.blur();
+        focus();
+        /* 초점을 옮겨도 compositionend 가 안 오면 여기서 푼다 — 안 풀면 다음 조합까지 통째로 버린다. */
+        if (cSwallowing) { cSwallowing = false; cComposing = false; cIme.textContent = ''; hideComposing(); }
+      }, 0);
+    }
   }
 
   function onCompUpdate(e) {
+    if (cSwallowing) return;
     showComposing(e.data || '');
   }
 
-  function onCompEnd() {
+  /* ★ 조합은 compositionend 에서 <b>그 자리에서</b> 확정한다. 0ms 타이머로 미루면 한글 IME 가 곧바로 여는
+     다음 조합과 겹쳐, 수신기에 든 두 조합이 한 번에 읽히거나 순서가 뒤집힌다(TODO 3 낮음).
+     ★ data 가 비면 수신기 글을 읽는다 — IME 가 조합을 <b>취소</b>한 경우(Esc) 둘 다 비어 있어 아무것도 안
+       들어간다. 마지막 조합 중 글자로 채우면 사용자가 지운 글자를 되살린다. */
+  function onCompEnd(e) {
     cComposing = false;
-    /* 브라우저에 따라 compositionend 뒤 input 이 안 올 수 있다 — 그때를 대비한 뒷문이다.
-       input 이 먼저 오면 수신기가 이미 비어 있어 여기서는 아무 일도 안 한다. */
-    setTimeout(commit, 0);
+    if (cSwallowing) {
+      cSwallowing = false;
+      if (cIme) cIme.textContent = '';
+      hideComposing();
+      return;
+    }
+    if (!cIme) return;
+    var t = (e && e.data) || cIme.textContent || '';
+    cIme.textContent = '';
+    hideComposing();
+    if (t) typeText(t);
   }
 
-  function onInput() {
-    if (cComposing) { showComposing(cIme.textContent || ''); return; }
+  /* 조합이 끝난 뒤 input 이 또 오는 브라우저가 있다 — 확정하면서 수신기를 비워 두었으므로 commit 은
+     빈 값을 읽고 아무것도 안 한다. */
+  function onInput(e) {
+    if (cSwallowing) return;
+    if ((e && e.isComposing) || cComposing) { showComposing(cIme.textContent || ''); return; }
     commit();
   }
 
@@ -449,6 +688,7 @@ var hwInput = (function () {
   /* ── 마우스 ──────────────────────────────────────────── */
 
   function onMouseDown(e) {
+    clearChord();
     if (!hwDoc || e.button !== 0) return;
 
     /* ★ 개체를 <b>캐럿보다 먼저</b> 본다. 여기서 안 보면 그림을 눌러도 캐럿이 그 글자 자리로 갈 뿐
@@ -470,13 +710,50 @@ var hwInput = (function () {
     syncIme();
   }
 
+  /* 글자 선택 끌기. ★ 본문 밖으로 나가도 이어 간다 — 좌표를 캔버스 안쪽으로 잘라서 가장자리 줄을 잡는다.
+     위·아래로 나가면 그만큼 화면을 밀어 준다(자동 스크롤).
+     ★ 자른 좌표가 쪽 사이 여백에 떨어지면 hitTest 가 null 이다 — 그때는 마지막 자리를 그대로 둔다. */
   function onMouseMove(e) {
-    /* 개체를 끄는 중이면 글자 선택으로 넘어가지 않는다(움직임 자체는 문서 쪽 수신기가 처리한다). */
+    /* 개체를 끄는 중이면 글자 선택으로 넘어가지 않는다(움직임 자체는 개체 쪽이 처리한다). */
     if (window.hwObj && hwObj.dragging()) return;
     if (!cDragging) return;
-    var hit = hwCaret.hitTest(e.clientX, e.clientY);
+
+    var canvas = hwRenderer.canvas();
+    if (!canvas) return;
+    var r = canvas.getBoundingClientRect();
+    var x = Math.max(r.left + 1, Math.min(e.clientX, r.left + canvas.clientWidth - 2));
+    var y = Math.max(r.top + 1, Math.min(e.clientY, r.top + canvas.clientHeight - 2));
+
+    var over = e.clientY < r.top ? e.clientY - r.top : (e.clientY > r.top + canvas.clientHeight
+             ? e.clientY - (r.top + canvas.clientHeight) : 0);
+    if (over) {
+      canvas.scrollTop += Math.max(-60, Math.min(60, over));
+      /* 밀고 나서 새로 드러난 쪽은 아직 비어 있다 — 채운 뒤에 줄을 찾는다. */
+      hwRenderRefresh();
+    }
+
+    var hit = dragHit(x, y);
     if (!hit) return;
     hwCaret.set(hit.id, hit.pos, true);
+  }
+
+  /* 끄는 좌표의 문서 자리. ★ 쪽 사이 여백·마지막 쪽 아래에 떨어지면 hitTest 가 null 이다 — 그때는 세로로
+     가장 가까운 쪽 안으로 한 번 더 잘라 본다. 안 그러면 문서 끝 너머로 끌 때 선택이 끝 줄까지 안 간다. */
+  function dragHit(x, y) {
+    var hit = hwCaret.hitTest(x, y);
+    if (hit) return hit;
+
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < hwPages.length; i++) {
+      var el = hwRenderer.pageElOf(i);
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      var d = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+      if (d < bestD) { bestD = d; best = r; }
+    }
+    if (!best) return null;
+    return hwCaret.hitTest(Math.max(best.left + 1, Math.min(x, best.right - 2)),
+                           Math.max(best.top + 1, Math.min(y, best.bottom - 2)));
   }
 
   function onDoubleClick(e) {

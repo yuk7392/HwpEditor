@@ -25,6 +25,7 @@ namespace HwpEditor
 
         private readonly string cPath;
         private readonly string cImage;
+        private readonly List<string> cPasted = new List<string>();
         private bool cFinished;
 
         internal readonly List<string> Steps = new List<string>();
@@ -94,6 +95,16 @@ namespace HwpEditor
                         cWeb.Invoke("hwUiTest()");
                         break;
 
+                    // 그림 붙여넣기(112)가 실제 C# 길(임시 파일 → 미리보기 → hwInsertImage)을 지나게 한다.
+                    case "pasteImage":
+                        {
+                            string file = cImageStore.SavePasted(Convert.FromBase64String((string)o["data"] ?? ""),
+                                                                 (string)o["name"], (string)o["type"]);
+                            cPasted.Add(file);
+                            cWeb.Invoke("hwInsertImage(" + cImageStore.InsertInfoJson(file, cImageStore.DocKey(cPath), 40000) + ")");
+                            break;
+                        }
+
                     case "uitest":
                         OnResult(o);
                         break;
@@ -155,6 +166,7 @@ namespace HwpEditor
             cFinished = true;
             cTimeout.Stop();
             Error = pError;
+            foreach (string f in cPasted) try { File.Delete(f); } catch (IOException) { }
             Close();
         }
     }

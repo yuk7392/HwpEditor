@@ -32,6 +32,7 @@ var hwInput = (function () {
     if (canvas) {
       canvas.addEventListener('mousedown', onMouseDown);
       canvas.addEventListener('dblclick', onDoubleClick);
+      canvas.addEventListener('contextmenu', onContextMenu);
     }
     /* ★ 끌기는 개체든 글자 선택이든 <b>문서</b>에서 받는다. 캔버스에만 걸면 끌다가 도구줄·상태줄 위로
        나갔을 때 움직임도 놓는 것도 안 오고, 개체는 마지막 자리에 붙은 채, 선택은 거기서 멈춘다. */
@@ -55,6 +56,7 @@ var hwInput = (function () {
        중간에 배치를 빼먹으면 캐럿이 옛 좌표를 보고 엉뚱한 자리에 선다. */
   function edit(fn, coalesceKey, pIds) {
     if (!hwDoc) return;
+    if (window.hwFind) hwFind.clearHits();
 
     /* ★ 여러 문단을 한꺼번에 고치는 동작(모두 바꾸기)은 <b>고칠 문단을 직접</b> 준다.
        affected() 는 캐럿 선택에서 목록을 내므로, 그것만 믿으면 캐럿 밖 문단의 고침이
@@ -414,8 +416,8 @@ var hwInput = (function () {
     function align(a) { return function () { hwFormat.setAlign(a); }; }
     function scroll(dx, dy) { return function () { scrollView(dx, dy); }; }
 
-    on(['C+z'], function () { if (hwUndo.undo()) status(); });
-    on(['CS+z'], function () { if (hwUndo.redo()) status(); });
+    on(['C+z'], undo);
+    on(['CS+z'], redo);
     on(['C+a'], function () { hwCaret.selectAll(); });
     on(['C+s'], function () { hwSave(false); });
     on(['CS+s'], function () { hwSave(true); });
@@ -432,6 +434,12 @@ var hwInput = (function () {
     on(['C+k'], function () { startChord('C+k', 'Ctrl+K'); });
     on(['C+q'], function () { startChord('C+q', 'Ctrl+Q'); });
     on(['C+m'], function () { startChord('C+m', 'Ctrl+M'); });
+    on(['A+l'], function () { hwDialog.charShape(); });
+    on(['A+t'], function () { hwDialog.paraShape(); });
+    on(['C+F10'], function () { hwDialog.charMap(); });
+    on(['C+g'], function () { startChord('C+g', 'Ctrl+G'); });
+    on(['S+NumAdd'], function () { hwUi.stepZoom(+1); });
+    on(['S+NumSub'], function () { hwUi.stepZoom(-1); });
 
     /* 글자 모양 */
     on(['C+b', 'AS+b'], fmt('bold'));
@@ -478,6 +486,11 @@ var hwInput = (function () {
       'C+m': {
         k: color('#000000'), r: color('#FF0000'), b: color('#0000FF'), d: color('#800080'),
         g: color('#008000'), y: color('#FFFF00'), c: color('#00FFFF'), h: color('#FFFFFF')
+      },
+      'C+g': {
+        p: function () { hwUi.fitZoom('page'); },
+        q: function () { hwUi.setZoom(100); },
+        i: function () { hwUi.fitZoom('width'); }
       }
     };
     function color(v) { return function () { hwFormat.applyChar({ color: v }); }; }
@@ -492,6 +505,9 @@ var hwInput = (function () {
     if ((m = /^Digit([0-9])$/.exec(c))) return m[1];
     if (c === 'BracketLeft') return '[';
     if (c === 'BracketRight') return ']';
+    /* 숫자판 +/− 는 본 자판 +/− 와 key 가 같다 — 확대/축소는 숫자판에만 건다. */
+    if (c === 'NumpadAdd') return 'NumAdd';
+    if (c === 'NumpadSubtract') return 'NumSub';
     var k = e.key || '';
     return k.length === 1 ? k.toLowerCase() : k;
   }
@@ -518,6 +534,7 @@ var hwInput = (function () {
     if (!hwDoc) return;
     if (e.isComposing || cComposing) return;   /* 조합 중에는 IME 가 키를 가져간다 */
     if (isModifier(e.key)) return;             /* Ctrl 을 떼었다 누르는 것만으로 대기가 풀리면 안 된다 */
+    if (window.hwUi && hwUi.menuKey(e)) { e.preventDefault(); return; }
 
     keys();
     cSwallow = false;
@@ -561,6 +578,10 @@ var hwInput = (function () {
       case 'Escape': e.preventDefault(); hwCaret.clearSelection(); hwCaret.paint(); return;
     }
   }
+
+  /* ★ 도구줄 단추 상태는 여기서 다시 칠한다 — 되돌리기는 이력 자리를 옮기기 <b>전에</b> 다시 그려서, 그 안에서 칠한 상태가 한 칸 늦다. */
+  function undo() { if (hwUndo.undo()) { status(); hwUi.refresh(); } }
+  function redo() { if (hwUndo.redo()) { status(); hwUi.refresh(); } }
 
   function toDocEdge(dir, extend) {
     var all = hwModel.allParas();
@@ -766,46 +787,131 @@ var hwInput = (function () {
     if (body) placeIme(c, body);
   }
 
-  function selectedText() {
+  /* 복사해 둔 내부 서식 { mark, paras:[{ps, runs:[{cs, text}]}] }. 붙여넣기 HTML 의 표식이 같으면 이것으로 붙인다 —
+     다른 창·다른 문서에서 온 것은 표식이 달라 HTML 변환이나 평문으로 떨어진다.
+     ★ 모양 번호는 이 문서의 것이다. 저장으로 번호가 다시 매겨지면 remapClip 이 맞추고, 다른 문서를 열면 버린다. */
+  var cClip = null;
+
+  /* 선택 범위를 문단별 runs 로. 개체(U+FFFC)는 뺀다 — 개체는 아직 클립보드로 못 옮긴다. */
+  function selectedParas() {
     var sel = hwCaret.selection();
-    if (!sel) return '';
+    if (!sel) return [];
 
     var from = hwModel.orderOf(sel.fromId), to = hwModel.orderOf(sel.toId);
-    var out = [];
-    var all = hwModel.allParas();
+    var out = [], all = hwModel.allParas();
     for (var i = 0; i < all.length; i++) {
       var ord = hwModel.orderOf(all[i].id);
       if (ord < from || ord > to) continue;
-      var t = hwModel.text(all[i]);
-      out.push(t.slice(ord === from ? sel.fromPos : 0, ord === to ? sel.toPos : t.length));
+      var a = hwModel.items(all[i]);
+      var s = ord === from ? sel.fromPos : 0, e = ord === to ? sel.toPos : a.length;
+      var runs = [], cur = null;
+      for (var k = s; k < e && k < a.length; k++) {
+        if (a[k].ch === undefined) continue;
+        if (!cur || cur.cs !== a[k].cs) { cur = { cs: a[k].cs, text: '' }; runs.push(cur); }
+        cur.text += a[k].ch;
+      }
+      out.push({ ps: all[i].ps, runs: runs });
     }
-    return out.join('\r\n').replace(/￼/g, '');
+    return out;
+  }
+
+  function plainOf(paras) {
+    var out = [];
+    for (var i = 0; i < paras.length; i++) {
+      var t = '';
+      for (var r = 0; r < paras[i].runs.length; r++) t += paras[i].runs[r].text;
+      out.push(t);
+    }
+    return out.join('\r\n');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function runCss(cs) {
+    var face = hwModel.faceName(cs.face), st = [];
+    if (face && face.name) st.push("font-family:'" + face.name.replace(/['"]/g, '') + "'");
+    st.push('font-size:' + (cs.sizeHu / 100) + 'pt');
+    if (cs.bold) st.push('font-weight:bold');
+    if (cs.italic) st.push('font-style:italic');
+    var deco = [];
+    if (cs.underline) deco.push('underline');
+    if (cs.strike) deco.push('line-through');
+    if (deco.length) st.push('text-decoration:' + deco.join(' '));
+    if (cs.color) st.push('color:' + cs.color);
+    return st.join(';');
+  }
+
+  /* 첫 요소에 표식을 단다(덤프 7). 공백·탭이 접히지 않게 pre-wrap 으로 싣는다. */
+  function htmlOf(paras, mark) {
+    var h = '';
+    for (var i = 0; i < paras.length; i++) {
+      var body = '';
+      for (var r = 0; r < paras[i].runs.length; r++) {
+        var run = paras[i].runs[r];
+        body += '<span style="' + runCss(hwModel.charShape(run.cs)) + '">' + escHtml(run.text).replace(/\n/g, '<br>') + '</span>';
+      }
+      h += '<p' + (i === 0 ? ' data-hw-copy="' + mark + '"' : '') + ' style="margin:0;white-space:pre-wrap">' + (body || '<br>') + '</p>';
+    }
+    return h;
+  }
+
+  function putClip(dt) {
+    var paras = selectedParas();
+    var text = plainOf(paras);
+    if (!text) return false;
+    var mark = 'hw' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    cClip = { mark: mark, paras: paras };
+    dt.setData('text/plain', text);
+    dt.setData('text/html', htmlOf(paras, mark));
+    return true;
   }
 
   function onCopy(e) {
-    var t = selectedText();
-    if (!t) return;
-    e.preventDefault();
-    e.clipboardData.setData('text/plain', t);
+    if (e.clipboardData && putClip(e.clipboardData)) e.preventDefault();
   }
 
   function onCut(e) {
-    var t = selectedText();
-    if (!t) return;
+    if (!e.clipboardData || !putClip(e.clipboardData)) return;
     e.preventDefault();
-    e.clipboardData.setData('text/plain', t);
     edit(function () { dropSelection(); return null; });
   }
 
   function onPaste(e) {
     if (!hwDoc) return;
-    var t = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    var dt = e.clipboardData;
     e.preventDefault();
-    if (!t) return;
+    if (!dt) return;
+    var file = null;
+    for (var i = 0; i < (dt.files ? dt.files.length : 0); i++) if (/^image\//.test(dt.files[i].type)) { file = dt.files[i]; break; }
+    pasteData({ text: dt.getData('text/plain'), html: dt.getData('text/html'), file: file });
+  }
 
-    /* 줄바꿈이 든 글은 문단을 나눠 넣는다 — 한 문단에 몰아넣으면 원본과 다른 모양이 된다. */
-    var lines = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  /* 붙여넣기 판정(덤프 7): ① 내 표식 → 내부 서식 ② 그림 파일만 있고 평문이 없음 → 그림 ③ HTML 태그 → 변환 ④ 평문.
+     붙여넣기 이벤트와 C# 브릿지(우클릭 붙여넣기, hwPasteData)가 같이 탄다. */
+  function pasteData(d) {
+    if (!hwDoc || !d) return;
+    var m = /data-hw-copy="([^"]+)"/.exec(d.html || '');
+    if (m && cClip && m[1] === cClip.mark) { pasteParas(cClip.paras); return; }
+    if (d.file && !d.text) { pasteImage(d.file); return; }
+    if (d.html && /<[a-z][^>]*>/i.test(d.html)) {
+      var ps = htmlToParas(d.html);
+      if (ps.length) { pasteParas(ps); return; }
+    }
+    if (d.text) pasteParas(plainParas(d.text));
+  }
 
+  /* 줄바꿈이 든 글은 문단을 나눠 넣는다 — 한 문단에 몰아넣으면 원본과 다른 모양이 된다. */
+  function plainParas(t) {
+    var lines = t.replace(/￼/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n'), out = [];
+    for (var i = 0; i < lines.length; i++) out.push({ ps: null, runs: [{ cs: null, text: lines[i] }] });
+    return out;
+  }
+
+  /* 문단 목록을 캐럿 자리에 넣는다. cs·ps 가 null 이면 캐럿 자리의 것을 쓴다.
+     ★ 첫 문단의 모양은 캐럿이 문단 머리에 있을 때만 옮긴다 — 문단 중간에 붙이면 그 문단은 원래 모양 그대로다. */
+  function pasteParas(list) {
     edit(function () {
       dropSelection();
       var p = hwCaret.para();
@@ -813,21 +919,217 @@ var hwInput = (function () {
 
       var made = [];
       var pos = hwCaret.at().pos;
-      var cs = hwModel.shapeAt(p, pos > 0 ? pos - 1 : 0);
+      var base = hwModel.shapeAt(p, pos > 0 ? pos - 1 : 0);
+      var head = true, lead = hwModel.items(p);
+      for (var h = 0; h < pos && h < lead.length; h++) if (!(lead[h].obj && lead[h].obj.hidden)) { head = false; break; }
 
-      for (var i = 0; i < lines.length; i++) {
+      for (var i = 0; i < list.length; i++) {
         if (i > 0) {
           var np = hwModel.splitPara(p, pos);
           made.push(np.id);
           p = np;
           pos = 0;
         }
-        hwModel.insertText(p, pos, lines[i], cs);
-        pos += lines[i].length;
+        if (list[i].ps !== null && list[i].ps !== undefined && (i > 0 || head) && p.ps !== list[i].ps) {
+          p.ps = list[i].ps;
+          hwModel.markDirty(p.id);
+        }
+        for (var r = 0; r < list[i].runs.length; r++) {
+          var run = list[i].runs[r];
+          pos += hwModel.insertText(p, pos, run.text, run.cs === null ? base : run.cs);
+        }
       }
       hwCaret.set(p.id, pos, false);
       return made;
     });
+  }
+
+  /* ② 그림. 파일을 C# 에 넘기면 임시 파일로 받아 그림 넣기 응답(hwInsertImage)을 그대로 돌려준다. */
+  function pasteImage(file) {
+    var rd = new FileReader();
+    rd.onload = function () {
+      var s = String(rd.result || ''), at = s.indexOf(',');
+      if (at < 0) return;
+      hwPost({ t: 'pasteImage', name: file.name || 'image.png', type: file.type || 'image/png', data: s.slice(at + 1) });
+    };
+    rd.onerror = function () { hwSetStatus({ text: '붙여 넣을 그림을 읽지 못했습니다' }); };
+    rd.readAsDataURL(file);
+  }
+
+  /* ③ 다른 프로그램의 HTML → 문단·굵게·기울임·밑줄·취소선·색·크기만(F4). 표는 줄마다 문단, 칸은 탭으로 — 1차는 평문처럼.
+     그림은 버린다(Office 가 조건부 주석 안에 넣는 VML 그림은 DOMParser 가 주석으로 읽어 저절로 빠진다).
+     ★ 스타일이 안 걸린 글은 굵게·기울임·밑줄·취소선을 <b>끈다</b> — HTML 에서는 그것이 기본값이다. 크기·색은 캐럿 자리 것을 잇는다. */
+  var cBlockRe = /^(P|DIV|H[1-6]|LI|UL|OL|DL|DT|DD|TR|TABLE|TBODY|THEAD|TFOOT|BLOCKQUOTE|PRE|SECTION|ARTICLE|HEADER|FOOTER|ADDRESS|CAPTION|FIGURE)$/;
+  var cSkipRe = /^(SCRIPT|STYLE|HEAD|TITLE|META|LINK|IMG|SVG|OBJECT|IFRAME|NOSCRIPT|TEMPLATE)$/;
+
+  function htmlToParas(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var p = hwCaret.para();
+    var at = hwCaret.at().pos;
+    var base = p ? hwModel.shapeAt(p, at > 0 ? at - 1 : 0) : 0;
+    var out = [], cur = null, memo = {};
+
+    function para() { cur = { ps: null, runs: [] }; out.push(cur); }
+    function shapeOf(st) {
+      var key = JSON.stringify(st);
+      if (!memo.hasOwnProperty(key)) memo[key] = hwFormat.charShapeWith(base, st);
+      return memo[key];
+    }
+    function add(text, st) {
+      if (!text) return;
+      if (!cur) para();
+      var cs = shapeOf(st), last = cur.runs[cur.runs.length - 1];
+      if (last && last.cs === cs) last.text += text;
+      else cur.runs.push({ cs: cs, text: text });
+    }
+    function walk(node, st, pre) {
+      for (var c = node.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3) {
+          var t = c.nodeValue.replace(/ /g, ' ').replace(/￼/g, '');
+          if (!pre) {
+            t = t.replace(/[\r\n\t ]+/g, ' ');
+            if (!cur || !cur.runs.length) t = t.replace(/^ +/, '');
+          }
+          add(t, st);
+          continue;
+        }
+        if (c.nodeType !== 1) continue;
+        var tag = c.tagName.toUpperCase();
+        if (cSkipRe.test(tag) || tag.indexOf(':') >= 0) continue;
+        if (tag === 'BR') { if (!cur) para(); cur = null; continue; }
+        if ((tag === 'TD' || tag === 'TH') && c.previousElementSibling) add('\t', st);
+        var block = cBlockRe.test(tag);
+        if (block) cur = null;
+        walk(c, styleOf(c, st), pre || tag === 'PRE');
+        if (block) cur = null;
+      }
+    }
+
+    walk(doc.body, { bold: false, italic: false, underline: 0, strike: false }, false);
+    for (var i = 0; i < out.length; i++) {
+      var rs = out[i].runs;
+      if (rs.length) rs[rs.length - 1].text = rs[rs.length - 1].text.replace(/ +$/, '');
+    }
+    return out;
+  }
+
+  function styleOf(el, st) {
+    var o = {};
+    for (var k in st) if (st.hasOwnProperty(k)) o[k] = st[k];
+    var tag = el.tagName.toUpperCase();
+    if (tag === 'B' || tag === 'STRONG' || /^H[1-6]$/.test(tag) || tag === 'TH') o.bold = true;
+    if (tag === 'I' || tag === 'EM' || tag === 'CITE') o.italic = true;
+    if (tag === 'U' || tag === 'INS') o.underline = 1;
+    if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') o.strike = true;
+    if (tag === 'FONT') {
+      var fc = hexOf(el.getAttribute('color'));
+      if (fc) o.color = fc;
+      var fs = { 1: 8, 2: 10, 3: 12, 4: 14, 5: 18, 6: 24, 7: 36 }[parseInt(el.getAttribute('size'), 10)];
+      if (fs) o.sizeHu = fs * 100;
+    }
+
+    var s = el.style;
+    if (!s) return o;
+    var w = s.fontWeight;
+    if (w) o.bold = w === 'bold' || w === 'bolder' || parseInt(w, 10) >= 600;
+    if (s.fontStyle) o.italic = s.fontStyle === 'italic' || s.fontStyle === 'oblique';
+    var deco = s.textDecorationLine || s.textDecoration || '';
+    if (deco) {
+      o.underline = deco.indexOf('underline') >= 0 ? 1 : 0;
+      o.strike = deco.indexOf('line-through') >= 0;
+    }
+    var col = hexOf(s.color);
+    if (col) o.color = col;
+    var m = /^([\d.]+)(pt|px)$/.exec(s.fontSize || '');
+    if (m) {
+      var pt = parseFloat(m[1]) * (m[2] === 'px' ? 0.75 : 1);
+      if (pt > 0) o.sizeHu = Math.round(Math.max(1, Math.min(4096, pt)) * 100);
+    }
+    return o;
+  }
+
+  function hexOf(c) {
+    if (!c) return null;
+    var m = /^#([0-9a-f]{6})$/i.exec(c);
+    if (m) return '#' + m[1].toUpperCase();
+    m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(c);
+    if (m) return ('#' + m[1] + m[1] + m[2] + m[2] + m[3] + m[3]).toUpperCase();
+    m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(c);
+    if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return null;
+    var hex = '#';
+    for (var i = 1; i <= 3; i++) hex += ('0' + Math.min(255, parseInt(m[i], 10)).toString(16)).slice(-2);
+    return hex.toUpperCase();
+  }
+
+  /* 우클릭 메뉴의 클립보드 항목. ★ 잘라내기·복사는 execCommand 로 위의 copy·cut 수신기를 태운다 — 사용자 누르기(제스처) 안에서만
+     된다. 안 되면(false) 클립보드 API 로 한 번 더 싣는다. 붙여넣기는 스크립트가 클립보드를 못 읽으므로 C# 에 묻는다(hwPasteData). */
+  function clip(kind) {
+    if (!hwDoc) return;
+    if (kind === 'paste') { hwPost({ t: 'paste' }); return; }
+    if (kind === 'delete') { edit(function () { dropSelection(); return null; }); return; }
+
+    focus();
+    var done = false;
+    try { done = document.execCommand(kind); } catch (e) { done = false; }
+    if (done) return;
+
+    var dt = new DataTransfer();
+    if (!putClip(dt)) return;
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      hwSetStatus({ text: '클립보드에 쓸 수 없습니다 — Ctrl+C·Ctrl+X 를 쓰세요' });
+      return;
+    }
+    /* ★ 오려 두기는 클립보드에 <b>실린 뒤에</b> 지운다 — 먼저 지우면 쓰기가 실패했을 때 고른 글이 어디에도 없이 사라진다. */
+    navigator.clipboard.write([new ClipboardItem({
+      'text/plain': new Blob([dt.getData('text/plain')], { type: 'text/plain' }),
+      'text/html': new Blob([dt.getData('text/html')], { type: 'text/html' })
+    })]).then(function () {
+      if (kind === 'cut') edit(function () { dropSelection(); return null; });
+    })['catch'](function () {
+      hwSetStatus({ text: '클립보드에 쓰지 못했습니다 — Ctrl+C·Ctrl+X 를 쓰세요' });
+    });
+  }
+
+  function remapClip(csMap, psMap) {
+    if (!cClip) return;
+    for (var i = 0; i < cClip.paras.length; i++) {
+      var q = cClip.paras[i];
+      if (psMap && q.ps < psMap.length) q.ps = psMap[q.ps];
+      for (var r = 0; r < q.runs.length; r++) if (csMap && q.runs[r].cs < csMap.length) q.runs[r].cs = csMap[q.runs[r].cs];
+    }
+  }
+
+  function inSelection(h) {
+    var sel = hwCaret.selection();
+    if (!sel) return false;
+    var o = hwModel.orderOf(h.id), a = hwModel.orderOf(sel.fromId), b = hwModel.orderOf(sel.toId);
+    if (o < a || o > b) return false;
+    if (o === a && h.pos < sel.fromPos) return false;
+    if (o === b && h.pos > sel.toPos) return false;
+    return true;
+  }
+
+  /* 우클릭(덤프 7): 선택 안이나 개체 위면 캐럿을 안 옮기고, 아니면 옮긴 뒤 띄운다.
+     ★ 오른쪽 단추 mousedown 은 onMouseDown 이 안 막아 초점이 수신기에서 빠진다 — 여기서 되돌려야 메뉴를 닫은 뒤 키가 산다. */
+  function onContextMenu(e) {
+    e.preventDefault();
+    if (!hwDoc) return;
+    clearChord();
+
+    var od = e.target.closest ? e.target.closest('.hw-obj[data-para]') : null;
+    var kind;
+    if (od && window.hwObj) {
+      hwObj.select(od.getAttribute('data-para'), parseInt(od.getAttribute('data-pos'), 10));
+      kind = 'obj';
+    } else {
+      if (window.hwObj) hwObj.clear();
+      var hit = hwCaret.hitTest(e.clientX, e.clientY);
+      if (hit && !inSelection(hit)) hwCaret.set(hit.id, hit.pos, false);
+      kind = hwTable.here() ? 'cell' : 'body';
+    }
+    focus();
+    syncIme();
+    hwUi.showMenu(hwUi.contextItems(kind), e.clientX, e.clientY);
   }
 
   return {
@@ -840,6 +1142,12 @@ var hwInput = (function () {
     run: function (fn, coalesceKey, ids) { edit(fn, coalesceKey, ids); },
     typeText: typeText,
     insertImage: insertImage,
+    undo: undo,
+    redo: redo,
+    clip: clip,
+    pasteData: pasteData,
+    remapClip: remapClip,
+    dropClip: function () { cClip = null; },
     status: status,
     isComposing: function () { return cComposing; }
   };
@@ -847,3 +1155,6 @@ var hwInput = (function () {
 
 /* C# 이 파일 대화상자로 고른 그림을 넘겨준다. */
 function hwInsertImage(info) { hwInput.insertImage(info); }
+
+/* 우클릭 붙여넣기 — C# 이 클립보드를 읽어 돌려준다({text, html}). */
+function hwPasteData(d) { hwInput.pasteData(d); }

@@ -439,6 +439,7 @@ var hwObj = (function () {
     endDrag: endDrag,
     onKey: onKey,
     toggleInline: toggleInline,
+    remove: remove,
     dragging: function () { return !!cDrag; }
   };
 })();

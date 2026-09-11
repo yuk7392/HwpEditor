@@ -216,6 +216,13 @@ body {
   z-index: 1;
 }
 
+.hw-hit {
+  position: absolute;
+  background: rgba(255, 196, 0, 0.42);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* 조합 중인 글자. 모델에는 아직 안 들어간 상태다. */
 .hw-composing {
   position: absolute;
@@ -276,6 +283,84 @@ body {
   white-space: nowrap;
 }
 
+.hw-dlg-back {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.hw-dlg {
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 0 14px 12px;
+  background: #ffffff;
+  border: 1px solid #a8a8a8;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  user-select: none;
+}
+
+.hw-dlg-title { margin: 0 -14px 10px; padding: 7px 14px; background: #f2f4f7; border-bottom: 1px solid #d8d8d8; font-weight: 700; }
+.hw-dlg-tabs { display: flex; gap: 2px; margin-bottom: 8px; border-bottom: 1px solid #d0d0d0; }
+.hw-dlg-tab { height: 24px; padding: 0 12px; border: 1px solid transparent; border-bottom: 0; background: transparent; font: inherit; }
+.hw-dlg-tab.on { background: #ffffff; border-color: #d0d0d0; margin-bottom: -1px; }
+.hw-dlg-row { display: flex; align-items: center; min-height: 28px; gap: 8px; }
+.hw-dlg-row.off { color: #a0a0a0; }
+.hw-dlg-label { flex: 0 0 72px; color: #404040; }
+.hw-dlg-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.hw-dlg-num, .hw-dlg-text { height: 22px; padding: 0 4px; border: 1px solid #c0c0c0; font: inherit; }
+.hw-dlg-sel { height: 22px; font: inherit; }
+.hw-dlg-color { width: 34px; height: 22px; padding: 0; border: 1px solid #c0c0c0; background: none; }
+.hw-dlg-unit { color: #606060; margin-right: 8px; }
+.hw-dlg-note { color: #707070; }
+.hw-dlg-toggles, .hw-dlg-radio { display: inline-flex; gap: 2px; }
+.hw-dlg-tog, .hw-dlg-rad { min-width: 26px; height: 24px; padding: 0 6px; border: 1px solid #c8c8c8; background: #fafafa; font: inherit; }
+.hw-dlg-tog.on, .hw-dlg-rad.on { background: #d8e6f6; border-color: #7fa9d8; }
+.hw-dlg-tog.mixed { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 3px, #e6e6e6 3px, #e6e6e6 6px); }
+.hw-dlg-tog:disabled { color: #b8b8b8; }
+.hw-dlg-tog[data-key="bold"] { font-weight: 700; }
+.hw-dlg-tog[data-key="italic"] { font-style: italic; }
+.hw-dlg-tog[data-key="strike"] { text-decoration: line-through; }
+.hw-dlg-btns { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.hw-dlg-btns button { min-width: 64px; height: 26px; border: 1px solid #b8b8b8; background: #f6f6f6; font: inherit; }
+.hw-dlg-btns .hw-dlg-ok { background: #e3eefb; border-color: #7fa9d8; }
+
+.hw-ctx {
+  position: fixed;
+  z-index: 40;
+  min-width: 190px;
+  padding: 3px 0;
+  background: #ffffff;
+  border: 1px solid #a8a8a8;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+}
+.hw-ctx-item { display: flex; justify-content: space-between; gap: 18px; padding: 4px 12px 4px 22px; white-space: nowrap; cursor: default; }
+.hw-ctx-item.hi, .hw-ctx-item:hover { background-color: #e3eefb; }
+.hw-ctx-item.dis { color: #aaaaaa; background-color: transparent; }
+.hw-ctx-item.chk { background-image: linear-gradient(#337acc, #337acc); background-size: 6px 6px; background-position: 9px center; background-repeat: no-repeat; }
+.hw-ctx-key { color: #808080; }
+.hw-ctx-sep { height: 1px; margin: 3px 0; background: #dddddd; }
+
+.hw-cm-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 26px);
+  grid-auto-rows: 26px;
+  width: 440px;
+  height: 250px;
+  overflow-y: auto;
+  border: 1px solid #c8c8c8;
+}
+.hw-cm-cell { width: 26px; height: 26px; padding: 0; border: 0; border-right: 1px solid #eeeeee; border-bottom: 1px solid #eeeeee; background: #ffffff; font-size: 15px; }
+.hw-cm-cell:hover { background: #eef4fb; }
+.hw-cm-cell.on { background: #337acc; color: #ffffff; }
+.hw-cm-preview { min-height: 22px; font-size: 16px; }
+
 /* ★ 캐럿(3)보다 위에 얹는다. 테두리는 클릭을 통과시켜야 그 안의 그림을 다시 누를 수 있고,
      조절점은 반대로 클릭을 받아야 한다. */
 .hw-objsel {
@@ -329,8 +414,8 @@ body {
     background: #ffffff;
   }
 
-  .hw-menu, .hw-tools, .hw-status, #hwIme, .hw-find,
-  .hw-caret, .hw-sel, .hw-composing,
+  .hw-menu, .hw-tools, .hw-statusbar, #hwIme, .hw-find, .hw-dlg-back, .hw-ctx,
+  .hw-caret, .hw-sel, .hw-hit, .hw-composing,
   .hw-objsel, .hw-handle { display: none !important; }
 
   /* ★ 아직 못 그리는 개체(수식·OLE·도형 등)의 회색 자리 상자와 이름표는 화면용 표시다 — 종이에 나가면
@@ -356,15 +441,29 @@ body {
   }
 }
 
-.hw-status {
+.hw-statusbar {
   flex: 0 0 auto;
-  height: 22px;
-  line-height: 22px;
-  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  height: 24px;
   background: #fafafa;
   border-top: 1px solid #d0d0d0;
+}
+
+.hw-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 22px;
+  padding: 0 8px;
   color: #505050;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.hw-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 0 6px; }
+.hw-nav button { min-width: 22px; height: 20px; padding: 0 4px; border: 1px solid transparent; background: transparent; font: inherit; }
+.hw-nav button:hover { background: #e8e8e8; border-color: #d0d0d0; }
+.hw-pageno { min-width: 56px; text-align: center; color: #404040; }
+.hw-nav select { height: 20px; font: inherit; }
+#hwZoomSlider { width: 110px; }

@@ -171,6 +171,7 @@
     <EmbeddedResource Include="Web\hwCaret.js" />
     <EmbeddedResource Include="Web\hwObj.js" />
     <EmbeddedResource Include="Web\hwFind.js" />
+    <EmbeddedResource Include="Web\hwDialog.js" />
     <EmbeddedResource Include="Web\hwUndo.js" />
     <EmbeddedResource Include="Web\hwFormat.js" />
     <EmbeddedResource Include="Web\hwInput.js" />

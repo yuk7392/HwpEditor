@@ -745,9 +745,19 @@ function hwUiTest() {
     ok('S1 세션 1 검사 중 예외', false, String(eS1 && eS1.stack ? eS1.stack : eS1).replace(/\s+/g, ' ').slice(0, 400));
   }
 
+  /* ★ S2 는 S1 <b>뒤</b>다. 앞에 두면 S2 가 문서 끝에 더한 문단 때문에 S1 의 68(쪽 나누기로 쪽 +1)이 레이아웃에 따라 틀린다
+     (실측 complaint-form.hwpx). 대가: S1 의 90 이 첫 표를 지운 뒤라, 표가 하나뿐인 문서에서는 84-1 을 건너뛴다. */
+  var s2 = null;
+  try {
+    s2 = hwUiTestS2({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+  } catch (eS2) {
+    ok('S2 세션 2 검사 중 예외', false, String(eS2 && eS2.stack ? eS2.stack : eS2).replace(/\s+/g, ' ').slice(0, 400));
+  }
+
   /* ★ 그림은 늦게 온다 — 그린 직후에 재면 아직 안 받아 온 것까지 "실패" 로 찍힌다.
      다 붙거나 실패할 때까지 기다렸다가 판정한다. */
-  hwWaitImages().then(function (r) {
+  var tail = s2 && s2.after ? s2.after()['catch'](function (e) { ok('S2 비동기 검사 중 예외', false, String(e)); }) : Promise.resolve();
+  tail.then(function () { return hwWaitImages(); }).then(function (r) {
     ok('20 그림이 실제로 그려짐', r.total === 0 || r.loaded === r.total, r.loaded + '/' + r.total + ' 장');
     /* ★ 여기서 다시 만든다 — 위에서 잡아 둔 ops 는 표 칸을 고치기 <b>전</b>의 것이라,
        그것을 내보내면 --apply 가 표 편집을 한 번도 안 태운다(실측으로 걸렸다). */
@@ -1236,6 +1246,358 @@ function hwUiTestS1(t) {
   }
 }
 
+/* ★ 대화상자 칸은 값만 넣지 않고 input·change 를 쏜다 — "바뀐 칸만 적용" 이 그 이벤트로 가려진다. */
+function hwUiTestS2(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn, ime = t.ime;
+
+  function csAt(p, k) { return hwDoc.charShapes[hwModel.shapeAt(p, k || 0)]; }
+  function psOf(p) { return hwDoc.paraShapes[p.ps]; }
+  function pick(p, a, b) { hwCaret.set(p.id, a, false); hwCaret.set(p.id, b, true); }
+  function dlg() { return hwDialog.current(); }
+  function setField(k, v) {
+    var e = dlg() ? dlg().field(k) : null;
+    if (!e) return false;
+    e.value = String(v);
+    e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+    return true;
+  }
+  function press(label) {
+    var b = dlg() ? dlg().button(label) : null;
+    if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return !!b;
+  }
+  function esc(target) {
+    (target || document.activeElement || document.body).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  }
+
+  var S0 = hwDoc.sections[0].paras, tail = S0[S0.length - 1];
+  for (var ti = S0.length - 1; ti >= 0; ti--) if (S0[ti].id.charAt(0) !== 'n') { tail = S0[ti]; break; }
+  hwCaret.set(tail.id, tail.len, false);
+  key('Enter');
+  var sp = hwCaret.para();
+  typeIn('가나다라 마바사 아자차카 타파하 ');
+  typeIn('가나다라 마바사 아자차카 타파하');
+  pick(sp, 0, sp.len);
+  hwFormat.applyChar({ sizeHu: 1000, ratio: 100, spacing: 0, bold: false, italic: false, underline: 0, strike: false });
+
+  pick(sp, 1, 4);
+  key('l', { alt: true });
+  var d80 = dlg();
+  var in80 = !!d80 && !!document.activeElement && d80.el.contains(document.activeElement);
+  esc();
+  var s80 = hwCaret.selection();
+  ok('80 대화상자(Alt+L)를 Esc 로 닫으면 캐럿·선택 그대로, 초점은 본문 수신기로',
+     in80 && !hwDialog.isOpen() && !!s80 && s80.fromId === sp.id && s80.fromPos === 1 && s80.toPos === 4
+       && document.activeElement === ime,
+     (d80 ? '열림' : '안 열림') + (in80 ? '·초점 안' : '·초점 밖') + ', 닫힘 ' + !hwDialog.isOpen()
+       + ', 선택 ' + (s80 ? s80.fromPos + '~' + s80.toPos : '없음') + ', 초점 ' + (document.activeElement === ime ? '수신기' : (document.activeElement ? document.activeElement.tagName : 'null')));
+
+  pick(sp, 0, sp.len);
+  key('l', { alt: true });
+  var f81 = setField('ratio', 90) && setField('spacing', -5);
+  press('설정');
+  var ops81 = hwBuildOps(), sent81 = false;
+  for (var o81 = 0; o81 < ops81.length; o81++) {
+    if (ops81[o81].id !== sp.id) continue;
+    var rs = ops81[o81].runs || [];
+    for (var r81 = 0; r81 < rs.length; r81++) {
+      var c81 = hwDoc.charShapes[rs[r81].cs];
+      if (c81 && c81.ratio === 90 && c81.spacing === -5) sent81 = true;
+    }
+  }
+  ok('81 글자 모양 — 장평 90·자간 −5 가 선택 전체에 걸리고 저장 요청에 실린다',
+     f81 && !hwDialog.isOpen() && csAt(sp, 0).ratio === 90 && csAt(sp, 0).spacing === -5
+       && csAt(sp, sp.len - 1).ratio === 90 && csAt(sp, sp.len - 1).spacing === -5 && sent81,
+     '칸 ' + (f81 ? '채움' : '못 찾음') + ', 첫 글자 ' + csAt(sp, 0).ratio + '/' + csAt(sp, 0).spacing
+       + ', 끝 글자 ' + csAt(sp, sp.len - 1).ratio + '/' + csAt(sp, sp.len - 1).spacing + ', 요청 ' + (sent81 ? '실림' : '안 실림'));
+
+  var half = Math.floor(sp.len / 2);
+  pick(sp, 0, half); hwFormat.applyChar({ sizeHu: 1000 });
+  pick(sp, half, sp.len); hwFormat.applyChar({ sizeHu: 1400 });
+  pick(sp, 0, sp.len);
+  key('l', { alt: true });
+  var blank81 = dlg() && dlg().field('size') ? dlg().field('size').value === '' : false;
+  setField('ratio', 95);
+  press('설정');
+  ok('81-1 섞인 크기 — 크기 칸은 비어 있고, 장평만 바꾸면 각자 크기(10·14pt)가 남는다',
+     blank81 && csAt(sp, 0).sizeHu === 1000 && csAt(sp, sp.len - 1).sizeHu === 1400
+       && csAt(sp, 0).ratio === 95 && csAt(sp, sp.len - 1).ratio === 95,
+     '크기 칸 ' + (blank81 ? '비어 있음' : '값 있음') + ', ' + csAt(sp, 0).sizeHu + '/' + csAt(sp, sp.len - 1).sizeHu
+       + ', 장평 ' + csAt(sp, 0).ratio + '/' + csAt(sp, sp.len - 1).ratio);
+  pick(sp, 0, sp.len);
+  hwFormat.applyChar({ sizeHu: 1000, ratio: 100, spacing: 0 });
+  /* 저장 왕복(--apply → --model)에서 찾을 표식 — 앞 세 글자는 81 의 값으로 남겨 둔다. */
+  pick(sp, 0, 3);
+  hwFormat.applyChar({ ratio: 90, spacing: -5 });
+
+  hwCaret.set(sp.id, 2, false);
+  key('t', { alt: true });
+  var f82 = setField('mt', 10) && setField('lsType', 'fixed') && setField('ls', 20);
+  var unit82 = dlg() && dlg().field('ls:unit') ? dlg().field('ls:unit').textContent : '';
+  press('설정');
+  ok('82 문단 모양 — 문단 위 10pt·줄 간격 고정 20pt → mtHu 1000, fixed, ls 2000',
+     f82 && unit82 === 'pt' && psOf(sp).mtHu === 1000 && psOf(sp).lsType === 'fixed' && psOf(sp).ls === 2000,
+     '단위 ' + unit82 + ', mtHu ' + psOf(sp).mtHu + ', ' + psOf(sp).lsType + ' ' + psOf(sp).ls);
+
+  hwCaret.set(sp.id, 3, false);
+  key('F10', { ctrl: true });
+  var cats86 = hwDialog.categories(), ci86 = cats86.indexOf('원문자·괄호문자(영/숫자)');
+  setField('cat', ci86);
+  var cell86 = dlg() ? dlg().el.querySelector('.hw-cm-cell[data-ch="①"]') : null;
+  if (cell86) cell86.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  press('넣기');
+  ok('86 문자표 — "①" 넣기 후 캐럿 앞 글자가 U+2460, 창은 닫힘',
+     !!cell86 && !hwDialog.isOpen() && hwModel.text(sp).charAt(3) === '①' && hwCaret.at().pos === 4,
+     (cell86 ? '칸 찾음' : '칸 없음') + ', 글자 U+' + hwModel.text(sp).charCodeAt(3).toString(16).toUpperCase()
+       + ', 캐럿 ' + hwCaret.at().pos);
+
+  hwCaret.set(sp.id, sp.len, false);
+  typeIn(' ＡＢ 가나 끝');
+  var tx83 = hwModel.text(sp), full83 = tx83.indexOf('ＡＢ'), word83 = tx83.lastIndexOf('가나');
+  var ft = document.getElementById('hwFindText');
+  hwFind.resetOptions();
+  document.getElementById('hwFindDir').value = 'down';
+  ft.value = 'AB';
+  hwCaret.set(sp.id, 0, false);
+  var f83 = hwFind.search(+1), s83 = hwCaret.selection();
+  ok('83 전/반자 구분을 끄면 반각 "AB" 로 전각 "ＡＢ" 가 찾아진다',
+     f83 && !!s83 && s83.fromId === sp.id && s83.fromPos === full83 && s83.toPos === full83 + 2,
+     s83 ? (s83.fromId + ':' + s83.fromPos + '~' + s83.toPos + ' (기대 ' + sp.id + ':' + full83 + ')') : '못 찾음');
+
+  ft.value = '가나';
+  var n83 = hwFind.markAll();
+  var r83 = document.querySelectorAll('.hw-hit').length;
+  hwCaret.set(sp.id, 1, false);
+  var r83b = document.querySelectorAll('.hw-hit').length;
+  typeIn('x');
+  var r83c = document.querySelectorAll('.hw-hit').length;
+  key('Backspace');
+  ok('83-1 모두 강조 — 캐럿을 옮겨도 사각형 수 그대로, 글자 하나 치면 0',
+     n83 >= 3 && r83 >= 3 && r83b === r83 && r83c === 0 && hwFind.hitCount() === 0,
+     n83 + '군데, 사각형 ' + r83 + ' → 캐럿 이동 ' + r83b + ' → 한 글자 ' + r83c);
+
+  document.getElementById('hwFindWord').checked = true;
+  hwCaret.set(sp.id, 0, false);
+  var f83b = hwFind.search(+1), s83b = hwCaret.selection();
+  ok('83-2 단어 단위 — "가나" 가 "가나다라" 안에서는 안 찾히고 따로 선 "가나" 가 찾힌다',
+     f83b && !!s83b && s83b.fromId === sp.id && s83b.fromPos === word83,
+     s83b ? (s83b.fromId + ':' + s83b.fromPos + ' (기대 ' + word83 + ')') : '못 찾음');
+  hwFind.resetOptions();
+  hwFind.clearHits();
+  if (hwFind.isOpen()) hwFind.close();
+
+  var cv85 = hwRenderer.canvas();
+  function drift85() {
+    cv85.scrollTop = 0;
+    hwRenderRefresh();
+    return { px: hwCaretDriftMax().px, filled: !!hwRenderer.bodyOf(0) };
+  }
+  hwUi.setZoom(100);
+  var d85a = drift85();
+  key('+', { shift: true, code: 'NumpadAdd' });
+  var z85 = hwUi.zoom();
+  hwUi.setZoom(200);
+  var d85b = drift85();
+  var wp85 = hwRenderer.pageElOf(0) ? hwRenderer.pageElOf(0).getBoundingClientRect().width : 0;
+  var want85 = 2 * hwPages[0].page.wHu / 75;
+  ok('85 200% — 쪽 폭 두 배, 캐럿 어긋남은 배율만큼까지(Shift+숫자판+ 는 110%)',
+     z85 === 110 && d85a.filled && d85b.filled && Math.abs(wp85 - want85) < 1 && d85b.px <= 2 * d85a.px + 1,
+     'Shift+NumAdd ' + z85 + '%, 쪽 폭 ' + Math.round(wp85) + '/' + Math.round(want85) + 'px, 어긋남 100% '
+       + d85a.px + 'px → 200% ' + d85b.px + 'px' + (d85b.filled ? '' : ' (첫 쪽이 안 채워짐)'));
+
+  key('g', { ctrl: true }); key('i');
+  var wp85b = hwRenderer.pageElOf(0) ? hwRenderer.pageElOf(0).getBoundingClientRect().width : 0;
+  var cw85 = cv85.clientWidth;
+  key('g', { ctrl: true }); key('q');
+  ok('85-1 Ctrl+G, I 폭 맞춤 — 쪽 폭 = 캔버스 폭 ±2px, Ctrl+G, Q 로 100%',
+     Math.abs(wp85b - cw85) <= 2 && hwUi.zoom() === 100,
+     '쪽 ' + Math.round(wp85b * 10) / 10 + ' / 캔버스 ' + cw85 + 'px, 되돌린 비율 ' + hwUi.zoom() + '%');
+  hwUi.setZoom(100);
+
+  hwCaret.set(sp.id, sp.len, false);
+  typeIn('되돌');
+  var t59 = hwModel.text(sp);
+  key('z', { ctrl: true });
+  var t59u = hwModel.text(sp);
+  var rb59 = document.querySelector('[data-act="redo"]');
+  var dis59 = rb59 ? rb59.disabled : true;
+  if (rb59) rb59.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  ok('59 다시 실행 단추가 Ctrl+Shift+Z 와 같은 결과',
+     t59u !== t59 && hwModel.text(sp) === t59 && !dis59 && !!rb59 && rb59.disabled,
+     '되돌림 ' + (t59u !== t59 ? '됨' : '안 됨') + ', 단추 ' + (dis59 ? '꺼져 있었음' : '켜져 있었음')
+       + ', 다시 ' + (hwModel.text(sp) === t59 ? '같음' : '다름') + ', 뒤 단추 ' + (rb59 && rb59.disabled ? '꺼짐' : '켜짐'));
+
+  if (hwPageCount() < 2) {
+    ok('59-1 다음 쪽 단추 — 캐럿이 다음 쪽 첫 줄로', true, '한 쪽 문서 — 건너뜀');
+  } else {
+    var nav = function (k) { document.querySelector('[data-nav="' + k + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); };
+    hwFind.gotoPage(1);
+    nav('next');
+    var l59 = hwPages[1].lines[0], a59 = hwCaret.at(), lab59 = document.getElementById('hwPageNo').textContent;
+    nav('last');
+    var last59 = hwUi.curPage();
+    ok('59-1 다음 쪽 단추 — 캐럿이 다음 쪽 첫 줄로, 마지막 단추는 끝 쪽',
+       a59.id === l59.para.id && a59.pos === l59.line.s && lab59.indexOf('2 / ') === 0 && last59 === hwPageCount(),
+       '캐럿 ' + a59.id + ':' + a59.pos + ' (기대 ' + l59.para.id + ':' + l59.line.s + '), 표시 "' + lab59 + '", 마지막 ' + last59 + '/' + hwPageCount());
+  }
+
+  var S = hwDoc.sections[0].paras;
+  function paste(dt) { document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }
+  function copy(dt) { document.dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true })); }
+
+  pick(sp, 0, 3);
+  hwFormat.applyChar({ bold: true });
+  var dt110 = new DataTransfer();
+  copy(dt110);
+  var h110 = dt110.getData('text/html'), t110 = hwModel.text(sp).slice(0, 3);
+  ok('110 복사에 HTML — 굵은 글자에 font-weight:bold, 첫 요소에 표식',
+     /font-weight:bold/.test(h110) && /^<p data-hw-copy="hw[0-9a-z]+"/.test(h110) && dt110.getData('text/plain') === t110,
+     h110.slice(0, 160));
+
+  hwCaret.set(sp.id, sp.len, false);
+  var len111 = sp.len;
+  paste(dt110);
+  ok('111 내부 서식 붙여넣기 — 붙은 글자도 굵게',
+     sp.len === len111 + 3 && hwModel.text(sp).slice(-3) === t110 && !!csAt(sp, sp.len - 3).bold && !!csAt(sp, sp.len - 1).bold,
+     '길이 ' + len111 + '→' + sp.len + ', 끝 "' + hwModel.text(sp).slice(-3) + '" 굵게 ' + !!csAt(sp, sp.len - 1).bold);
+
+  hwCaret.set(sp.id, sp.len, false);
+  key('Enter'); typeIn('둘째');
+  var p2 = hwCaret.para();
+  hwFormat.applyPara({ align: 'center' });
+  hwCaret.set(sp.id, 0, false);
+  hwCaret.set(p2.id, p2.len, true);
+  var dt111 = new DataTransfer();
+  copy(dt111);
+  var spText = hwModel.text(sp), spPs = sp.ps, p2Ps = p2.ps;
+  hwCaret.set(p2.id, p2.len, false);
+  key('Enter');
+  var p3 = hwCaret.para(), n111 = S.length;
+  paste(dt111);
+  var p4 = hwModel.after(p3);
+  ok('111-1 두 문단 복사 → 두 문단으로, 각 문단모양 유지',
+     spPs !== p2Ps && S.length === n111 + 1 && hwModel.text(p3) === spText && p3.ps === spPs
+       && !!p4 && hwModel.text(p4) === '둘째' && p4.ps === p2Ps,
+     '문단 ' + n111 + '→' + S.length + ', 첫 문단 ' + (hwModel.text(p3) === spText ? '글 같음' : '글 다름') + ' ps ' + p3.ps + '/' + spPs
+       + ', 둘째 "' + (p4 ? hwModel.text(p4) : '') + '" ps ' + (p4 ? p4.ps : '-') + '/' + p2Ps);
+
+  hwCaret.set(p4.id, p4.len, false);
+  key('Enter');
+  var p5 = hwCaret.para(), n113 = S.length;
+  var dt113 = new DataTransfer();
+  dt113.setData('text/html', '<p><b>가</b>나</p><p>다</p>');
+  dt113.setData('text/plain', '가나\n다');
+  paste(dt113);
+  var p6 = hwModel.after(p5);
+  ok('113 HTML 붙여넣기 — <p><b>가</b>나</p><p>다</p> → 두 문단, 첫 글자만 굵게',
+     S.length === n113 + 1 && hwModel.text(p5) === '가나' && !!csAt(p5, 0).bold && !csAt(p5, 1).bold
+       && !!p6 && hwModel.text(p6) === '다' && !csAt(p6, 0).bold,
+     '문단 ' + n113 + '→' + S.length + ', "' + hwModel.text(p5) + '" 굵게 ' + !!csAt(p5, 0).bold + '/' + !!csAt(p5, 1).bold
+       + ', 다음 "' + (p6 ? hwModel.text(p6) : '') + '"');
+
+  function imageCount() {
+    var n = 0, all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) for (var j = 0; j < (all[i].objs || []).length; j++) if (all[i].objs[j].kind === 'image') n++;
+    return n;
+  }
+  var png = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+  var bytes = new Uint8Array(png.length);
+  for (var bi = 0; bi < png.length; bi++) bytes[bi] = png.charCodeAt(bi);
+  var dt112 = new DataTransfer();
+  dt112.items.add(new File([bytes], 'p.png', { type: 'image/png' }));
+  var img112 = imageCount(), sent112 = null, real112 = window.hwPost;
+  window.hwPost = function (o) { if (o && o.t === 'pasteImage') sent112 = o; return real112(o); };
+  hwCaret.set(p6.id, p6.len, false);
+  paste(dt112);
+
+  var cv84 = hwRenderer.canvas();
+  function menuAt(p, pos) {
+    hwCaret.scrollIntoView();
+    hwRenderRefresh();
+    var c = hwCaret.coord(p.id, pos), b = c ? hwRenderer.bodyOf(c.pageIdx) : null;
+    if (!b) return false;
+    var r = b.getBoundingClientRect();
+    var x = r.left + hwHu2Px(c.xHu) + 2, y = r.top + hwHu2Px(c.yHu + c.hHu / 2);
+    var h = hwCaret.hitTest(x, y), efp = document.elementFromPoint(x, y);
+    (efp || b).dispatchEvent(new MouseEvent('contextmenu',
+      { bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y }));
+    return '점 ' + Math.round(x) + ',' + Math.round(y) + ' 누른 자리 ' + (h ? h.id + ':' + h.pos : 'null')
+         + ' 요소 ' + (efp ? (efp.className || efp.tagName) : 'null') + ' 캐럿 ' + hwCaret.at().id;
+  }
+  function rowOf(m, label) {
+    var rs = m ? m.querySelectorAll('.hw-ctx-item') : [];
+    for (var i = 0; i < rs.length; i++) if (rs[i].firstChild.textContent === label) return rs[i];
+    return null;
+  }
+
+  hwCaret.set(sp.id, 5, false);
+  pick(sp, 2, 8);
+  var shown84 = menuAt(sp, 5);
+  var s84 = hwCaret.selection(), m84 = hwUi.menuEl();
+  var copy84 = rowOf(m84, '복사'), font84 = rowOf(m84, '글자 모양…');
+  key('Escape');
+  var s84b = hwCaret.selection();
+  ok('84 선택 안에서 우클릭 — 선택 유지, 복사가 살아 있는 메뉴, Esc 로 메뉴만 닫힌다',
+     shown84 && !!s84 && s84.fromId === sp.id && s84.fromPos === 2 && s84.toPos === 8 && !!copy84 && !copy84.classList.contains('dis')
+       && !!font84 && !hwUi.menuEl() && !!s84b && s84b.fromPos === 2 && s84b.toPos === 8 && document.activeElement === ime,
+     '선택 ' + (s84 ? s84.fromPos + '~' + s84.toPos : '없음') + ', 메뉴 ' + (m84 ? m84.querySelectorAll('.hw-ctx-item').length + '항목' : '없음')
+       + ', 복사 ' + (copy84 ? (copy84.classList.contains('dis') ? '흐림' : '살아 있음') : '없음') + ', Esc 뒤 메뉴 ' + (hwUi.menuEl() ? '남음' : '닫힘'));
+
+  var cp84 = firstCellPara();
+  if (!cp84) {
+    ok('84-1 칸 안 우클릭 "줄/칸 추가하기"', true, '남은 표 없음(표가 없거나, 하나뿐인 표를 S1 의 90 이 지웠다) — 건너뜀');
+  } else {
+    /* ★ 어느 표가 잡히는지는 단정하지 않는다 — 한 문단에 겹쳐 놓인 표가 둘 있으면 칸 좌표가 옆 표의 칸에 떨어진다
+       (실측 basicsReport.hwp). 누른 뒤 <b>실제로 잡힌 칸</b>의 표에서 줄이 느는지 본다. */
+    hwCaret.set(cp84.id, 0, false);
+    var at84 = menuAt(cp84, 0);
+    var here84 = hwTable.here();
+    var t84 = here84 ? here84.obj.table : null;
+    var rowsOf84 = function () {
+      var n = 0;
+      for (var i = 0; t84 && i < t84.cells.length; i++) n = Math.max(n, t84.cells[i].r + (t84.cells[i].rs || 1));
+      return n;
+    };
+    var r84 = rowsOf84();
+    var add84 = rowOf(hwUi.menuEl(), '줄/칸 추가하기');
+    if (add84) add84.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    var below84 = rowOf(hwUi.subMenuEl(), '아래에 줄 추가');
+    if (below84) below84.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    ok('84-1 칸 안 우클릭 — "줄/칸 추가하기" ▸ "아래에 줄 추가" 로 그 표의 줄이 는다',
+       !!t84 && !!add84 && !!below84 && rowsOf84() === r84 + 1 && !hwUi.menuEl(),
+       '항목 ' + (add84 ? '있음' : '없음') + ', 하위 ' + (below84 ? '있음' : '없음') + ', 줄 ' + r84 + '→' + rowsOf84()
+         + ' (누른 칸 문단 ' + cp84.id + ', ' + at84 + ')');
+  }
+  hwUi.closeMenu();
+
+  if (hwDialog.isOpen()) hwDialog.close();
+  hwCaret.set(sp.id, 0, false);
+  cv84.scrollTop = 0;
+
+  /* 112 는 비동기다 — FileReader 가 끝나야 C# 에 가고, C# 이 hwInsertImage 로 답한다. 끝에서 기다렸다가 보고 걷어낸다. */
+  return {
+    after: function () {
+      return new Promise(function (done) {
+        var t0 = Date.now();
+        (function poll() {
+          if (imageCount() > img112 || Date.now() - t0 > 8000) { done(); return; }
+          setTimeout(poll, 50);
+        })();
+      }).then(function () {
+        window.hwPost = real112;
+        var n112 = imageCount();
+        ok('112 그림만 든 붙여넣기 → C# 이 임시 파일로 받아 그림 개체 하나',
+           !!sent112 && sent112.type === 'image/png' && !!sent112.data && n112 === img112 + 1,
+           '보냄 ' + (sent112 ? sent112.type + ' ' + sent112.data.length + '자' : '안 보냄') + ', 그림 ' + img112 + '→' + n112);
+        if (n112 > img112) key('z', { ctrl: true });
+        ok('112-1 되돌리기로 붙인 그림이 빠진다(임시 파일이 저장 요청에 안 남는다)', imageCount() === img112,
+           '그림 ' + imageCount());
+      });
+    }
+  };
+}
+
 /* ★ C# 이 물어볼 방법이 없다 — 스크립트 실행은 비동기인데 창을 닫는 순간에는 기다릴 수가 없다.
      그래서 바뀔 때마다 미리 보낸다.
    ★ 표 구조 요청도 같이 센다. 문단 dirty 만 보면 <b>행을 넣고 그냥 닫아도</b> 아무것도 안 묻는다 —
@@ -1505,10 +1867,17 @@ function hwFirePing() {
 
 /* C# 이 인쇄 직전에 부른다. 가상 스크롤을 끄고 모든 쪽을 채운 뒤 준비됐다고 알린다 —
    ★ 이걸 안 하면 화면 밖 쪽이 빈 채로 PDF 에 나간다(보이는 ±2쪽만 내용이 있다). */
+/* ★ 인쇄는 100% 로 한다 — 용지 크기를 HWPUNIT 으로 주므로(PrintToPdfAsync) 확대된 쪽 상자는 한 쪽이 여러 쪽으로 쪼개진다. */
+var hwPrintZoom = 100;
+
 function hwPrintPrepare() {
   /* ★ 여기서 바로 던져도 printReady 는 보낸다(아래 catch 와 같은 이유) — C# 은 그걸 받아야
      "PDF 를 만드는 중" 을 푼다. 안 보내면 그 창에서는 다시 PDF 를 못 뽑는다. */
-  try { hwRenderer.fillAll(true); }
+  try {
+    hwPrintZoom = hwUi.zoom();
+    if (hwPrintZoom !== 100) hwUi.setZoom(100);
+    hwRenderer.fillAll(true);
+  }
   catch (e0) { hwPost({ t: 'printReady', pages: hwPageCount(), err: String(e0 && e0.message ? e0.message : e0) }); return; }
   /* 그림·글꼴이 다 붙은 다음에 찍어야 한다. */
   hwWaitImages().then(function () {
@@ -1534,6 +1903,7 @@ function hwPrintPrepare() {
 
 function hwPrintDone() {
   hwRenderer.fillAll(false);
+  if (hwPrintZoom !== 100) hwUi.setZoom(hwPrintZoom);
 }
 
 /* 편집마다 보내지 않는다. 저장할 때 <b>고친 문단과 구조 변경만</b> 모아 한 번에 올린다. */
@@ -1634,6 +2004,11 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (cmd === 'saveAs') { hwSave(true); return; }
       if (cmd === 'find') { hwFind.open(true); return; }
+      if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap') {
+        if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
+        hwDialog[cmd]();
+        return;
+      }
       if (cmd) hwPost({ t: 'menu', cmd: cmd });
     });
   }

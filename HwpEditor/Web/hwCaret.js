@@ -100,6 +100,7 @@ var hwCaret = (function () {
     if (window.hwUi) hwUi.refresh();
     if (cEl && cEl.parentNode) cEl.parentNode.removeChild(cEl);
     paintSelection();
+    if (window.hwFind) hwFind.paintHits();
 
     /* ★ 개체 테두리·조절점도 여기서 같이 다시 그린다 — 가상 스크롤이 쪽을 다시 채울 때마다
        부르는 자리가 여기라(hwRender.fillVisible), 따로 걸면 스크롤 뒤에 조절점만 사라진다.
@@ -141,14 +142,16 @@ var hwCaret = (function () {
 
       var a = ord === from ? sel.fromPos : 0;
       var b = ord === to ? sel.toPos : p.len;
-      paintParaSelection(p, a, b);
+      paintRange(p, a, b, 'hw-sel');
     }
   }
 
-  function paintParaSelection(p, from, to) {
+  /* 문단 안 [from,to) 를 줄마다 사각형으로 칠한다. 선택과 찾기 강조가 같이 쓴다. */
+  function paintRange(p, from, to, cls) {
     var lines = hwLineIndex[p.id];
-    if (!lines) return;
+    if (!lines) return 0;
 
+    var n = 0;
     for (var i = 0; i < lines.length; i++) {
       var it = lines[i], ln = it.line;
       var a = Math.max(from, ln.s), b = Math.min(to, i === lines.length - 1 ? p.len : ln.e);
@@ -161,13 +164,15 @@ var hwCaret = (function () {
       if (x1 <= x0) x1 = x0 + 200;   /* 빈 줄도 눈에 보이게 얇게 칠한다 */
 
       var d = document.createElement('div');
-      d.className = 'hw-sel';
+      d.className = cls;
       d.style.left = hwHu2Px(it.xHu + x0) + 'px';
       d.style.top = hwHu2Px(it.yHu + Math.max(0, ln.hHu - ln.thHu)) + 'px';
       d.style.width = hwHu2Px(x1 - x0) + 'px';
       d.style.height = hwHu2Px(ln.thHu) + 'px';
       body.appendChild(d);
+      n++;
     }
+    return n;
   }
 
   function hitTest(clientX, clientY) {
@@ -186,14 +191,16 @@ var hwCaret = (function () {
     var lines = hwPages[idx].lines;
     if (!lines.length) return null;
 
-    /* 세로로 가장 가까운 줄 → 그중 가로로 가장 가까운 줄. 줄 밖을 눌러도 캐럿이 선다. */
+    /* 세로로 가장 가까운 줄 → 그중 가로로 가장 가까운 줄. 줄 밖을 눌러도 캐럿이 선다.
+       ★ 누른 점을 품은 줄이 여럿이면 칸 줄을 고른다 — 표를 단 바깥 줄은 표 높이만큼 커서 칸 줄을 통째로 덮고, 쪽의 줄 목록에는
+         바깥 줄이 먼저 든다(hwPage 가 칸 줄을 뒤에 넣는다). 먼저 든 줄을 고르면 칸 글자를 눌러도 캐럿이 바깥 문단으로 갔다(실측 table.hwp). */
     var best = null, bestD = Infinity;
     for (var i = 0; i < lines.length; i++) {
       var it = lines[i], ln = it.line;
       var dy = yHu < it.yHu ? it.yHu - yHu : (yHu > it.yHu + ln.hHu ? yHu - (it.yHu + ln.hHu) : 0);
       var dx = xHu < it.xHu ? it.xHu - xHu : (xHu > it.xHu + ln.availHu ? xHu - (it.xHu + ln.availHu) : 0);
       var d = dy * 1000 + dx;
-      if (d < bestD) { bestD = d; best = it; }
+      if (d < bestD || (d === 0 && bestD === 0 && it.para._cell)) { bestD = d; best = it; }
     }
     if (!best) return null;
 
@@ -333,6 +340,7 @@ var hwCaret = (function () {
     clearSelection: clearSelection,
     coord: coord,
     paint: paint,
+    paintRange: paintRange,
     hitTest: hitTest,
     moveH: moveH,
     moveV: moveV,

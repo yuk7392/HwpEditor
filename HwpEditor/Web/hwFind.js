@@ -10,7 +10,11 @@ var hwFind = (function () {
   'use strict';
 
   var cPanel, cText, cRepl, cReplRow, cCase, cInfo;
+  var cDir, cWidth, cWord, cPunct, cSpace;
   var cGoto, cGotoPage, cGotoInfo;
+
+  /* 모두 강조한 자리 [{id, s, e}]. 창을 닫아도·캐럿을 옮겨도 남고 본문을 고치면 지운다(hwInput.edit·hwUndo). */
+  var cHits = [];
 
   function el(id) { return document.getElementById(id); }
 
@@ -23,6 +27,11 @@ var hwFind = (function () {
     cReplRow = el('hwReplRow');
     cCase = el('hwFindCase');
     cInfo = el('hwFindInfo');
+    cDir = el('hwFindDir');
+    cWidth = el('hwFindWidth');
+    cWord = el('hwFindWord');
+    cPunct = el('hwFindPunct');
+    cSpace = el('hwFindSpace');
 
     cPanel.addEventListener('click', onClick);
     cPanel.addEventListener('keydown', onKey);
@@ -80,6 +89,8 @@ var hwFind = (function () {
       case 'prev': search(-1); break;
       case 'one': replaceOne(); break;
       case 'all': replaceAll(); break;
+      case 'mark': markAll(); break;
+      case 'unmark': clearHits(); info(''); break;
       case 'close': close(); break;
     }
   }
@@ -95,24 +106,84 @@ var hwFind = (function () {
 
   function needle() { return cText ? (cText.value || '') : ''; }
 
-  /* ★ 대소문자를 무시할 때도 <b>길이를 지킨다</b>. 접은 문자열에서 찾은 자리를 원본 문자열에
-     그대로 쓰기 때문이다 — toLowerCase 가 한 글자를 두 글자로 바꾸는 글자(U+0130 İ)가 앞에 있으면
-     그 뒤 일치 위치가 통째로 밀려 엉뚱한 구간이 지워진다. 길이가 변하는 글자는 접지 않는다. */
-  function fold(s) {
-    if (cCase && cCase.checked) return s;
+  function on(box) { return !!(box && box.checked); }
 
-    var out = '';
+  /* 비교용 문자열과 <b>원문 위치 대응표</b>. 공백·문장 부호를 빼면 길이가 달라지므로, 접은 문자열의 k 번째가
+     원문 몇 번째인지(map[k])를 들고 다닌다 — 일치 구간은 늘 원문 좌표로 돌려준다.
+     ★ 대소문자·전각을 접을 때는 <b>한 글자를 한 글자로</b>만 바꾼다. toLowerCase 가 두 글자로 늘리는 글자(U+0130 İ)를
+       접으면 대응표가 어긋나 엉뚱한 구간이 지워진다. 그런 글자는 접지 않는다.
+     ★ 개체 자리(U+FFFC)는 문장 부호도 공백도 아니라 빠지지 않는다 — 일치 구간이 개체를 가로지를 수 없다. */
+  var cPunctRe = /[\p{P}]/u, cSpaceRe = /\s/, cWordRe = /[\p{L}\p{N}_]/u;
+
+  function norm(s) {
+    var t = '', map = [];
+    var keepCase = on(cCase), keepWidth = on(cWidth), noPunct = on(cPunct), noSpace = on(cSpace);
     for (var i = 0; i < s.length; i++) {
-      var c = s.charAt(i), l = c.toLowerCase();
-      out += (l.length === 1) ? l : c;
+      var c = s.charAt(i);
+      if (noSpace && cSpaceRe.test(c)) continue;
+      if (noPunct && cPunctRe.test(c)) continue;
+      if (!keepWidth) {
+        var u = c.charCodeAt(0);
+        if (u >= 0xFF01 && u <= 0xFF5E) c = String.fromCharCode(u - 0xFEE0);
+        else if (u === 0x3000) c = ' ';
+      }
+      if (!keepCase) { var l = c.toLowerCase(); if (l.length === 1) c = l; }
+      t += c;
+      map.push(i);
     }
+    return { t: t, map: map };
+  }
+
+  function isWordAt(s, i) { return i >= 0 && i < s.length && cWordRe.test(s.charAt(i)); }
+
+  /* 문단 하나에서 찾는다. dir>0 이면 원문 start 이후에 시작하는 첫 일치, dir<0 이면 start 이전에 끝나는 마지막 일치.
+     start 가 null 이면 문단 전체. 돌려주는 값은 원문 좌표 {s, e}. */
+  function findIn(p, q, dir, start) {
+    var raw = hwModel.text(p), n = norm(raw), t = n.t, map = n.map, L = q.length;
+    var word = on(cWord);
+
+    function range(k) { return { s: map[k], e: map[k + L - 1] + 1 }; }
+    function okWord(r) { return !word || (!isWordAt(raw, r.s - 1) && !isWordAt(raw, r.e)); }
+
+    if (dir > 0) {
+      var k0 = 0;
+      if (start !== null) while (k0 < map.length && map[k0] < start) k0++;
+      for (var k = t.indexOf(q, k0); k >= 0; k = t.indexOf(q, k + 1)) {
+        var r = range(k);
+        if (okWord(r)) return r;
+      }
+      return null;
+    }
+
+    /* ★ 뒤로 찾을 때 자를 자리가 음수면 그 문단은 통째로 건너뛴다. lastIndexOf 는 음수 fromIndex 를 0 으로 보고
+       <b>0번 자리 일치를 그대로 돌려주므로</b>, 문단 머리에서 찾은 뒤 다시 ◀ 를 누르면 같은 자리를 영영 다시 고른다. */
+    var cnt = map.length;
+    if (start !== null) { cnt = 0; while (cnt < map.length && map[cnt] < start) cnt++; }
+    for (var b = cnt - L; b >= 0; b--) {
+      b = t.lastIndexOf(q, b);
+      if (b < 0) break;
+      var rb = range(b);
+      if (okWord(rb)) return rb;
+    }
+    return null;
+  }
+
+  /* 문단 하나의 모든 일치(원문 좌표, 앞에서부터). */
+  function allIn(p, q) {
+    var out = [], from = 0, r;
+    while ((r = findIn(p, q, +1, from)) !== null) { out.push(r); from = r.e; }
     return out;
   }
 
+  /* ▶·Enter 는 찾을 방향(아래쪽·문서 전체는 앞으로, 위쪽은 뒤로), ◀ 는 그 반대다. 한 바퀴 도는 것은 "문서 전체" 뿐. */
   function search(dir) {
-    var q = fold(needle());
+    var q = norm(needle()).t;
     if (!q) { info('찾을 말을 넣으세요'); return false; }
     if (!hwDoc) return false;
+
+    var mode = cDir ? cDir.value : 'all';
+    if (mode === 'up') dir = -dir;
+    var wrap = mode === 'all';
 
     /* 개체를 고른 채로 찾으면 캐럿이 안 그려진다 — 먼저 푼다. */
     if (window.hwObj) hwObj.clear();
@@ -129,39 +200,68 @@ var hwFind = (function () {
 
     var idx = 0;
     for (var i = 0; i < all.length; i++) if (all[i].id === base.id) { idx = i; break; }
-    var start = base.pos;
 
-    /* 한 바퀴 돈다. n === 0 인 문단만 캐럿 자리부터, 나머지는 처음(또는 끝)부터 본다. */
     for (var n = 0; n <= all.length; n++) {
-      var k = dir > 0
-        ? (idx + n) % all.length
-        : ((idx - n) % all.length + all.length) % all.length;
+      var k = idx + (dir > 0 ? n : -n);
+      if (!wrap && (k < 0 || k >= all.length)) break;
+      k = ((k % all.length) + all.length) % all.length;
 
       var p = all[k];
-      var t = fold(hwModel.text(p));
-      var hit;
-
-      if (dir > 0) {
-        hit = t.indexOf(q, n === 0 ? start : 0);
-      } else {
-        /* ★ 뒤로 찾을 때 자를 자리가 음수면 그 문단은 통째로 건너뛴다. lastIndexOf 는 음수
-           fromIndex 를 0 으로 보고 <b>0번 자리 일치를 그대로 돌려주므로</b>, 문단 머리에서 찾은
-           뒤 다시 ◀ 를 누르면 같은 자리를 영영 다시 고른다. */
-        var from = (n === 0 ? start : t.length) - q.length;
-        hit = from < 0 ? -1 : t.lastIndexOf(q, from);
-      }
-
-      if (hit >= 0) {
-        hwCaret.set(p.id, hit, false);
-        hwCaret.set(p.id, hit + q.length, true);
+      var hit = findIn(p, q, dir, n === 0 ? base.pos : null);
+      if (hit) {
+        hwCaret.set(p.id, hit.s, false);
+        hwCaret.set(p.id, hit.e, true);
         hwCaret.scrollIntoView();
         info('');
         return true;
       }
     }
 
-    info('찾는 말이 없습니다');
+    info(wrap ? '찾는 말이 없습니다' : (dir > 0 ? '문서 끝까지 찾았습니다' : '문서 처음까지 찾았습니다'));
     return false;
+  }
+
+  function markAll() {
+    var q = norm(needle()).t;
+    if (!q) { info('찾을 말을 넣으세요'); return 0; }
+    if (!hwDoc) return 0;
+
+    cHits = [];
+    var all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) {
+      var rs = allIn(all[i], q);
+      for (var j = 0; j < rs.length; j++) cHits.push({ id: all[i].id, s: rs[j].s, e: rs[j].e });
+    }
+    paintHits();
+    info(cHits.length ? cHits.length + '개 항목이 강조 표시되었습니다.' : '찾는 말이 없습니다');
+    return cHits.length;
+  }
+
+  function clearHits() {
+    cHits = [];
+    var olds = document.querySelectorAll('.hw-hit');
+    for (var i = 0; i < olds.length; i++) olds[i].parentNode.removeChild(olds[i]);
+  }
+
+  /* hwCaret.paint 가 부른다 — 가상 스크롤이 쪽을 다시 채울 때마다 지나는 자리라 따로 걸면 스크롤 뒤에 강조가 사라진다.
+     ★ 강조가 없을 때는 곧바로 빠진다 — 이 함수는 캐럿을 옮길 때마다 불리므로 빈 DOM 질의도 얹으면 안 된다. */
+  var cPainted = 0;
+
+  function paintHits() {
+    if (!cHits.length && !cPainted) return;
+    cPainted = cHits.length;
+    var olds = document.querySelectorAll('.hw-hit');
+    for (var i = 0; i < olds.length; i++) olds[i].parentNode.removeChild(olds[i]);
+    for (var h = 0; h < cHits.length; h++) {
+      var p = hwModel.byId(cHits[h].id);
+      if (p) hwCaret.paintRange(p, cHits[h].s, cHits[h].e, 'hw-hit');
+    }
+  }
+
+  function resetOptions() {
+    if (cDir) cDir.value = 'all';
+    var boxes = [cCase, cWidth, cWord, cPunct, cSpace];
+    for (var i = 0; i < boxes.length; i++) if (boxes[i]) boxes[i].checked = false;
   }
 
   /* 다시 찾기(Ctrl+Q→L) — 마지막 찾을 말로 다음을 찾는다. 찾기 창이 닫혀 있어도 된다(찾을 말 칸은 닫혀도
@@ -223,7 +323,7 @@ var hwFind = (function () {
     if (!p) { search(+1); return; }
 
     var cur = hwModel.text(p).slice(sel.fromPos, sel.toPos);
-    if (fold(cur) !== fold(q)) { search(+1); return; }
+    if (norm(cur).t !== norm(q).t) { search(+1); return; }
 
     var to = cRepl ? (cRepl.value || '') : '';
     var from = sel.fromPos, end = sel.toPos;
@@ -241,7 +341,7 @@ var hwFind = (function () {
   }
 
   function replaceAll() {
-    var q = fold(needle());
+    var q = norm(needle()).t;
     if (!q) { info('찾을 말을 넣으세요'); return; }
 
     var to = cRepl ? (cRepl.value || '') : '';
@@ -253,9 +353,7 @@ var hwFind = (function () {
        문단은 dirty 로 남아 저장 요청에 실린다 — 화면과 파일이 갈라지는데 아무 신호가 없다. */
     var jobs = [], ids = [], total = 0;
     for (var i = 0; i < all.length; i++) {
-      var t = fold(hwModel.text(all[i]));
-      var hits = [], k = t.indexOf(q);
-      while (k >= 0) { hits.push(k); k = t.indexOf(q, k + q.length); }
+      var hits = allIn(all[i], q);
       if (!hits.length) continue;
       jobs.push({ p: all[i], hits: hits });
       ids.push(all[i].id);
@@ -269,9 +367,9 @@ var hwFind = (function () {
         var p = jobs[j].p, hits = jobs[j].hits;
         /* ★ 뒤에서 앞으로 고친다. 앞에서부터 하면 길이가 달라진 만큼 뒤 자리가 밀린다. */
         for (var h = hits.length - 1; h >= 0; h--) {
-          var cs = hwModel.shapeAt(p, hits[h]);
-          hwModel.deleteRange(p, hits[h], hits[h] + q.length);
-          if (to) hwModel.insertText(p, hits[h], to, cs);
+          var cs = hwModel.shapeAt(p, hits[h].s);
+          hwModel.deleteRange(p, hits[h].s, hits[h].e);
+          if (to) hwModel.insertText(p, hits[h].s, to, cs);
         }
       }
 
@@ -282,7 +380,7 @@ var hwFind = (function () {
          한 글자도 안 바뀌어 그 자리가 그대로다 — 뒤쪽 일치를 기준으로 잡으면 앞에서 늘거나 준
          길이만큼(일치 수 × 길이차) 어긋난 자리에 캐럿이 선다. */
       var last = jobs[jobs.length - 1];
-      hwCaret.set(last.p.id, last.hits[0] + to.length, false);
+      hwCaret.set(last.p.id, last.hits[0].s + to.length, false);
       return null;
     }, null, ids);
 
@@ -301,6 +399,11 @@ var hwFind = (function () {
     closeGoto: closeGoto,
     gotoPage: gotoPage,
     isOpen: isOpen,
-    isGotoOpen: function () { return !!cGoto && !cGoto.hidden; }
+    isGotoOpen: function () { return !!cGoto && !cGoto.hidden; },
+    markAll: markAll,
+    clearHits: clearHits,
+    paintHits: paintHits,
+    hitCount: function () { return cHits.length; },
+    resetOptions: resetOptions
   };
 })();

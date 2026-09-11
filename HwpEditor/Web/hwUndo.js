@@ -72,6 +72,7 @@ var hwUndo = (function () {
   }
 
   function apply(s) {
+    if (window.hwFind) hwFind.clearHits();
     if (s.lists) for (var i = 0; i < s.lists.length; i++) s.lists[i].on.paras = s.lists[i].v.slice();
     for (var j = 0; j < s.paras.length; j++) restorePara(s.paras[j]);
 

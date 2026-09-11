@@ -430,7 +430,10 @@ var hwModel = (function () {
     if (window.hwUndo) hwUndo.clear();
 
     /* 모양 번호가 문서 쪽에서 바뀌었을 수 있다 — 화면 번호를 다시 매긴다. */
-    if (result && result.csMap) remapShapes(result.csMap, result.psMap);
+    if (result && result.csMap) {
+      remapShapes(result.csMap, result.psMap);
+      if (window.hwInput) hwInput.remapClip(result.csMap, result.psMap);
+    }
     if (result && result.charShapes) hwDoc.charShapes = result.charShapes;
     if (result && result.paraShapes) hwDoc.paraShapes = result.paraShapes;
 
@@ -554,6 +557,8 @@ function hwBuildOps() { return hwModel.buildOps(); }
      대체 글꼴 폭을 돌려주고, 그 값이 캐시에 굳어 오라클이 통째로 어긋난다. */
 function hwLoadDoc(doc) {
   hwModel.load(doc);
+  if (window.hwFind) hwFind.clearHits();
+  if (window.hwInput) hwInput.dropClip();
   hwSetStatus({ text: '배치 중…' });
 
   hwMeasure.ready().then(function () {

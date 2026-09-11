@@ -343,6 +343,43 @@ var hwFormat = (function () {
     return { cs: cs, ps: ps };
   }
 
+  /* 선택 범위의 속성 값. 글자(문단)마다 값이 다른 속성은 null — 대화상자가 그 칸을 비워 두고 안 건드린다. */
+  function collect(out, src, keys, first) {
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], v = src[k] === undefined ? null : src[k];
+      if (first) out[k] = v;
+      else if (out[k] !== v) out[k] = null;
+    }
+  }
+
+  function selectedChar() {
+    if (!hwDoc) return null;
+    if (!hwCaret.selection()) return pick(currentShape(hwCaret.para(), hwCaret.at().pos) || hwDoc.charShapes[0], cCharKeys);
+    var out = {}, first = true, seen = {};
+    eachRange(function (p, from, to) {
+      var a = hwModel.items(p);
+      for (var k = from; k < to && k < a.length; k++) {
+        if (a[k].ch === undefined || seen[a[k].cs]) continue;
+        seen[a[k].cs] = true;
+        collect(out, hwModel.charShape(a[k].cs), cCharKeys, first);
+        first = false;
+      }
+    });
+    return first ? pick(hwDoc.charShapes[0], cCharKeys) : out;
+  }
+
+  function selectedPara() {
+    if (!hwDoc) return null;
+    var out = {}, first = true;
+    eachRange(function (p) {
+      collect(out, hwModel.paraShape(p.ps), cParaKeys, first);
+      first = false;
+    });
+    return first ? null : out;
+  }
+
+  function charShapeWith(base, over) { return shapeFor(hwDoc.charShapes, base, over, cCharKeys); }
+
   return {
     applyChar: applyChar,
     toggleChar: toggleChar,
@@ -358,6 +395,9 @@ var hwFormat = (function () {
     shapeForTyping: shapeForTyping,
     advancePending: advancePending,
     clearPending: clearPending,
-    state: state
+    state: state,
+    selectedChar: selectedChar,
+    selectedPara: selectedPara,
+    charShapeWith: charShapeWith
   };
 })();

@@ -128,6 +128,14 @@ namespace HwpEditor
                         ExportPdf();
                         break;
 
+                    case "paste":
+                        OnPaste();
+                        break;
+
+                    case "pasteImage":
+                        OnPasteImage(o);
+                        break;
+
                     // ★ 고친 것이 있는지는 화면만 안다. 물어볼 길이 없으므로(스크립트 실행은 비동기고
                     //   FormClosing 은 기다릴 수 없다) 화면이 바뀔 때마다 밀어 준다.
                     case "dirty":
@@ -396,26 +404,87 @@ namespace HwpEditor
                 file = dlg.FileName;
             }
 
+            SendImage(file);
+        }
+
+        private void SendImage(string pFile)
+        {
             try
             {
                 long maxW = 40000;
                 DocModel m = cDoc.Model;
                 if (m.Sections.Count > 0) maxW = m.Sections[0].Page.TextWidthHu;
-
-                long wHu, hHu;
-                string src = cImageStore.Preview(file, cImageStore.DocKey(cDoc.Path), maxW, out wHu, out hHu);
-
-                JObject info = new JObject();
-                info["file"] = file;
-                info["src"] = src;
-                info["wHu"] = wHu;
-                info["hHu"] = hHu;
-                cWeb.Invoke("hwInsertImage(" + info.ToString(Formatting.None) + ")");
+                cWeb.Invoke("hwInsertImage(" + cImageStore.InsertInfoJson(pFile, cImageStore.DocKey(cDoc.Path), maxW) + ")");
             }
             catch (Exception ex)
             {
                 cLog.Write(ex);
                 SetStatus("그림을 넣지 못했습니다: " + ex.Message);
+            }
+        }
+
+        // ★ 화면 스크립트는 클립보드를 못 읽는다(우클릭 붙여넣기는 붙여넣기 이벤트가 없다) — 여기서 읽어 돌려준다.
+        //   판정(내부 서식·HTML·평문)은 화면의 hwPasteData 가 붙여넣기 이벤트와 같은 길로 한다. 평문 없이 그림만 있으면 그림으로 넣는다.
+        private void OnPaste()
+        {
+            if (cDoc == null) return;
+            try
+            {
+                IDataObject d = Clipboard.GetDataObject();
+                if (d == null) return;
+
+                string text = d.GetDataPresent(DataFormats.UnicodeText) ? d.GetData(DataFormats.UnicodeText) as string : null;
+                if (string.IsNullOrEmpty(text) && d.GetDataPresent(DataFormats.Bitmap))
+                {
+                    using (System.Drawing.Image img = Clipboard.GetImage())
+                    {
+                        if (img == null) return;
+                        using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
+                        {
+                            img.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                            SendImage(cImageStore.SavePasted(ms.ToArray(), "clip.png", "image/png"));
+                        }
+                    }
+                    return;
+                }
+
+                JObject r = new JObject();
+                r["text"] = text ?? "";
+                r["html"] = d.GetDataPresent(DataFormats.Html) ? HtmlFragment(d.GetData(DataFormats.Html)) : "";
+                cWeb.Invoke("hwPasteData(" + r.ToString(Formatting.None) + ")");
+            }
+            catch (Exception ex)
+            {
+                // 다른 프로그램이 클립보드를 잡고 있으면 ExternalException 이 난다.
+                cLog.Write(ex);
+                SetStatus("클립보드를 읽지 못했습니다: " + ex.Message);
+            }
+        }
+
+        // CF_HTML 은 "Version:…StartHTML:…" 머리 뒤에 문서가 온다. 머리에는 '<' 가 없으므로 첫 '<' 부터 넘긴다.
+        private static string HtmlFragment(object pData)
+        {
+            string s = pData as string;
+            System.IO.MemoryStream ms = pData as System.IO.MemoryStream;
+            if (s == null && ms != null) s = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+            if (string.IsNullOrEmpty(s)) return "";
+            int at = s.IndexOf('<');
+            return at >= 0 ? s.Substring(at) : "";
+        }
+
+        private void OnPasteImage(JObject pMsg)
+        {
+            if (cDoc == null) return;
+            try
+            {
+                byte[] data = Convert.FromBase64String((string)pMsg["data"] ?? "");
+                if (data.Length == 0) return;
+                SendImage(cImageStore.SavePasted(data, (string)pMsg["name"], (string)pMsg["type"]));
+            }
+            catch (Exception ex)
+            {
+                cLog.Write(ex);
+                SetStatus("그림을 붙여 넣지 못했습니다: " + ex.Message);
             }
         }
 

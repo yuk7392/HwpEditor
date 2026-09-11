@@ -10,6 +10,8 @@ using HwpLib.Object.BinData;
 using HwpLib.Object.BodyText.Control.Gso;
 using HwpLib.Object.DocInfo;
 using HwpLib.Object.DocInfo.BinData;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace HwpEditor.Files
 {
@@ -172,6 +174,32 @@ namespace HwpEditor.Files
             string ext = (Path.GetExtension(pFilePath) ?? ".png").TrimStart('.').ToLowerInvariant();
             string name = "new" + Guid.NewGuid().ToString("N").Substring(0, 8);
             return DumpBytes(data, ext, name, pDocKey);
+        }
+
+        public static string InsertInfoJson(string pFilePath, string pDocKey, long pMaxWidthHu)
+        {
+            long w, h;
+            string src = Preview(pFilePath, pDocKey, pMaxWidthHu, out w, out h);
+            JObject info = new JObject();
+            info["file"] = pFilePath;
+            info["src"] = src;
+            info["wHu"] = w;
+            info["hHu"] = h;
+            return info.ToString(Formatting.None);
+        }
+
+        // ★ 붙여넣은 그림은 저장할 때 이 경로에서 다시 읽어 문서에 넣는다(addImage op 의 file) — 저장 전에 지우면 안 된다.
+        public static string SavePasted(byte[] pData, string pName, string pType)
+        {
+            string ext = (Path.GetExtension(pName ?? "") ?? "").TrimStart('.').ToLowerInvariant();
+            if (Array.IndexOf(cWebFormats, ext) < 0)
+                ext = pType == "image/jpeg" ? "jpg" : pType == "image/gif" ? "gif" : pType == "image/bmp" ? "bmp" : "png";
+
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HwpEditor", "paste");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, Guid.NewGuid().ToString("N") + "." + ext);
+            File.WriteAllBytes(file, pData);
+            return file;
         }
 
         #endregion

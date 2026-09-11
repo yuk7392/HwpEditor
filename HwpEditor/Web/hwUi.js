@@ -30,7 +30,113 @@ var hwUi = (function () {
     bind(el('hwColor'), function (v) { hwFormat.applyChar({ color: v }); });
     bind(el('hwLine'), function (v) { hwFormat.applyPara({ lsType: 'percent', ls: parseInt(v, 10) }); });
 
+    var sb = el('hwStatusBar');
+    if (sb) {
+      sb.addEventListener('mousedown', onMouseDown);
+      sb.addEventListener('click', onNavClick);
+    }
+    bind(el('hwZoomPick'), function (v) {
+      if (v === 'width' || v === 'page') fitZoom(v);
+      else if (v !== 'cur') setZoom(parseFloat(v));
+    });
+    var sl = el('hwZoomSlider');
+    if (sl) {
+      sl.addEventListener('input', function () { setZoom(parseFloat(sl.value)); });
+      sl.addEventListener('change', function () { hwInput.focus(); });
+    }
+    /* ★ passive 를 꺼야 막을 수 있다 — 안 막으면 Ctrl+휠이 확대와 함께 화면도 굴린다. */
+    var cv = el('hwCanvas');
+    if (cv) cv.addEventListener('wheel', function (e) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      stepZoom(e.deltaY < 0 ? +1 : -1);
+    }, { passive: false });
+
     cReady = true;
+    refreshZoom();
+  }
+
+  /* 확대 비율(%). 배치는 HWPUNIT 이라 그대로고 그리기만 다시 한다 — 캐럿·선택·조절점·IME 자리는 모두 hwHu2Px 를 지나므로 따라온다.
+     ★ 맞춤 비율은 반올림하지 않는다 — 정수 %로 자르면 쪽 폭이 캔버스와 몇 px 어긋난다. */
+  var cZoomMin = 25, cZoomMax = 400;
+
+  function zoomPct() { return Math.round(hwUnit.zoom() * 1e8) / 1e6; }
+
+  function setZoom(pct) {
+    if (isNaN(pct)) return;
+    var z = Math.max(cZoomMin, Math.min(cZoomMax, pct)) / 100;
+    if (Math.abs(z - hwUnit.zoom()) > 1e-9) {
+      var cv = hwRenderer.canvas() || el('hwCanvas');
+      var at = cv && cv.scrollHeight > 0 ? cv.scrollTop / cv.scrollHeight : 0;
+      hwUnit.zoom(z);
+      if (hwDoc && window.hwPages) {
+        hwRender();
+        if (cv) { cv.scrollTop = at * cv.scrollHeight; hwRenderRefresh(); }
+        hwCaret.scrollIntoView();
+        hwRenderRefresh();
+      }
+    }
+    refreshZoom();
+  }
+
+  function stepZoom(dir) { setZoom(Math.round(zoomPct() / 10) * 10 + dir * 10); }
+
+  /* 폭 맞춤 = 캔버스 폭 / 쪽 폭, 쪽 맞춤 = min(폭 비, 높이 비). 캐럿이 있는 쪽을 잰다.
+     ★ 폭 맞춤은 한 번 더 잰다 — 확대로 세로 스크롤바가 생기거나 없어지면 캔버스 폭이 그만큼 바뀐다. */
+  function fitZoom(kind) {
+    if (!hwDoc || !hwPages.length) return;
+    var cv = hwRenderer.canvas();
+    if (!cv) return;
+    var pg = hwPages[Math.min(curPage() - 1, hwPages.length - 1)].page;
+    var w1 = pg.wHu / 75, h1 = pg.hHu / 75;
+    var z = cv.clientWidth / w1;
+    if (kind === 'page') z = Math.min(z, (cv.clientHeight - 32) / h1);
+    setZoom(z * 100);
+    if (kind === 'width' && Math.abs(cv.clientWidth / w1 - hwUnit.zoom()) > 1e-6) setZoom(cv.clientWidth / w1 * 100);
+  }
+
+  function refreshZoom() {
+    var pct = Math.round(zoomPct()), sel = el('hwZoomPick'), sl = el('hwZoomSlider');
+    if (sl) sl.value = String(pct);
+    if (!sel) return;
+    var cur = sel.querySelector('option[data-cur]');
+    var preset = sel.querySelector('option[value="' + pct + '"]:not([data-cur])');
+    if (preset && Math.abs(zoomPct() - pct) < 1e-6) {
+      if (cur) cur.parentNode.removeChild(cur);
+      sel.value = String(pct);
+      return;
+    }
+    if (!cur) {
+      cur = document.createElement('option');
+      cur.setAttribute('data-cur', '1');
+      cur.value = 'cur';
+      sel.insertBefore(cur, sel.firstChild);
+    }
+    cur.textContent = pct + '%';
+    sel.value = 'cur';
+  }
+
+  function curPage() {
+    var a = hwCaret.at();
+    var c = a.id ? hwCaret.coord(a.id, a.pos) : null;
+    return c ? c.pageIdx + 1 : 1;
+  }
+
+  function onNavClick(e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (!b) return;
+    var nav = b.getAttribute('data-nav');
+    if (nav) {
+      if (hwDoc) {
+        var n = hwPageCount(), cur = curPage();
+        var to = nav === 'first' ? 1 : nav === 'prev' ? cur - 1 : nav === 'next' ? cur + 1 : n;
+        if (to >= 1 && to <= n) hwFind.gotoPage(to);
+      }
+      hwInput.focus();
+      return;
+    }
+    var z = b.getAttribute('data-zoom');
+    if (z) { stepZoom(parseInt(z, 10)); hwInput.focus(); }
   }
 
   function fill(sel, values, label) {
@@ -65,6 +171,9 @@ var hwUi = (function () {
     var btn = e.target.closest ? e.target.closest('button') : null;
     if (!btn) return;
 
+    var act = btn.getAttribute('data-act');
+    if (act) { if (act === 'undo') hwInput.undo(); else hwInput.redo(); hwInput.focus(); return; }
+
     var fmt = btn.getAttribute('data-fmt');
     if (fmt) { hwFormat.toggleChar(fmt); hwInput.focus(); return; }
 
@@ -93,6 +202,196 @@ var hwUi = (function () {
       hwInput.focus();
       return;
     }
+  }
+
+  /* 우클릭 메뉴. 항목 { label, key, fn, disabled, checked, sub:[…] } 또는 '-'(구분선). 하위 메뉴는 한 단계.
+     ★ 메뉴 위 mousedown 을 막는다 — 초점이 수신기에 남아 있어야 execCommand('copy') 가 우리 copy 수신기를 태우고,
+       닫은 뒤에 친 키가 문서로 간다. 키(↑↓→←·Enter·Esc)는 수신기 keydown 이 먼저 여기로 넘긴다(hwInput.onKeyDown). */
+  var cMenu = null;
+
+  function showMenu(items, x, y) {
+    closeMenu();
+    var m = buildMenu(items);
+    document.body.appendChild(m);
+    placeMenu(m, x, y);
+    cMenu = { root: m, sub: null };
+    document.addEventListener('mousedown', onDocDown, true);
+    window.addEventListener('blur', closeMenu);
+    var cv = el('hwCanvas');
+    if (cv) cv.addEventListener('scroll', closeMenu);
+  }
+
+  function closeMenu() {
+    if (!cMenu) return;
+    var m = cMenu;
+    cMenu = null;
+    if (m.sub && m.sub.parentNode) m.sub.parentNode.removeChild(m.sub);
+    if (m.root.parentNode) m.root.parentNode.removeChild(m.root);
+    document.removeEventListener('mousedown', onDocDown, true);
+    window.removeEventListener('blur', closeMenu);
+    var cv = el('hwCanvas');
+    if (cv) cv.removeEventListener('scroll', closeMenu);
+  }
+
+  function onDocDown(e) {
+    if (!cMenu) return;
+    if (cMenu.root.contains(e.target) || (cMenu.sub && cMenu.sub.contains(e.target))) return;
+    closeMenu();
+  }
+
+  function buildMenu(items) {
+    var m = document.createElement('div');
+    m.className = 'hw-ctx';
+    m._items = items;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it === '-') { m.appendChild(div('hw-ctx-sep')); continue; }
+      var row = div('hw-ctx-item' + (it.disabled ? ' dis' : '') + (it.checked ? ' chk' : ''));
+      row.setAttribute('data-idx', String(i));
+      var lab = document.createElement('span');
+      lab.textContent = it.label;
+      var tail = document.createElement('span');
+      tail.className = 'hw-ctx-key';
+      tail.textContent = it.sub ? '▸' : (it.key || '');
+      row.appendChild(lab);
+      row.appendChild(tail);
+      m.appendChild(row);
+    }
+    m.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    m.addEventListener('click', function (e) {
+      var row = e.target.closest ? e.target.closest('.hw-ctx-item') : null;
+      if (row) activate(m, row);
+    });
+    m.addEventListener('mouseover', function (e) {
+      var row = e.target.closest ? e.target.closest('.hw-ctx-item') : null;
+      if (!row) return;
+      highlight(m, row);
+      var it = m._items[parseInt(row.getAttribute('data-idx'), 10)];
+      if (m === (cMenu && cMenu.root)) { if (it.sub && !it.disabled) openSub(row, it.sub); else closeSub(); }
+    });
+    return m;
+  }
+
+  function div(cls) { var d = document.createElement('div'); d.className = cls; return d; }
+
+  function placeMenu(m, x, y) {
+    var w = m.offsetWidth, h = m.offsetHeight;
+    m.style.left = Math.max(0, Math.min(x, window.innerWidth - w - 2)) + 'px';
+    m.style.top = Math.max(0, Math.min(y, window.innerHeight - h - 2)) + 'px';
+  }
+
+  function openSub(row, items) {
+    if (cMenu.sub && cMenu.sub._from === row) return;
+    closeSub();
+    var s = buildMenu(items);
+    s._from = row;
+    document.body.appendChild(s);
+    var r = row.getBoundingClientRect();
+    placeMenu(s, r.right - 2, r.top - 3);
+    if (parseFloat(s.style.left) < r.right - 2) s.style.left = Math.max(0, r.left - s.offsetWidth + 2) + 'px';
+    cMenu.sub = s;
+  }
+
+  function closeSub() {
+    if (cMenu && cMenu.sub) {
+      if (cMenu.sub.parentNode) cMenu.sub.parentNode.removeChild(cMenu.sub);
+      cMenu.sub = null;
+    }
+  }
+
+  function highlight(m, row) {
+    var olds = m.querySelectorAll('.hw-ctx-item.hi');
+    for (var i = 0; i < olds.length; i++) olds[i].classList.remove('hi');
+    if (row) row.classList.add('hi');
+  }
+
+  function activate(m, row) {
+    var it = m._items[parseInt(row.getAttribute('data-idx'), 10)];
+    if (!it || it.disabled) return;
+    if (it.sub) { openSub(row, it.sub); return; }
+    closeMenu();
+    hwInput.focus();          /* fn 보다 먼저 — 대화상자를 여는 항목은 fn 이 초점을 대화상자로 옮긴다 */
+    if (it.fn) it.fn();
+  }
+
+  function menuKey(e) {
+    if (!cMenu) return false;
+    var m = cMenu.sub || cMenu.root;
+    var rows = [], all = m.querySelectorAll('.hw-ctx-item');
+    for (var i = 0; i < all.length; i++) if (!all[i].classList.contains('dis')) rows.push(all[i]);
+    var hi = m.querySelector('.hw-ctx-item.hi'), at = rows.indexOf(hi);
+
+    switch (e.key) {
+      case 'Escape':
+        if (cMenu.sub) closeSub(); else closeMenu();
+        return true;
+      case 'ArrowDown': highlight(m, rows[(at + 1) % rows.length] || null); return true;
+      case 'ArrowUp': highlight(m, rows[at <= 0 ? rows.length - 1 : at - 1] || null); return true;
+      case 'ArrowRight':
+        if (hi && !cMenu.sub) {
+          var it = m._items[parseInt(hi.getAttribute('data-idx'), 10)];
+          if (it.sub) { openSub(hi, it.sub); highlight(cMenu.sub, cMenu.sub.querySelector('.hw-ctx-item:not(.dis)')); }
+        }
+        return true;
+      case 'ArrowLeft': if (cMenu.sub) closeSub(); return true;
+      case 'Enter': if (hi) activate(m, hi); return true;
+    }
+    closeMenu();
+    return false;
+  }
+
+  /* 덤프 2 — 이번 세션은 본문·표 칸·그림 세 맥락, 그리고 이미 있는 함수만 잇는다(선택 ▸·셀 합치기·나누기는 세션 3). */
+  function contextItems(kind) {
+    var sel = !!hwCaret.selection();
+    function clipTo(k) { return function () { hwInput.clip(k); }; }
+
+    if (kind === 'obj') {
+      var cur = hwObj.current();
+      return [
+        { label: '잘라내기', key: 'Ctrl+X', disabled: true },
+        { label: '복사', key: 'Ctrl+C', disabled: true },
+        { label: '붙여넣기', key: 'Ctrl+V', fn: clipTo('paste') },
+        { label: '지우기', key: 'Delete', fn: function () { hwObj.remove(); } },
+        '-',
+        { label: '글자처럼 취급', checked: !!(cur && cur.obj.inline), fn: function () { hwObj.toggleInline(); } },
+        '-',
+        { label: '맨 앞으로', disabled: true },
+        { label: '맨 뒤로', disabled: true }
+      ];
+    }
+
+    var items = [
+      { label: '잘라내기', key: 'Ctrl+X', disabled: !sel, fn: clipTo('cut') },
+      { label: '복사', key: 'Ctrl+C', disabled: !sel, fn: clipTo('copy') },
+      { label: '붙여넣기', key: 'Ctrl+V', fn: clipTo('paste') },
+      { label: '지우기', key: 'Delete', disabled: !sel, fn: clipTo('delete') },
+      '-'
+    ];
+    if (kind === 'cell') {
+      /* 마지막 줄·칸은 지울 수 없다(hwTable 이 되돌려 보낸다) — 누르면 아무 일도 안 나는 항목이 되지 않게 흐리게 둔다. */
+      var t = hwTable.here().obj.table, rows = 0, cols = 0;
+      for (var i = 0; i < t.cells.length; i++) {
+        rows = Math.max(rows, t.cells[i].r + (t.cells[i].rs || 1));
+        cols = Math.max(cols, t.cells[i].c + (t.cells[i].cs || 1));
+      }
+      items.push(
+        { label: '줄/칸 추가하기', sub: [
+          { label: '위에 줄 추가', fn: function () { hwTable.addRow(-1); } },
+          { label: '아래에 줄 추가', fn: function () { hwTable.addRow(1); } },
+          { label: '왼쪽에 칸 추가', fn: function () { hwTable.addCol(-1); } },
+          { label: '오른쪽에 칸 추가', fn: function () { hwTable.addCol(1); } }
+        ] },
+        { label: '줄 지우기', disabled: rows <= 1, fn: function () { hwTable.delRow(); } },
+        { label: '칸 지우기', disabled: cols <= 1, fn: function () { hwTable.delCol(); } },
+        { label: '표 지우기', fn: function () { hwTable.removeTable(); } },
+        '-');
+    }
+    items.push(
+      { label: '글자 모양…', key: 'Alt+L', fn: function () { hwDialog.charShape(); } },
+      { label: '문단 모양…', key: 'Alt+T', fn: function () { hwDialog.paraShape(); } },
+      '-',
+      { label: '문자표…', key: 'Ctrl+F10', fn: function () { hwDialog.charMap(); } });
+    return items;
   }
 
   function loadFonts() {
@@ -142,6 +441,13 @@ var hwUi = (function () {
     set(el('hwSize'), String(Math.round(st.cs.sizeHu / 100)));
     set(el('hwColor'), st.cs.color || '#000000');
     if (st.ps.lsType === 'percent') set(el('hwLine'), String(st.ps.ls));
+
+    var ub = bar.querySelector('[data-act="undo"]'), rb = bar.querySelector('[data-act="redo"]');
+    if (ub) ub.disabled = !hwUndo.canUndo();
+    if (rb) rb.disabled = !hwUndo.canRedo();
+
+    var pn = el('hwPageNo');
+    if (pn) pn.textContent = curPage() + ' / ' + hwPageCount() + '쪽';
   }
 
   function mark(name, on) {
@@ -165,5 +471,11 @@ var hwUi = (function () {
     sel.value = v;
   }
 
-  return { init: init, refresh: refresh, loadFonts: loadFonts };
+  return {
+    init: init, refresh: refresh, loadFonts: loadFonts,
+    setZoom: setZoom, stepZoom: stepZoom, fitZoom: fitZoom, zoom: zoomPct, curPage: curPage,
+    showMenu: showMenu, closeMenu: closeMenu, menuKey: menuKey, contextItems: contextItems,
+    menuEl: function () { return cMenu ? cMenu.root : null; },
+    subMenuEl: function () { return cMenu ? cMenu.sub : null; }
+  };
 })();

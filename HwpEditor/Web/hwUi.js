@@ -21,10 +21,13 @@ var hwUi = (function () {
     /* 문서를 열기 전에도 칸이 비어 보이지 않게 한 줄 넣어 둔다 — 빈 콤보는 폭이 거의 0 이라
        화살표만 남아서, 고장 난 것처럼 보인다. 문서를 열면 loadFonts 가 갈아 끼운다. */
     fill(el('hwFont'), ['-'], function () { return '(문서 없음)'; });
+    fill(el('hwStyle'), ['-'], function () { return '(문서 없음)'; });
 
     bar.addEventListener('mousedown', onMouseDown);
     bar.addEventListener('click', onClick);
+    initTabs();
 
+    bind(el('hwStyle'), function (v) { hwFormat.applyStyle(parseInt(v, 10)); });
     bind(el('hwFont'), function (v) { hwFormat.applyChar({ face: parseInt(v, 10) }); });
     bind(el('hwSize'), function (v) { hwFormat.applyChar({ sizeHu: parseInt(v, 10) * 100 }); });
     bind(el('hwColor'), function (v) { hwFormat.applyChar({ color: v }); });
@@ -185,6 +188,21 @@ var hwUi = (function () {
 
     var ind = btn.getAttribute('data-indent');
     if (ind) { hwFormat.indent(parseInt(ind, 10)); hwInput.focus(); return; }
+
+    var zoom = btn.getAttribute('data-zoom');
+    if (zoom) {
+      if (zoom === 'width' || zoom === 'page') fitZoom(zoom);
+      else if (zoom === '1' || zoom === '-1') stepZoom(parseInt(zoom, 10));
+      else setZoom(parseInt(zoom, 10));
+      hwInput.focus();
+      return;
+    }
+
+    var head = btn.getAttribute('data-head');
+    if (head) { hwFormat.toggleHead(head); hwInput.focus(); return; }
+
+    var lvl = btn.getAttribute('data-lvl');
+    if (lvl) { hwFormat.stepLevel(parseInt(lvl, 10)); hwInput.focus(); return; }
 
     var obj = btn.getAttribute('data-obj');
     if (obj === 'inline') {
@@ -437,6 +455,7 @@ var hwUi = (function () {
       { label: '문단 모양…', key: 'Alt+T', fn: function () { hwDialog.paraShape(); } },
       '-',
       { label: '문자표…', key: 'Ctrl+F10', fn: function () { hwDialog.charMap(); } },
+      { label: '하이퍼링크…', key: 'Ctrl+K,H', fn: function () { hwDialog.hyperlink(); } },
       '-',
       { label: '페이지 설정…', key: 'F7', fn: function () { hwDialog.pageSetup(); } },
       { label: '쪽 번호 매기기…', fn: function () { hwDialog.pageNumber(); } },
@@ -459,6 +478,46 @@ var hwUi = (function () {
       var gap = hwDoc.sections[si].cols.gapHu || 0;
       hwPage.setSection(si, { colCount: n, colGap: n > 1 && gap <= 0 ? 2268 : gap });
     };
+  }
+
+  /* 스타일 콤보. ★ 글자 스타일은 안 올린다 — 문단에 걸 수 없다. */
+  /* 리본 탭. ★ 안 고른 판도 <b>DOM 에 그대로</b> 둔다(CSS 로만 감춘다) — hwUi.refresh 와 --ui-test 가
+     안 보이는 탭의 단추도 속성으로 찾아 쓴다. */
+  function initTabs() {
+    var tabs = el('hwRibbonTabs');
+    if (!tabs) return;
+
+    tabs.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    tabs.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.hw-rb-tab') : null;
+      if (b) { showTab(b.getAttribute('data-rb')); hwInput.focus(); }
+    });
+  }
+
+  function showTab(name) {
+    var tabs = el('hwRibbonTabs'), panes = el('hwTools');
+    if (!tabs || !panes) return;
+
+    var t = tabs.querySelectorAll('.hw-rb-tab');
+    for (var i = 0; i < t.length; i++) t[i].classList.toggle('on', t[i].getAttribute('data-rb') === name);
+
+    var q = panes.querySelectorAll('.hw-rb-pane');
+    for (var k = 0; k < q.length; k++) q[k].classList.toggle('on', q[k].getAttribute('data-rb') === name);
+  }
+
+  function loadStyles() {
+    var sel = el('hwStyle');
+    if (!sel || !hwDoc) return;
+
+    var list = hwFormat.styles();
+    sel.innerHTML = '';
+    for (var i = 0; i < list.length; i++) {
+      var o = document.createElement('option');
+      o.value = String(list[i].id);
+      o.textContent = list[i].name || ('스타일 ' + list[i].id);
+      sel.appendChild(o);
+    }
+    sel.disabled = !list.length;
   }
 
   function loadFonts() {
@@ -493,6 +552,10 @@ var hwUi = (function () {
     for (var i = 0; i < aligns.length; i++)
       aligns[i].classList.toggle('on', aligns[i].getAttribute('data-align') === st.ps.align);
 
+    var heads = bar.querySelectorAll('[data-head]');
+    for (var h = 0; h < heads.length; h++)
+      heads[h].classList.toggle('on', heads[h].getAttribute('data-head') === st.ps.head);
+
     /* 표 단추는 표 안에 있을 때만 살린다 — 밖에서 누르면 아무 일도 안 일어나는 단추가 된다. */
     var inTable = !!hwTable.here();
     var tbls = bar.querySelectorAll('[data-tbl]');
@@ -507,6 +570,8 @@ var hwUi = (function () {
       objBtn.classList.toggle('on', !!objSel && !!objSel.obj.inline);
     }
 
+    var pr = hwCaret.para();
+    if (pr) set(el('hwStyle'), String(pr.sty || 0));
     set(el('hwFont'), String(st.cs.face));
     set(el('hwSize'), String(Math.round(st.cs.sizeHu / 100)));
     set(el('hwColor'), st.cs.color || '#000000');
@@ -543,7 +608,7 @@ var hwUi = (function () {
   }
 
   return {
-    init: init, refresh: refresh, loadFonts: loadFonts,
+    init: init, refresh: refresh, loadFonts: loadFonts, loadStyles: loadStyles, showTab: showTab,
     setZoom: setZoom, stepZoom: stepZoom, fitZoom: fitZoom, zoom: zoomPct, curPage: curPage,
     showMenu: showMenu, closeMenu: closeMenu, menuKey: menuKey, contextItems: contextItems,
     menuEl: function () { return cMenu ? cMenu.root : null; },

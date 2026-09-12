@@ -27,6 +27,10 @@ var hwModel = (function () {
        두 번째 저장에서 같은 문단을 또 넣게 된다. */
   var cFresh = {};
 
+  /* 모델이 바뀔 때마다 오르는 번호. 문단 머리 번호(hwHead)처럼 문서 전체를 훑어 만든 것을
+     언제 다시 만들지 가리는 데 쓴다 — 문단마다 다시 세면 긴 문서에서 눈에 띄게 느려진다. */
+  var cGen = 0;
+
   function index(doc) {
     cById = {};
     cOrder = {};
@@ -168,6 +172,7 @@ var hwModel = (function () {
   }
 
   function markDirty(id) {
+    cGen++;
     cDirty[id] = true;
     var p = cById[id];
     if (p) { p.seg = null; p._text = undefined; p._lines = null; }
@@ -392,6 +397,10 @@ var hwModel = (function () {
       seg: hwSegOf(p.id)
     };
 
+    /* ★ 스타일은 <b>바꿨을 때만</b> 싣는다 — 늘 실으면 손 안 댄 문단의 스타일까지 화면 값으로 덮인다
+       (개체 크기·자리와 같은 규칙). 새 문단은 기준 문단을 복제하므로 그쪽 값이 따라온다. */
+    if (p._styleSet) op.sty = p.sty || 0;
+
     /* ★ 기준 문단은 <b>같은 목록</b>(구역 또는 표 칸) 안에서만 잡는다. 다른 목록의 문단을 기준으로
        주면 새 문단이 엉뚱한 곳에 들어간다. 앞 문단이 없으면 보내지 않는다 — 지금 편집 경로로는
        생기지 않는다(문단 나누기는 늘 기존 문단 뒤에 붙인다). */
@@ -426,6 +435,13 @@ var hwModel = (function () {
           op: 'addImage', id: p.id, pos: objs[j].pos,
           tmpId: objs[j].tmpId, file: objs[j].file,
           wHu: objs[j].wHu, hHu: objs[j].hHu
+        });
+
+      /* 하이퍼링크 시작·끝. ★ 끝은 컨트롤이 없는 표식 하나라 op 도 값이 없다. */
+      if (objs[j].tmpId && (objs[j].ctrl === 'fldb' || objs[j].ctrl === 'flde') && !p._tblNew)
+        ops.push({
+          op: objs[j].ctrl === 'fldb' ? 'addLink' : 'addLinkEnd',
+          id: p.id, pos: objs[j].pos, tmpId: objs[j].tmpId, link: objs[j].link || ''
         });
 
       /* ★ 새 표는 <b>칸 내용까지</b> 실어 보낸다 — 칸 문단은 문서 쪽 id 표에 없어서 replace 로는 못 간다.
@@ -479,6 +495,7 @@ var hwModel = (function () {
   }
 
   function accept(result) {
+    cGen++;
     cDirty = {};
     cDeleted = [];
     cFresh = {};
@@ -505,12 +522,18 @@ var hwModel = (function () {
     if (result && result.charShapes) hwDoc.charShapes = result.charShapes;
     if (result && result.paraShapes) hwDoc.paraShapes = result.paraShapes;
     if (result && result.borderFills) hwDoc.borderFills = result.borderFills;
+    if (result && result.numberings) hwDoc.numberings = result.numberings;
+    if (result && result.bullets) hwDoc.bullets = result.bullets;
+    if (result && result.styles) hwDoc.styles = result.styles;
+    if (result && result.bulMap && window.hwFormat) hwFormat.remapHeads(result.bulMap, result.numMap);
 
     var all = allParas();
     for (var i = 0; i < all.length; i++) {
+      /* 저장이 끝나면 문서 값이 곧 화면 값이다 — 다음 저장에 또 실어 보낼 이유가 없다. */
+      delete all[i]._styleSet;
+
       var objs = all[i].objs || [];
       for (var j = 0; j < objs.length; j++) {
-        /* 저장이 끝나면 문서 값이 곧 화면 값이다 — 다음 저장에 또 실어 보낼 이유가 없다. */
         delete objs[j]._resized;
         delete objs[j]._moved;
         delete objs[j]._flowed;
@@ -574,9 +597,11 @@ var hwModel = (function () {
       cTableOps = [];
       cSecOps = [];
       cSeq = 0;
+      cGen++;
       index(doc);
       return doc;
     },
+    gen: function () { return cGen; },
     pushTableOp: function (op) { cTableOps.push(op); },
     pushSecOp: function (op) { cSecOps.push(op); },
     isFresh: function (id) { return !!cFresh[id]; },
@@ -658,7 +683,7 @@ function hwLoadDoc(doc) {
 
   hwMeasure.ready().then(function () {
     var t0 = (window.performance && performance.now) ? performance.now() : 0;
-    if (window.hwUi) hwUi.loadFonts();
+    if (window.hwUi) { hwUi.loadFonts(); hwUi.loadStyles(); }
     hwLayout();
     hwRender();
     if (window.hwCaret) hwCaret.reset();

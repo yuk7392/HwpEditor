@@ -33,14 +33,18 @@ namespace HwpEditor.Files
             // ★ 테두리/배경 표가 맨 먼저다 — 문단모양과 칸이 그 번호를 가리킨다.
             cShapes = new cShapeMap();
             cShapes.Bf = cHwpxShapeWriter.RegisterBorderFills(pDoc.Header, pReq.BorderFills);
+            cShapes.Bul = cHwpxShapeWriter.RegisterBullets(pDoc.Header, pReq.Bullets);
+            cShapes.Num = cHwpxShapeWriter.RegisterNumberings(pDoc.Header, pReq.Numberings);
             cShapes.Cs = cHwpxShapeWriter.RegisterCharShapes(pDoc.Header, pReq.CharShapes, cShapes.Bf);
-            cShapes.Ps = cHwpxShapeWriter.RegisterParaShapes(pDoc.Header, pReq.ParaShapes, cShapes.Bf);
+            cShapes.Ps = cHwpxShapeWriter.RegisterParaShapes(pDoc.Header, pReq.ParaShapes, cShapes.Bf,
+                                                             cShapes.Num, cShapes.Bul);
 
             IList<EditOp> pOps = pReq.Ops;
 
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader")
+                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
+                     || op.Op == "addLink" || op.Op == "addLinkEnd")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             foreach (EditOp op in pOps) if (op.Op == "replace") ApplyReplace(pDoc, pIndex, op, images, pResult);
@@ -60,6 +64,8 @@ namespace HwpEditor.Files
                 pResult.CsMap = cShapes.Cs;
                 pResult.PsMap = cShapes.Ps;
                 pResult.BfMap = cShapes.Bf;
+                pResult.BulMap = cShapes.Bul;
+                pResult.NumMap = cShapes.Num;
                 if (rebuilt) pResult.Reload = true;
             }
             cShapes = null;
@@ -237,6 +243,8 @@ namespace HwpEditor.Files
             public int[] Cs;
             public int[] Ps;
             public int[] Bf;
+            public int[] Bul;
+            public int[] Num;
         }
 
         [ThreadStatic]
@@ -408,6 +416,9 @@ namespace HwpEditor.Files
             while (pP.FirstChild != null) pP.RemoveChild(pP.FirstChild);
             int ps = cShapes == null ? pOp.Ps : cShapeWriter.Map(cShapes.Ps, pOp.Ps);
             pP.SetAttribute("paraPrIDRef", ps.ToString(CultureInfo.InvariantCulture));
+
+            // ★ null 은 "안 바꿨다" 다(hwp 쪽 StyleId 와 같은 규칙).
+            if (pOp.Sty.HasValue) pP.SetAttribute("styleIDRef", pOp.Sty.Value.ToString(CultureInfo.InvariantCulture));
             pP.SetAttribute("pageBreak", pOp.Brk == "page" || pOp.Brk == "section" ? "1" : "0");
             pP.SetAttribute("columnBreak", pOp.Brk == "column" || pOp.Brk == "multicolumn" ? "1" : "0");
 
@@ -455,6 +466,49 @@ namespace HwpEditor.Files
             return false;
         }
 
+        /// <summary>
+        /// 하이퍼링크 필드의 시작·끝 요소. ★ hwpx 표본에 <c>hp:fieldBegin</c> 이 하나도 없다 —
+        /// OWPML 을 보고 세운 것이고 우리 왕복으로만 봤다(세션 3·5 의 표 XML 과 같은 자리다).
+        /// 명령 문자열은 hwp 와 <b>같은 규칙</b>으로 막는다(<c>cHwpWriter.EscapeCommand</c>).
+        /// </summary>
+        private static XmlElement MakeField(XmlElement pP, EditOp pOp)
+        {
+            XmlDocument xd = pP.OwnerDocument;
+            string px = pP.Prefix, ns = pP.NamespaceURI;
+
+            if (pOp.Op == "addLinkEnd")
+            {
+                XmlElement end = xd.CreateElement(px, "fieldEnd", ns);
+                end.SetAttribute("beginIDRef", FieldId(pOp.TmpId));
+                end.SetAttribute("fieldid", FieldId(pOp.TmpId));
+                return end;
+            }
+
+            XmlElement b = xd.CreateElement(px, "fieldBegin", ns);
+            b.SetAttribute("id", FieldId(pOp.TmpId));
+            b.SetAttribute("type", "HYPERLINK");
+            b.SetAttribute("editable", "0");
+            b.SetAttribute("dirty", "0");
+            b.SetAttribute("fieldid", FieldId(pOp.TmpId));
+
+            XmlElement ps = xd.CreateElement(px, "parameters", ns);
+            ps.SetAttribute("count", "1");
+            XmlElement sp = xd.CreateElement(px, "stringParam", ns);
+            sp.SetAttribute("name", "Command");
+            sp.AppendChild(xd.CreateTextNode(cHwpWriter.EscapeCommand(pOp.Link) + ";1;0;0;"));
+            ps.AppendChild(sp);
+            b.AppendChild(ps);
+            return b;
+        }
+
+        /// <summary>시작·끝이 같은 번호를 써야 짝이 된다 — 화면이 준 임시 id 에서 숫자만 뽑는다.</summary>
+        private static string FieldId(string pTmpId)
+        {
+            int n = 0;
+            foreach (char c in pTmpId ?? "") if (c >= '0' && c <= '9') n = n * 10 + (c - '0');
+            return (n > 0 ? n : 1).ToString(CultureInfo.InvariantCulture);
+        }
+
         private static XmlElement ObjectElement(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP,
                                                 EditObj pObj, Dictionary<string, EditOp> pImages, SaveResult pResult)
         {
@@ -469,15 +523,17 @@ namespace HwpEditor.Files
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
                 bool isTable = img.Op == "addTable", isBand = img.Op == "addHeader";
+                bool isLink = img.Op == "addLink" || img.Op == "addLinkEnd";
                 XmlElement made = isBand ? MakeBand(pDoc, pIndex, pP, img, pImages, pResult)
                                 : isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
+                                : isLink ? MakeField(pP, img)
                                           : MakePicture(pDoc, pP, img);
                 // ★ 새 표·새 머리말도 문서를 다시 읽어야 한다 — 안 문단을 여기서 만들었으므로 화면이
                 //    들고 있는 그 문단 id 는 문서에 없는 가짜다(hwp 쪽 PutObject 와 같은 이유).
                 if ((isTable || isBand) && pResult != null) pResult.Reload = true;
                 // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다).
                 // ★ 표는 뺀다 — 표의 바깥 크기는 칸 격자에서 나오므로 여기서 덮으면 칸 폭 합과 갈라진다.
-                if (!isTable && !isBand) ApplyGeom(made, pObj);
+                if (!isTable && !isBand && !isLink) ApplyGeom(made, pObj);
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
                 pIndex.Objs[oid] = made;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;

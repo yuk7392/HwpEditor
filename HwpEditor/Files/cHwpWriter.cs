@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using HwpEditor.Models;
 using HwpLib.Object;
 using HwpLib.Object.BodyText;
@@ -49,15 +50,18 @@ namespace HwpEditor.Files
             // ★ 테두리/배경 표가 <b>맨 먼저</b>다 — 문단모양과 칸이 그 번호를 가리킨다.
             cShapes = new cShapeMap();
             cShapes.Bf = cShapeWriter.RegisterBorderFills(pFile, pReq.BorderFills);
+            cShapes.Bul = cShapeWriter.RegisterBullets(pFile, pReq.Bullets);
+            cShapes.Num = cShapeWriter.RegisterNumberings(pFile, pReq.Numberings);
             cShapes.Cs = cShapeWriter.RegisterCharShapes(pFile, pReq.CharShapes, cShapes.Bf);
-            cShapes.Ps = cShapeWriter.RegisterParaShapes(pFile, pReq.ParaShapes, cShapes.Bf);
+            cShapes.Ps = cShapeWriter.RegisterParaShapes(pFile, pReq.ParaShapes, cShapes.Bf, cShapes.Num, cShapes.Bul);
 
             IList<EditOp> pOps = pReq.Ops;
 
             // 새 그림은 op 하나가 실물을, 다른 op 의 objs 가 자리를 들고 온다 — 먼저 짝을 지어 둔다.
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader")
+                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
+                     || op.Op == "addLink" || op.Op == "addLinkEnd")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             // ★ 순서가 뜻을 갖는다: 내용 먼저(replace) → 지우기 → 넣기.
@@ -81,6 +85,8 @@ namespace HwpEditor.Files
                 pResult.CsMap = cShapes.Cs;
                 pResult.PsMap = cShapes.Ps;
                 pResult.BfMap = cShapes.Bf;
+                pResult.BulMap = cShapes.Bul;
+                pResult.NumMap = cShapes.Num;
             }
             cShapes = null;
         }
@@ -230,6 +236,8 @@ namespace HwpEditor.Files
             public int[] Cs;
             public int[] Ps;
             public int[] Bf;
+            public int[] Bul;
+            public int[] Num;
         }
 
         [ThreadStatic]
@@ -368,6 +376,9 @@ namespace HwpEditor.Files
                                     Dictionary<string, EditOp> pImages, SaveResult pResult)
         {
             pPara.Header.ParaShapeId = cShapes == null ? pOp.Ps : cShapeWriter.Map(cShapes.Ps, pOp.Ps);
+
+            // ★ null 은 "안 바꿨다" 다 — 늘 쓰면 스타일이 글자 하나 칠 때마다 0(바탕글)으로 밀린다.
+            if (pOp.Sty.HasValue) pPara.Header.StyleId = (short)pOp.Sty.Value;
             SetDivide(pPara.Header.DivideSort, pOp.Brk);
 
             List<cFlatChar> flat = Flatten(pOp.Runs);
@@ -491,6 +502,16 @@ namespace HwpEditor.Files
                     // ★ 머리말 안 문단을 <b>여기서</b> 만들었다 — 화면이 들고 있는 그 문단 id 는 문서에 없다.
                     if (pResult != null) pResult.Reload = true;
                 }
+                else if (img.Op == "addLink")
+                {
+                    ctl = AddLink(pPara, pText, img);
+                }
+                else if (img.Op == "addLinkEnd")
+                {
+                    // 필드 끝은 컨트롤이 없는 <b>인라인 제어문자 하나</b>다(실측 issue144 — 8글자).
+                    pText.AddExtendCharForHyperlinkEnd();
+                    ctl = null;
+                }
                 else if (img.Op == "addTable")
                 {
                     ctl = AddTable(pFile, pPara, pText, img);
@@ -499,7 +520,7 @@ namespace HwpEditor.Files
                     if (pResult != null) pResult.Reload = true;
                 }
                 else ctl = AddPicture(pFile, pPara, pText, img);
-                ApplyGeom(ctl, pObj);   // 넣자마자 옮겼으면 그 자리로 (AddPicture 는 오프셋을 0 으로 둔다)
+                if (ctl != null) ApplyGeom(ctl, pObj);   // 넣자마자 옮겼으면 그 자리로 (AddPicture 는 오프셋을 0 으로 둔다)
                 HWPChar ch = pText.CharList[pText.CharList.Count - 1];
 
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
@@ -691,6 +712,36 @@ namespace HwpEditor.Files
         /// 머리말·꼬리말 하나를 문단에 붙인다 — 컨트롤 생성 → 안 문단 → 확장 제어문자.
         /// ★ 새 그림·새 표와 같은 세 벌이다. 제어문자가 빠지면 컨트롤이 붕 떠서 아예 안 나온다.
         /// </summary>
+        /// <summary>
+        /// 하이퍼링크 시작. 명령 문자열은 <c>주소;1;0;0;</c> 이고 주소 안의 <c>:</c>·<c>;</c> 는
+        /// <c>\</c> 로 막는다(실측 issue144 — <c>http\://google.com;1;0;0;</c>).
+        /// 끝 표식은 부르는 쪽이 <c>addLinkEnd</c> 로 따로 넣는다.
+        /// </summary>
+        private static Control AddLink(Paragraph pPara, ParaText pText, EditOp pOp)
+        {
+            Control ctl = pPara.AddNewControl(ControlType.FIELD_HYPERLINK);
+            if (ctl == null) throw new InvalidOperationException("하이퍼링크 컨트롤을 만들지 못했다");
+
+            ControlField fld = ctl as ControlField;
+            CtrlHeaderField h = fld != null ? fld.GetHeader() : null;
+            if (h != null && h.Command != null) h.Command.FromUTF16LEString(EscapeCommand(pOp.Link) + ";1;0;0;");
+
+            pText.AddExtendCharForHyperlinkStart();
+            return ctl;
+        }
+
+        internal static string EscapeCommand(string pUrl)
+        {
+            if (string.IsNullOrEmpty(pUrl)) return "";
+            StringBuilder sb = new StringBuilder();
+            foreach (char c in pUrl)
+            {
+                if (c == ':' || c == ';' || c == '\\') sb.Append('\\');
+                sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
         private static Control AddBand(Paragraph pPara, ParaText pText, EditOp pOp)
         {
             bool head = pOp.Kind != "foot";

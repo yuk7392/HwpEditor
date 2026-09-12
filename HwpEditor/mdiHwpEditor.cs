@@ -136,6 +136,10 @@ namespace HwpEditor
                         OnPasteImage(o);
                         break;
 
+                    case "openUrl":
+                        OnOpenUrl((string)o["url"]);
+                        break;
+
                     // ★ 고친 것이 있는지는 화면만 안다. 물어볼 길이 없으므로(스크립트 실행은 비동기고
                     //   FormClosing 은 기다릴 수 없다) 화면이 바뀔 때마다 밀어 준다.
                     case "dirty":
@@ -153,6 +157,27 @@ namespace HwpEditor
                 cLog.Write("메시지 처리 실패: " + pJson);
                 cLog.Write(ex);
             }
+        }
+
+        /// <summary>
+        /// 하이퍼링크 열기(Ctrl+클릭). ★ <b>주소를 여기서 한 번 더 거른다</b> — 화면이 거른 것을 믿고
+        /// 아무 문자열이나 넘기면 <c>Process.Start</c> 가 문서에 적힌 <b>로컬 실행 파일</b>을 띄운다.
+        /// 화면 쪽 짝은 <c>hwLink.allowed</c> 다.
+        /// </summary>
+        private void OnOpenUrl(string pUrl)
+        {
+            Uri uri;
+            if (string.IsNullOrEmpty(pUrl) || !Uri.TryCreate(pUrl, UriKind.Absolute, out uri)
+             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps
+                 && uri.Scheme != Uri.UriSchemeMailto))
+            {
+                SetStatus("열 수 없는 주소입니다");
+                cLog.Write("openUrl 거절: " + pUrl);
+                return;
+            }
+
+            try { Process.Start(uri.AbsoluteUri); }
+            catch (Exception ex) { SetStatus("주소를 열지 못했습니다"); cLog.Write(ex); }
         }
 
         private void OnMenu(JObject pMsg)

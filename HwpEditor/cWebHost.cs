@@ -28,7 +28,7 @@ namespace HwpEditor
         private static readonly string[] cWebAssets =
         {
             "editor.css",
-            "hwUnit.js", "hwModel.js", "hwMeasure.js", "hwBreak.js", "hwTable.js", "hwPage.js", "hwRender.js",
+            "hwUnit.js", "hwModel.js", "hwMeasure.js", "hwHead.js", "hwLink.js", "hwBreak.js", "hwTable.js", "hwPage.js", "hwRender.js",
             "hwCaret.js", "hwObj.js", "hwUndo.js", "hwFormat.js", "hwInput.js", "hwFind.js", "hwDialog.js", "hwUi.js", "hwOracle.js", "hwBridge.js",
             "NanumGothic.ttf", "NanumGothic-Bold.ttf", "NanumMyeongjo.ttf", "NanumMyeongjo-Bold.ttf"
         };

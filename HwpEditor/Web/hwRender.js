@@ -73,6 +73,7 @@ var hwRenderer = (function () {
     for (var t = 0; t < (pg.tables || []).length; t++) tableEl(body, pg.tables[t]);
 
     paraBoxes(body, pg);
+    paraHeads(body, pg);
 
     for (var i = 0; i < pg.lines.length; i++) body.appendChild(lineEl(pg.lines[i]));
 
@@ -144,6 +145,32 @@ var hwRenderer = (function () {
     d.style.borderBottom = borderCss(bf.b);
     if (bf.fill) d.style.background = bf.fill;
     return d;
+  }
+
+  /* 문단 머리(글머리표·번호). ★ 첫 줄에만, 줄 <b>왼쪽 바깥</b>에 놓는다 — 폭을 안 먹이는 설계다
+     (FEATURE-PLAN E11). 쪽이 갈려 둘째 조각부터 시작하는 줄에는 안 붙는다. */
+  function paraHeads(body, pg) {
+    for (var i = 0; i < pg.lines.length; i++) {
+      var item = pg.lines[i];
+      if (item.li !== 0 || item.ghost) continue;
+
+      var text = hwHead.textOf(item.para);
+      if (!text) continue;
+
+      var cs = hwModel.charShape(hwModel.shapeAt(item.para, 0));
+      var w = 0;
+      for (var k = 0; k < text.length; k++) w += hwMeasure.charHu(text.charAt(k), cs);
+
+      var gap = hwHead.gapHu(hwModel.paraShape(item.para.ps), cs);
+      var d = el('div', 'hw-head');
+      d.style.left = hwHu2Px(item.xHu - w - gap) + 'px';
+      d.style.top = hwHu2Px(item.yHu) + 'px';
+      d.style.height = hwHu2Px(item.line.hHu) + 'px';
+      d.style.lineHeight = hwHu2Px(item.line.hHu) + 'px';
+      applyCs(d, cs);
+      d.textContent = text;
+      body.appendChild(d);
+    }
   }
 
   /* 한 쪽에 놓인 표 조각 하나. 쪽 경계에서 나뉜 표는 쪽마다 조각이 따로 온다(`hwTable.placeRange`). */
@@ -262,12 +289,17 @@ var hwRenderer = (function () {
          값을 주고, 늘어난 결과가 cw 가 되게 한다. */
       var ratio = (cs.ratio && cs.ratio !== 100) ? cs.ratio / 100 : 1;
       var extra = (cw + ex) / ratio - hwMeasure.naturalHu(ch, cs);
-      var key = csId + '|' + Math.round(extra * 100);
+
+      /* ★ 링크를 묶음 키에 넣는다 — 그래야 링크 <b>경계에서 span 이 저절로 끊긴다</b>.
+         칠하기는 클래스 하나뿐이다(글자모양은 안 건드린다 — hwLink 머리 주석). */
+      var link = hwLink.at(para, k);
+      var key = csId + '|' + Math.round(extra * 100) + '|' + (link === null ? '' : 'L' + link);
 
       if (key !== curKey || !cur) {
         closeRun();
         cur = el('span', 'hw-run');
         applyCs(cur, cs);
+        if (link !== null) { cur.className = 'hw-run hw-link'; cur.setAttribute('data-link', link); }
         cur.style.letterSpacing = hwHu2Px(extra) + 'px';
         d.appendChild(cur);
         curKey = key;

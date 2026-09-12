@@ -11,7 +11,7 @@ var hwFind = (function () {
 
   var cPanel, cText, cRepl, cReplRow, cCase, cInfo;
   var cDir, cWidth, cWord, cPunct, cSpace;
-  var cGoto, cGotoPage, cGotoInfo;
+  var cGoto, cGotoPage, cGotoInfo, cGotoMark;
 
   /* 모두 강조한 자리 [{id, s, e}]. 창을 닫아도·캐럿을 옮겨도 남고 본문을 고치면 지운다(hwInput.edit·hwUndo). */
   var cHits = [];
@@ -39,6 +39,7 @@ var hwFind = (function () {
     cGoto = el('hwGoto');
     cGotoPage = el('hwGotoPage');
     cGotoInfo = el('hwGotoInfo');
+    cGotoMark = el('hwGotoMark');
     if (cGoto) {
       cGoto.addEventListener('click', function (e) {
         var btn = e.target.closest ? e.target.closest('button') : null;
@@ -282,6 +283,7 @@ var hwFind = (function () {
     var c = hwCaret.coord(hwCaret.at().id, hwCaret.at().pos);
     cGotoPage.max = String(hwPageCount());
     cGotoPage.value = String(c ? c.pageIdx + 1 : 1);
+    fillMarks();
     if (cGotoInfo) cGotoInfo.textContent = '/ ' + hwPageCount() + '쪽';
     cGotoPage.focus();
     cGotoPage.select();
@@ -293,7 +295,38 @@ var hwFind = (function () {
     hwInput.focus();
   }
 
+  /* 책갈피 목록. ★ 이름 없는 책갈피도 있다(hwp 는 이름을 컨트롤 데이터에 두고, 못 읽으면 빈 값이다). */
+  function fillMarks() {
+    if (!cGotoMark) return;
+    var marks = window.hwLink ? hwLink.marks() : [];
+    cGotoMark.innerHTML = '';
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = marks.length ? '(고르지 않음)' : '(없음)';
+    cGotoMark.appendChild(none);
+
+    for (var i = 0; i < marks.length; i++) {
+      var op = document.createElement('option');
+      op.value = String(i);
+      op.textContent = marks[i].name || ('책갈피 ' + (i + 1));
+      cGotoMark.appendChild(op);
+    }
+    cGotoMark.disabled = !marks.length;
+  }
+
+  /* 책갈피를 골랐으면 그쪽이 먼저다 — 쪽 번호는 늘 값이 들어 있어서 판정이 안 된다. */
   function goFromInput() {
+    if (cGotoMark && cGotoMark.value !== '') {
+      var marks = window.hwLink ? hwLink.marks() : [];
+      var m = marks[parseInt(cGotoMark.value, 10)];
+      if (m) {
+        if (window.hwObj) hwObj.clear();
+        hwCaret.set(m.id, m.pos, false);
+        hwCaret.scrollIntoView();
+        closeGoto();
+        return;
+      }
+    }
     if (gotoPage(parseInt(cGotoPage.value, 10))) closeGoto();
   }
 
@@ -398,6 +431,7 @@ var hwFind = (function () {
     openGoto: openGoto,
     closeGoto: closeGoto,
     gotoPage: gotoPage,
+    markCount: function () { return cGotoMark ? cGotoMark.options.length - 1 : 0; },
     isOpen: isOpen,
     isGotoOpen: function () { return !!cGoto && !cGoto.hidden; },
     markAll: markAll,

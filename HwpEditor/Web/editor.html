@@ -7,58 +7,138 @@
 </head>
 <body>
 
-<div id="hwMenu" class="hw-menu">
-  <button class="hw-menu-item" data-cmd="open">열기</button>
-  <select id="hwRecent" class="hw-pick" title="최근 연 문서" disabled></select>
-  <button class="hw-menu-item" data-cmd="save">저장</button>
-  <button class="hw-menu-item" data-cmd="saveAs">다른 이름으로</button>
-  <button class="hw-menu-item" data-cmd="insertImage">그림</button>
-  <button class="hw-menu-item" data-cmd="pdf">PDF</button>
-  <button class="hw-menu-item" data-cmd="find">찾기</button>
-  <button class="hw-menu-item" data-cmd="charShape" title="글자 모양 (Alt+L)">글자 모양</button>
-  <button class="hw-menu-item" data-cmd="paraShape" title="문단 모양 (Alt+T)">문단 모양</button>
-  <button class="hw-menu-item" data-cmd="charMap" title="문자표 (Ctrl+F10)">문자표</button>
-  <button class="hw-menu-item" data-cmd="pageSetup" title="페이지 설정 (F7)">페이지 설정</button>
-  <span class="hw-menu-gap"></span>
-  <button class="hw-menu-item" id="hwBtnOracle">오라클</button>
-  <button class="hw-menu-item" id="hwBtnPing">테스트</button>
-</div>
+<!-- 리본. ★ 바깥 상자는 id 가 <b>hwMenu</b>, 탭 내용 상자는 id 가 <b>hwTools</b> 그대로다 —
+     hwBridge 는 hwMenu 에서 .hw-menu-item 을, hwUi 는 hwTools 에서 data-* 단추를 위임으로 잡는다.
+     단추를 탭으로 옮겨도 둘 다 살아 있으려면 이 두 겹이 필요하다(속성·id 를 하나도 안 바꿨다).
+     탭 구성은 FEATURE-DUMP 1-1 의 본 탭 5개(편집·보기·입력·서식·쪽)를 그대로 옮긴 것이다. -->
+<div id="hwMenu" class="hw-ribbon">
+  <div class="hw-rb-tabs" id="hwRibbonTabs">
+    <button class="hw-rb-tab on" data-rb="edit">편집</button>
+    <button class="hw-rb-tab" data-rb="view">보기</button>
+    <button class="hw-rb-tab" data-rb="insert">입력</button>
+    <button class="hw-rb-tab" data-rb="format">서식</button>
+    <button class="hw-rb-tab" data-rb="page">쪽</button>
+    <span class="hw-menu-gap"></span>
+    <button class="hw-menu-item hw-rb-dev" id="hwBtnOracle">오라클</button>
+    <button class="hw-menu-item hw-rb-dev" id="hwBtnPing">테스트</button>
+  </div>
 
-<!-- 서식 도구줄. 누를 때 캐럿 초점을 안 뺏는다 — hwUi 가 mousedown 을 막는다. -->
-<div id="hwTools" class="hw-tools">
-  <button class="hw-tool" data-act="undo" title="되돌리기 (Ctrl+Z)">↶</button>
-  <button class="hw-tool" data-act="redo" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
-  <span class="hw-bar"></span>
-  <select id="hwFont" class="hw-pick" title="글꼴"></select>
-  <select id="hwSize" class="hw-pick hw-pick-sm" title="글자 크기"></select>
-  <button class="hw-tool" data-fmt="bold" title="굵게 (Ctrl+B)"><b>가</b></button>
-  <button class="hw-tool" data-fmt="italic" title="기울임 (Ctrl+I)"><i>가</i></button>
-  <button class="hw-tool" data-fmt="underline" title="밑줄 (Ctrl+U)"><u>가</u></button>
-  <button class="hw-tool" data-fmt="strike" title="취소선"><s>가</s></button>
-  <button class="hw-tool" data-fmt="sup" title="위첨자 (Alt+Shift+O)">가<sup>2</sup></button>
-  <button class="hw-tool" data-fmt="sub" title="아래첨자 (Alt+Shift+S)">가<sub>2</sub></button>
-  <input type="color" id="hwColor" class="hw-color" value="#000000" title="글자색">
-  <input type="color" id="hwShade" class="hw-color" value="#FFFF00" title="형광펜">
-  <button class="hw-tool" data-fmt="noShade" title="형광펜 없애기">형광펜×</button>
-  <span class="hw-bar"></span>
-  <button class="hw-tool" data-align="left" title="왼쪽 정렬">◧</button>
-  <button class="hw-tool" data-align="center" title="가운데 정렬">▣</button>
-  <button class="hw-tool" data-align="right" title="오른쪽 정렬">◨</button>
-  <button class="hw-tool" data-align="justify" title="양쪽 정렬">▤</button>
-  <button class="hw-tool" data-align="distribute" title="배분 정렬">▥</button>
-  <span class="hw-bar"></span>
-  <button class="hw-tool" data-indent="-1" title="내어쓰기">◀</button>
-  <button class="hw-tool" data-indent="1" title="들여쓰기">▶</button>
-  <select id="hwLine" class="hw-pick hw-pick-sm" title="줄 간격"></select>
-  <span class="hw-bar"></span>
-  <button class="hw-tool" data-obj="inline" title="고른 그림을 글자처럼 취급 / 어울림으로 바꾼다">글자처럼</button>
-  <span class="hw-bar"></span>
-  <button class="hw-tool" data-tbl="newTable" title="표 만들기 (Ctrl+N,T)">표+</button>
-  <button class="hw-tool" data-tbl="addRow" title="아래에 행 넣기">행+</button>
-  <button class="hw-tool" data-tbl="delRow" title="이 행 지우기">행−</button>
-  <button class="hw-tool" data-tbl="addCol" title="오른쪽에 열 넣기">열+</button>
-  <button class="hw-tool" data-tbl="delCol" title="이 열 지우기">열−</button>
-  <button class="hw-tool" data-tbl="delTable" title="이 표 지우기">표−</button>
+  <div id="hwTools" class="hw-rb-panes">
+
+    <div class="hw-rb-pane on" data-rb="edit">
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="open">열기</button>
+        <select id="hwRecent" class="hw-pick" title="최근 연 문서" disabled></select>
+        <button class="hw-menu-item" data-cmd="save">저장</button>
+        <button class="hw-menu-item" data-cmd="saveAs">다른 이름으로</button>
+        <button class="hw-menu-item" data-cmd="pdf">PDF</button>
+        <span class="hw-rb-label">파일</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-act="undo" title="되돌리기 (Ctrl+Z)">↶</button>
+        <button class="hw-tool" data-act="redo" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
+        <span class="hw-rb-label">되돌리기</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="find" title="찾기·바꾸기 (Ctrl+F)">찾기</button>
+        <span class="hw-rb-label">찾기</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="charShape" title="글자 모양 (Alt+L)">글자 모양</button>
+        <button class="hw-menu-item" data-cmd="paraShape" title="문단 모양 (Alt+T)">문단 모양</button>
+        <span class="hw-rb-label">모양</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="view">
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-zoom="-1" title="화면 축소">−</button>
+        <button class="hw-tool" data-zoom="100" title="100%">100%</button>
+        <button class="hw-tool" data-zoom="1" title="화면 확대">+</button>
+        <span class="hw-rb-label">확대/축소</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-zoom="width" title="폭 맞춤">폭 맞춤</button>
+        <button class="hw-tool" data-zoom="page" title="쪽 맞춤">쪽 맞춤</button>
+        <span class="hw-rb-label">맞춤</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="insert">
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="insertImage">그림</button>
+        <button class="hw-menu-item" data-cmd="charMap" title="문자표 (Ctrl+F10)">문자표</button>
+        <button class="hw-menu-item" data-cmd="hyperlink" title="하이퍼링크 (Ctrl+K,H)">하이퍼링크</button>
+        <span class="hw-rb-label">넣기</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-tbl="newTable" title="표 만들기 (Ctrl+N,T)">표+</button>
+        <button class="hw-tool" data-tbl="addRow" title="아래에 행 넣기">행+</button>
+        <button class="hw-tool" data-tbl="delRow" title="이 행 지우기">행−</button>
+        <button class="hw-tool" data-tbl="addCol" title="오른쪽에 열 넣기">열+</button>
+        <button class="hw-tool" data-tbl="delCol" title="이 열 지우기">열−</button>
+        <button class="hw-tool" data-tbl="delTable" title="이 표 지우기">표−</button>
+        <span class="hw-rb-label">표</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-obj="inline" title="고른 그림을 글자처럼 취급 / 어울림으로 바꾼다">글자처럼</button>
+        <span class="hw-rb-label">개체</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="format">
+      <div class="hw-rb-group">
+        <select id="hwStyle" class="hw-pick" title="스타일 (Ctrl+Alt+1~0)"></select>
+        <span class="hw-rb-label">스타일</span>
+      </div>
+      <div class="hw-rb-group">
+        <select id="hwFont" class="hw-pick" title="글꼴"></select>
+        <select id="hwSize" class="hw-pick hw-pick-sm" title="글자 크기"></select>
+        <button class="hw-tool" data-fmt="bold" title="굵게 (Ctrl+B)"><b>가</b></button>
+        <button class="hw-tool" data-fmt="italic" title="기울임 (Ctrl+I)"><i>가</i></button>
+        <button class="hw-tool" data-fmt="underline" title="밑줄 (Ctrl+U)"><u>가</u></button>
+        <button class="hw-tool" data-fmt="strike" title="취소선"><s>가</s></button>
+        <button class="hw-tool" data-fmt="sup" title="위첨자 (Alt+Shift+O)">가<sup>2</sup></button>
+        <button class="hw-tool" data-fmt="sub" title="아래첨자 (Alt+Shift+S)">가<sub>2</sub></button>
+        <input type="color" id="hwColor" class="hw-color" value="#000000" title="글자색">
+        <input type="color" id="hwShade" class="hw-color" value="#FFFF00" title="형광펜">
+        <button class="hw-tool" data-fmt="noShade" title="형광펜 없애기">형광펜×</button>
+        <span class="hw-rb-label">글자</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-align="left" title="왼쪽 정렬">◧</button>
+        <button class="hw-tool" data-align="center" title="가운데 정렬">▣</button>
+        <button class="hw-tool" data-align="right" title="오른쪽 정렬">◨</button>
+        <button class="hw-tool" data-align="justify" title="양쪽 정렬">▤</button>
+        <button class="hw-tool" data-align="distribute" title="배분 정렬">▥</button>
+        <select id="hwLine" class="hw-pick hw-pick-sm" title="줄 간격"></select>
+        <span class="hw-rb-label">문단</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-tool" data-indent="-1" title="내어쓰기">◀</button>
+        <button class="hw-tool" data-indent="1" title="들여쓰기">▶</button>
+        <button class="hw-tool" data-head="bullet" title="글머리 기호 (Ctrl+Shift+Delete)">•─</button>
+        <button class="hw-tool" data-head="number" title="문단 번호 (Ctrl+Shift+Insert)">1─</button>
+        <button class="hw-tool" data-lvl="1" title="목록 수준 내리기 (Ctrl+숫자판+)">≫</button>
+        <button class="hw-tool" data-lvl="-1" title="목록 수준 올리기 (Ctrl+숫자판−)">≪</button>
+        <span class="hw-rb-label">목록</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="page">
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="pageSetup" title="페이지 설정 (F7)">페이지 설정</button>
+        <span class="hw-rb-label">쪽 모양</span>
+      </div>
+      <div class="hw-rb-group">
+        <button class="hw-menu-item" data-cmd="headInsert" title="머리말 넣기">머리말</button>
+        <button class="hw-menu-item" data-cmd="footInsert" title="꼬리말 넣기">꼬리말</button>
+        <button class="hw-menu-item" data-cmd="pageNumber" title="쪽 번호 매기기">쪽 번호</button>
+        <span class="hw-rb-label">머리말·쪽 번호</span>
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <!-- 찾기·바꾸기. 도구줄 안에 두지 않는다 — 도구줄은 초점을 안 뺏으려고 mousedown 을 막는데
@@ -101,6 +181,7 @@
 <div id="hwGoto" class="hw-find" hidden>
   <div class="hw-find-row">
     <label>쪽 <input id="hwGotoPage" type="number" min="1" step="1"></label>
+    <label>책갈피 <select id="hwGotoMark" class="hw-pick hw-pick-sm"></select></label>
     <button data-goto="go">이동</button>
     <button data-goto="close" title="닫기 (Esc)">✕</button>
     <span id="hwGotoInfo" class="hw-find-info"></span>
@@ -148,6 +229,8 @@
 <script src="hwUnit.js"></script>
 <script src="hwModel.js"></script>
 <script src="hwMeasure.js"></script>
+<script src="hwHead.js"></script>
+<script src="hwLink.js"></script>
 <script src="hwBreak.js"></script>
 <script src="hwTable.js"></script>
 <script src="hwPage.js"></script>

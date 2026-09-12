@@ -364,12 +364,15 @@ namespace HwpEditor
             Console.WriteLine("  두 번 " + twice);
 
             bool grew = twice.CharShapes != after.CharShapes || twice.ParaShapes != after.ParaShapes
-                     || twice.BorderFills != after.BorderFills;
+                     || twice.BorderFills != after.BorderFills
+                     || twice.Numberings != after.Numberings || twice.Bullets != after.Bullets;
             Console.WriteLine();
             Console.WriteLine(grew
                 ? "두 번 먹였더니 모양이 늘었다 — 실패 (cs " + after.CharShapes + "→" + twice.CharShapes
                   + ", ps " + after.ParaShapes + "→" + twice.ParaShapes
-                  + ", bf " + after.BorderFills + "→" + twice.BorderFills + ")"
+                  + ", bf " + after.BorderFills + "→" + twice.BorderFills
+                  + ", num " + after.Numberings + "→" + twice.Numberings
+                  + ", bul " + after.Bullets + "→" + twice.Bullets + ")"
                 : "두 번 먹여도 모양 개수 그대로 — 통과");
             return (r.Ok && !grew && !(needReload && !r.Reload)) ? 0 : 3;
         }
@@ -431,7 +434,7 @@ namespace HwpEditor
 
         private sealed class cSnapshot
         {
-            internal int Paras, Objs, Images, Tables, CharShapes, ParaShapes, BorderFills;
+            internal int Paras, Objs, Images, Tables, CharShapes, ParaShapes, BorderFills, Numberings, Bullets;
             internal string FirstText, TailHash;
 
             internal static cSnapshot Of(DocModel pDoc)
@@ -440,6 +443,8 @@ namespace HwpEditor
                 s.CharShapes = pDoc.CharShapes.Count;
                 s.ParaShapes = pDoc.ParaShapes.Count;
                 s.BorderFills = pDoc.BorderFills.Count;
+                s.Numberings = pDoc.Numberings.Count;
+                s.Bullets = pDoc.Bullets.Count;
 
                 StringBuilder tail = new StringBuilder();
                 bool first = true;
@@ -493,7 +498,8 @@ namespace HwpEditor
             public override string ToString()
             {
                 return "para=" + Paras + " obj=" + Objs + " img=" + Images + " tbl=" + Tables
-                     + " cs=" + CharShapes + " ps=" + ParaShapes + " bf=" + BorderFills + " h=" + TailHash;
+                     + " cs=" + CharShapes + " ps=" + ParaShapes + " bf=" + BorderFills
+                     + " num=" + Numberings + " bul=" + Bullets + " h=" + TailHash;
             }
         }
 

@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace HwpEditor.Models
 {
@@ -111,6 +112,76 @@ namespace HwpEditor.Models
         [JsonProperty("bsR")] public int BsR;
         [JsonProperty("bsT")] public int BsT;
         [JsonProperty("bsB")] public int BsB;
+
+        /// <summary>문단 머리 "none" | "outline" | "number" | "bullet".</summary>
+        [JsonProperty("head")] public string Head = "none";
+
+        /// <summary>
+        /// 번호·글머리표 표의 번호(1부터). ★ <b>개요는 0</b> 이다 — 표본 넷이 전부 그렇고
+        /// hwpx 도 <c>idRef="0"</c> 이다(실측 2026-09-12).
+        /// </summary>
+        [JsonProperty("headId")] public int HeadId;
+
+        /// <summary>
+        /// 목록 수준 0~6. hwp <c>Property1.ParaLevel</c>·hwpx <c>hh:heading@level</c> 과 같은 기준이다.
+        /// ★ 번호 정의 안의 <c>hh:paraHead@level</c> 만 <b>1부터</b>라 되쓸 때 +1 한다.
+        /// </summary>
+        [JsonProperty("lvl")] public int Lvl;
+    }
+
+    /// <summary>
+    /// 번호 한 수준 또는 글머리표 하나의 머리 정보(hwp <c>ParagraphHeadInfo</c>·hwpx <c>hh:paraHead</c>).
+    /// ★ 화면은 이것을 <b>읽어 그리기만</b> 한다 — 수준 정의를 고치는 UI 는 이번 범위 밖이다.
+    /// </summary>
+    public sealed class ParaHeadModel
+    {
+        /// <summary>번호 서식. <c>^1</c>~<c>^7</c> 이 그 수준의 값 자리다("^1.", "제^1장"). 글머리표는 빈 값.</summary>
+        [JsonProperty("fmt")] public string Fmt = "";
+
+        [JsonProperty("start")] public int Start;
+
+        /// <summary>"digit" | "circled" | "romanUpper" | "romanLower" | "alphaUpper" | "alphaLower" | "hangul" | …</summary>
+        [JsonProperty("numFmt")] public string NumFmt = "digit";
+
+        /// <summary>머리와 본문 사이 간격. <see cref="DistPct"/> 면 글자 폭의 %다.</summary>
+        [JsonProperty("dist")] public int Dist;
+        [JsonProperty("distPct")] public bool DistPct;
+    }
+
+    /// <summary>문단 번호 정의 하나. ★ <see cref="Levels"/> 는 <b>수준 0부터</b> 담는다.</summary>
+    public sealed class NumberingModel
+    {
+        [JsonProperty("id")] public int Id;
+        [JsonProperty("start")] public int Start;
+        [JsonProperty("levels")] public List<ParaHeadModel> Levels = new List<ParaHeadModel>();
+    }
+
+    /// <summary>
+    /// 글머리표 정의 하나. <see cref="Ch"/> 는 대부분 <b>사용자 영역 글자</b>다(U+F06C 등 —
+    /// Wingdings·Symbol 글꼴 글리프라 본문 글꼴로 그리면 두부가 뜬다. 화면이 대응표로 떨어뜨린다).
+    /// </summary>
+    public sealed class BulletModel
+    {
+        [JsonProperty("id")] public int Id;
+        [JsonProperty("base")] public int Base = -1;
+        [JsonProperty("ch")] public string Ch = "";
+        [JsonProperty("head")] public ParaHeadModel Head = new ParaHeadModel();
+    }
+
+    /// <summary>
+    /// 문서 스타일 하나. ★ <b>번호가 0부터</b>다 — 테두리·번호 표와 다르다(실측 hwpx <c>hh:style id="0"</c>).
+    /// 화면은 <b>읽어 적용만</b> 한다 — 스타일을 새로 만들거나 고치는 길은 없다.
+    /// </summary>
+    public sealed class StyleModel
+    {
+        [JsonProperty("id")] public int Id;
+        [JsonProperty("name")] public string Name = "";
+
+        /// <summary>"para" | "char". 글자 스타일은 문단에 걸 수 없어 목록에 안 올린다.</summary>
+        [JsonProperty("sort")] public string Sort = "para";
+
+        [JsonProperty("ps")] public int Ps;
+        [JsonProperty("cs")] public int Cs;
     }
 
     /// <summary>

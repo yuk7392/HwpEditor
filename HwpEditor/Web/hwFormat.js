@@ -24,8 +24,10 @@ var hwFormat = (function () {
   var cCharKeys = ['face', 'sizeHu', 'bold', 'italic', 'underline', 'strike', 'color', 'ratio', 'spacing',
                    'sup', 'sub', 'shade', 'ulShape', 'ulColor', 'emph', 'outline', 'shadow',
                    'emboss', 'engrave', 'bf'];
+  /* ★ 머리 세 값(head·headId·lvl)이 빠지면 <b>머리만 다른 두 문단모양이 하나로 합쳐져</b>
+       글머리표가 조용히 사라진다(세션 4 형광펜과 같은 자리). C# 짝은 cShapeWriter.SamePara 다. */
   var cParaKeys = ['align', 'indentHu', 'mlHu', 'mrHu', 'mtHu', 'mbHu', 'lsType', 'ls', 'latinBreak', 'hangulByWord',
-                   'bf', 'bsL', 'bsR', 'bsT', 'bsB'];
+                   'bf', 'bsL', 'bsR', 'bsT', 'bsB', 'head', 'headId', 'lvl'];
 
   function pick(src, keys) {
     var out = {};
@@ -322,6 +324,78 @@ var hwFormat = (function () {
     applyPara({ align: a });
   }
 
+  /* 문단에 걸 수 있는 스타일만(글자 스타일은 문단에 못 건다). 순서는 문서 목록 그대로다. */
+  function styles() {
+    var out = [], list = (hwDoc && hwDoc.styles) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].sort !== 'char') out.push(list[i]);
+    return out;
+  }
+
+  /* 스타일 적용 — 문단모양과 <b>모든 글자모양</b>을 한 동작으로 바꾼다(되돌리기 한 번에 풀린다). */
+  function applyStyle(id) {
+    var st = (hwDoc && hwDoc.styles) ? hwDoc.styles[id] : null;
+    if (!st || st.sort === 'char') return false;
+
+    hwInput.run(function () {
+      eachRange(function (p) {
+        p.sty = st.id;
+        p._styleSet = true;
+        p.ps = st.ps;
+        var a = hwModel.items(p);
+        for (var k = 0; k < a.length; k++) if (a[k].ch !== undefined) a[k].cs = st.cs;
+        hwModel.setItems(p, a);
+        hwModel.markDirty(p.id);
+      });
+      return null;
+    });
+    return true;
+  }
+
+  /* 마지막으로 쓴 글머리표·번호 모양. 단추를 켤 때 이것으로 켠다(덤프 6). */
+  var cLastBullet = 0, cLastNumber = 0;
+
+  /* 글머리표 번호를 하나 고른다. ★ 표본 대부분이 글머리표를 <b>하나도 안 갖는다</b>(hwp bul=0) —
+     그때는 목록에 새로 만들고, 되쓰기(cShapeWriter.RegisterBullets)가 문서에 등록한다. */
+  function bulletId() {
+    var list = hwDoc.bullets;
+    if (!list) return 0;
+    if (cLastBullet && list[cLastBullet]) return cLastBullet;
+    if (list.length > 1) return 1;
+
+    list.push({ id: list.length, base: -1, ch: '●',
+                head: { fmt: '', start: 0, numFmt: 'digit', dist: 50, distPct: true } });
+    return list.length - 1;
+  }
+
+  function numberId() {
+    var list = hwDoc.numberings;
+    if (!list || list.length <= 1) return 0;
+    return (cLastNumber && list[cLastNumber]) ? cLastNumber : 1;
+  }
+
+  /* 글머리표·문단 번호 토글. 켜져 있으면 끄고, 꺼져 있으면 마지막으로 쓴 모양으로 켠다. */
+  function toggleHead(kind) {
+    var p = hwCaret.para();
+    if (!p) return;
+
+    var ps = hwModel.paraShape(p.ps);
+    if (ps.head === kind) { applyPara({ head: 'none', headId: 0 }); return; }
+
+    var id = kind === 'bullet' ? bulletId() : numberId();
+    if (kind === 'bullet') cLastBullet = id; else cLastNumber = id;
+    applyPara({ head: kind, headId: id });
+  }
+
+  /* 목록 수준 0~6. ★ 범위를 벗어나면 무시하고, <b>글머리표 문단에는 안 건다</b>(덤프 6). */
+  function stepLevel(dir) {
+    mapPara(function (ps) {
+      if (ps.head !== 'number' && ps.head !== 'outline') return null;
+      var lvl = (ps.lvl || 0) + dir;
+      if (lvl < 0 || lvl > 6) return null;
+      return { lvl: lvl };
+    });
+  }
+
   /* 들여쓰기 한 칸(HWPUNIT). 10pt 글자 하나 폭이다. */
   var cIndentStep = 1000;
 
@@ -443,6 +517,16 @@ var hwFormat = (function () {
     applyChar: applyChar,
     toggleChar: toggleChar,
     applyPara: applyPara,
+
+    /* 저장이 끝나면 글머리표·번호 번호가 문서 쪽에서 다시 매겨진다 — "마지막으로 쓴 모양" 도 따라간다. */
+    remapHeads: function (bulMap, numMap) {
+      if (bulMap && cLastBullet < bulMap.length) cLastBullet = bulMap[cLastBullet];
+      if (numMap && cLastNumber < numMap.length) cLastNumber = numMap[cLastNumber];
+    },
+    styles: styles,
+    applyStyle: applyStyle,
+    toggleHead: toggleHead,
+    stepLevel: stepLevel,
     setAlign: setAlign,
     indent: indent,
     stepSize: stepSize,

@@ -27,6 +27,16 @@ namespace HwpEditor.Models
         /// <summary>테두리/배경 표. ★ 번호가 1부터라 0번 자리는 비어 있다(<see cref="BorderFillModel"/>).</summary>
         [JsonProperty("borderFills")] public List<BorderFillModel> BorderFills = new List<BorderFillModel>();
 
+        /// <summary>
+        /// 문단 번호·글머리표 표. ★ 테두리와 같이 <b>번호가 1부터</b>라 0번 자리는 비어 있다
+        /// (hwp <c>ParaHeadId</c>·hwpx <c>hh:numbering@id</c> 둘 다 1부터다 — 실측 2026-09-12).
+        /// </summary>
+        [JsonProperty("numberings")] public List<NumberingModel> Numberings = new List<NumberingModel>();
+        [JsonProperty("bullets")] public List<BulletModel> Bullets = new List<BulletModel>();
+
+        /// <summary>문서 스타일 표. ★ 이쪽은 <b>0부터</b>다(<see cref="StyleModel"/>).</summary>
+        [JsonProperty("styles")] public List<StyleModel> Styles = new List<StyleModel>();
+
         [JsonProperty("sections")] public List<SectionModel> Sections = new List<SectionModel>();
     }
 
@@ -80,6 +90,9 @@ namespace HwpEditor.Models
         [JsonProperty("id")] public string Id;
 
         [JsonProperty("ps")] public int Ps;
+
+        /// <summary>스타일 번호(0부터). hwp <c>ParaHeader.StyleId</c>·hwpx <c>hp:p@styleIDRef</c>.</summary>
+        [JsonProperty("sty")] public int Sty;
 
         /// <summary>
         /// 이 문단 앞에서 강제로 나뉘는가. "page" | "column" | "section" | null.
@@ -166,6 +179,15 @@ namespace HwpEditor.Models
         /// <summary>opaque 일 때 원본 컨트롤 종류(eqed·secd 등)와 화면에 띄울 라벨.</summary>
         [JsonProperty("ctrl", NullValueHandling = NullValueHandling.Ignore)] public string Ctrl;
         [JsonProperty("label", NullValueHandling = NullValueHandling.Ignore)] public string Label;
+
+        /// <summary>
+        /// 하이퍼링크 주소(<c>ctrl</c> 이 "fldb"). hwp 명령 문자열 <c>http\://google.com;1;0;0;</c> 의
+        /// <b>첫 조각</b>이다 — 둘째 조각(1)의 뜻은 표본으로 못 쟀다.
+        /// </summary>
+        [JsonProperty("link", NullValueHandling = NullValueHandling.Ignore)] public string Link;
+
+        /// <summary>책갈피 이름(<c>ctrl</c> 이 "bookm").</summary>
+        [JsonProperty("name", NullValueHandling = NullValueHandling.Ignore)] public string Name;
 
         /// <summary>개체 바깥 여백(HWPUNIT). 표 속성의 "바깥 여백" 이 이것이다.</summary>
         [JsonProperty("omLHu")] public long OmLHu;

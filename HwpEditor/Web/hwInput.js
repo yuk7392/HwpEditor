@@ -474,6 +474,23 @@ var hwInput = (function () {
     on(['CA+F7'], function () { hwFormat.stepMargin('mrHu', +1); });
     on(['CA+F8'], function () { hwFormat.stepMargin('mrHu', -1); });
 
+    /* 문단 머리(덤프 4-3). ★ 수준은 <b>숫자판</b> ± 다 — 윗줄 +/− 는 글자 입력이다. */
+    /* 스타일 Ctrl+Alt+1~0 — 목록 <b>앞에서부터 열 개</b>다(1 이 첫 항목, 0 이 열째). */
+    for (var sN = 0; sN <= 9; sN++) {
+      (function (n) {
+        on(['CA+' + n], function () {
+          var list = hwFormat.styles();
+          var at = n === 0 ? 9 : n - 1;
+          if (at < list.length) hwFormat.applyStyle(list[at].id);
+        });
+      })(sN);
+    }
+
+    on(['CS+Delete'], function () { hwFormat.toggleHead('bullet'); });
+    on(['CS+Insert', 'AS+Insert'], function () { hwFormat.toggleHead('number'); });
+    on(['C+NumAdd'], function () { hwFormat.stepLevel(+1); });
+    on(['C+NumSub'], function () { hwFormat.stepLevel(-1); });
+
     /* ★ Alt+← 는 WebView2 의 "뒤로 가기" 다 — 표에 있어야 막힌다. */
     on(['A+ArrowUp'], scroll(0, -1));
     on(['A+ArrowDown'], scroll(0, +1));
@@ -489,7 +506,9 @@ var hwInput = (function () {
     on(['+F5'], function () { return hwTable.cycleBlock() || true; });
 
     cChords = {
-      'C+k': {},
+      'C+k': {
+        h: function () { if (window.hwDialog) hwDialog.hyperlink(); }
+      },
       'C+q': {
         l: function () { if (window.hwFind) hwFind.repeat(); },
         f: function () { if (window.hwFind) hwFind.open(false); },
@@ -721,6 +740,17 @@ var hwInput = (function () {
   function onMouseDown(e) {
     clearChord();
     if (!hwDoc || e.button !== 0) return;
+
+    /* Ctrl+클릭으로 하이퍼링크 열기(덤프 7). ★ 캐럿보다 먼저 본다 — 캐럿을 옮기고 나면 이 자리가
+       링크였다는 것을 클릭 대상에서 되짚을 수 없다. 여는 것은 C# 이고 주소는 양쪽에서 거른다. */
+    if (e.ctrlKey && window.hwLink) {
+      var a = e.target && e.target.closest ? e.target.closest('[data-link]') : null;
+      if (a) {
+        e.preventDefault();
+        hwLink.open(a.getAttribute('data-link'));
+        return;
+      }
+    }
 
     /* ★ 개체를 <b>캐럿보다 먼저</b> 본다. 여기서 안 보면 그림을 눌러도 캐럿이 그 글자 자리로 갈 뿐
        개체는 영영 골라지지 않는다. */

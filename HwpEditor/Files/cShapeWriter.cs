@@ -7,6 +7,7 @@ using HwpLib.Object.DocInfo;
 using HwpLib.Object.DocInfo.BorderFill;
 using HwpLib.Object.DocInfo.BorderFill.FillInfo;
 using HwpLib.Object.DocInfo.CharShape;
+using HwpLib.Object.DocInfo.Numbering;
 using HwpLib.Object.DocInfo.ParaShape;
 
 namespace HwpEditor.Files
@@ -167,7 +168,76 @@ namespace HwpEditor.Files
             if (pFrom.FillInfo != null && pTo.FillInfo != null) pTo.FillInfo.Copy(pFrom.FillInfo);
         }
 
-        public static int[] RegisterParaShapes(HWPFile pFile, IList<ParaShapeModel> pList, int[] pBfMap)
+        /// <summary>
+        /// 글머리표 표. ★ 테두리와 같이 <b>번호가 1부터</b>다. 표본 대부분이 글머리표를 하나도 안 갖기
+        /// 때문에(hwp <c>bul=0</c>) "글머리 기호 켜기" 는 거의 언제나 이 길로 새로 만든다.
+        /// </summary>
+        public static int[] RegisterBullets(HWPFile pFile, IList<BulletModel> pList)
+        {
+            IReadOnlyList<Bullet> have = pFile.DocInfo.BulletList;
+            int baseCount = have.Count + 1;
+            if (pList == null || pList.Count <= baseCount) return Identity(baseCount);
+
+            int[] map = new int[pList.Count];
+            for (int i = 0; i < baseCount && i < map.Length; i++) map[i] = i;
+
+            for (int i = baseCount; i < pList.Count; i++)
+            {
+                BulletModel m = pList[i];
+                string ch = m.Ch ?? "";
+
+                int same = FindBullet(have, ch);
+                if (same >= 0) { map[i] = same + 1; continue; }
+
+                // ★ 있는 것을 본떠서 만든다 — 빈 것에서 채우면 우리가 모델에 안 담은 성질
+                //   (이미지 글머리표·체크 글자·글자모양 번호)이 전부 기본값이 된다.
+                Bullet from = have.Count > 0 ? have[0] : null;
+                Bullet added = pFile.DocInfo.AddNewBullet();
+                if (from != null) added.ParagraphHeadInfo.Copy(from.ParagraphHeadInfo);
+                added.BulletChar.FromUTF16LEString(ch);
+                ApplyHead(added.ParagraphHeadInfo, m.Head);
+                map[i] = have.Count;
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 문단 번호 표. 화면은 수준 정의를 <b>안 고친다</b> — 있는 것을 가리키기만 하므로
+        /// 여기서 새로 만드는 일은 없다(있어도 원본 첫 정의의 복제다).
+        /// </summary>
+        public static int[] RegisterNumberings(HWPFile pFile, IList<NumberingModel> pList)
+        {
+            int baseCount = pFile.DocInfo.NumberingList.Count + 1;
+            if (pList == null || pList.Count <= baseCount) return Identity(baseCount);
+
+            int[] map = new int[pList.Count];
+            for (int i = 0; i < map.Length; i++) map[i] = i < baseCount ? i : 1;
+            return map;
+        }
+
+        private static int FindBullet(IReadOnlyList<Bullet> pList, string pChar)
+        {
+            for (int i = 0; i < pList.Count; i++)
+            {
+                string had = pList[i].BulletChar != null ? pList[i].BulletChar.ToUTF16LEString() : "";
+                if (had == pChar) return i;
+            }
+            return -1;
+        }
+
+        private static void ApplyHead(ParagraphHeadInfo pTo, ParaHeadModel pFrom)
+        {
+            if (pTo == null || pFrom == null) return;
+            pTo.DistanceFromBody = pFrom.Dist;
+            if (pTo.Property == null) return;
+            pTo.Property.ValueTypeForDistanceFromBody =
+                pFrom.DistPct ? HwpLib.Object.DocInfo.Numbering.ValueType.RatioForLetter
+                              : HwpLib.Object.DocInfo.Numbering.ValueType.Value;
+            pTo.Property.ParagraphNumberFormat = cHeadMap.NumFmtOf(pFrom.NumFmt);
+        }
+
+        public static int[] RegisterParaShapes(HWPFile pFile, IList<ParaShapeModel> pList, int[] pBfMap,
+                                               int[] pNumMap, int[] pBulMap)
         {
             IReadOnlyList<ParaShapeInfo> have = pFile.DocInfo.ParaShapeList;
             int baseCount = have.Count;
@@ -185,7 +255,7 @@ namespace HwpEditor.Files
                 if (from < 0 || from >= have.Count) from = 0;
 
                 ParaShapeInfo want = have.Count > 0 ? have[from].Clone() : new ParaShapeInfo();
-                ApplyPara(want, m, pBfMap, pFile.DocInfo.BorderFillList.Count);
+                ApplyPara(want, m, pBfMap, pFile.DocInfo.BorderFillList.Count, pNumMap, pBulMap);
 
                 int same = FindPara(have, want);
                 if (same >= 0) { map[i] = same; continue; }
@@ -360,8 +430,18 @@ namespace HwpEditor.Files
         /// ★ 여백·들여쓰기·줄간격은 파일에 <b>lineseg 좌표의 2배</b>로 들어 있다.
         ///   읽을 때 반으로 줄였으니 쓸 때 두 배로 되돌린다. 안 그러면 저장할 때마다 여백이 반씩 준다.
         /// </summary>
-        private static void ApplyPara(ParaShapeInfo pTo, ParaShapeModel pFrom, int[] pBfMap, int pBfHave)
+        private static void ApplyPara(ParaShapeInfo pTo, ParaShapeModel pFrom, int[] pBfMap, int pBfHave,
+                                      int[] pNumMap, int[] pBulMap)
         {
+            // ★ 머리 번호는 <b>글머리표냐 번호냐에 따라 다른 표</b>를 가리킨다. 표를 바꿔 매기면
+            //   글머리표를 켠 문단이 번호 정의를 가리켜 엉뚱한 머리가 붙는다.
+            //   개요는 번호가 0 이다(실측) — 그대로 둔다.
+            pTo.Property1.ParaHeadShape = cHeadMap.HeadOf(pFrom.Head);
+            pTo.Property1.ParaLevel = (byte)Math.Max(0, Math.Min(6, pFrom.Lvl));
+            pTo.ParaHeadId = pFrom.Head == "bullet" ? Map(pBulMap, pFrom.HeadId)
+                           : pFrom.Head == "number" ? Map(pNumMap, pFrom.HeadId)
+                           : pFrom.HeadId;
+
             pTo.BorderFillId = MapBf(pBfMap, pFrom.Bf, pBfHave, pTo.BorderFillId);
             pTo.LeftBorderSpace = (short)pFrom.BsL;
             pTo.RightBorderSpace = (short)pFrom.BsR;

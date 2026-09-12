@@ -45,6 +45,94 @@ body {
   flex-direction: column;
 }
 
+/* 리본. 탭 줄 + 고른 탭의 내용 한 줄이다. ★ 높이를 못 박는다 — 탭을 바꿀 때 캔버스가 오르내리면
+   가상 스크롤 창(hwRender.fillVisible)이 흔들려 쪽이 빈 채로 남는다. */
+.hw-ribbon {
+  flex: 0 0 auto;
+  background: #fafafa;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.hw-rb-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 28px;
+  padding: 0 6px;
+  background: #f0f2f5;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.hw-rb-tab {
+  height: 24px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  font: inherit;
+  color: #404040;
+  cursor: default;
+}
+
+.hw-rb-tab:hover { background: #e4e8ee; }
+
+.hw-rb-tab.on {
+  background: #ffffff;
+  border-color: #d0d0d0;
+  color: #1a4a8a;
+  font-weight: 700;
+  /* 탭과 아래 판을 잇는다 — 테두리 한 줄을 덮어 한 장처럼 보이게 한다. */
+  margin-bottom: -1px;
+  padding-bottom: 1px;
+}
+
+.hw-rb-dev { margin-left: 4px; height: 22px; }
+
+.hw-rb-panes {
+  position: relative;
+  height: 48px;
+  background: #ffffff;
+}
+
+/* ★ 고른 판만 보인다. display:none 으로 숨겨도 <b>DOM 에는 그대로 있다</b> —
+   hwUi.refresh 와 검사가 안 보이는 탭의 단추도 속성으로 찾아 쓴다. */
+.hw-rb-pane {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.hw-rb-pane.on { display: flex; }
+
+/* 묶음 — 아래에 이름표를 단 세로 칸 하나. */
+.hw-rb-group {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px;
+  border-right: 1px solid #e4e4e4;
+}
+
+.hw-rb-group:last-child { border-right: 0; }
+
+.hw-rb-label {
+  flex: 0 0 100%;
+  margin-top: -2px;
+  font-size: 10px;
+  color: #909090;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .hw-menu {
   flex: 0 0 auto;
   display: flex;
@@ -72,16 +160,6 @@ body {
 .hw-menu-item:hover { background: #e8e8e8; border-color: #d0d0d0; }
 .hw-menu-item:active { background: #dcdcdc; }
 
-.hw-tools {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 28px;
-  padding: 0 6px;
-  background: #f4f4f4;
-  border-bottom: 1px solid #d0d0d0;
-}
 
 .hw-tool {
   min-width: 24px;
@@ -174,6 +252,21 @@ body {
 /* 문단 테두리·음영. 줄보다 먼저 그려 글자를 안 덮는다. */
 .hw-parabox {
   position: absolute;
+  z-index: 0;
+}
+
+/* 하이퍼링크 범위. ★ 색·밑줄을 <b>글자모양에 안 넣는다</b> — 문서 값을 덧칠하면 저장 왕복이 갈린다. */
+.hw-link {
+  color: #0645ad;
+  text-decoration: underline;
+}
+
+/* 문단 머리. ★ 줄 바깥(첫 줄 시작 x 왼쪽)에 얹는다 — 줄 안에 넣으면 글자 번호가 밀려
+   캐럿 대조(hwDomXOfChar)가 통째로 어긋난다. 누를 대상도 아니다. */
+.hw-head {
+  position: absolute;
+  white-space: pre;
+  pointer-events: none;
   z-index: 0;
 }
 
@@ -438,7 +531,7 @@ body {
     background: #ffffff;
   }
 
-  .hw-menu, .hw-tools, .hw-statusbar, #hwIme, .hw-find, .hw-dlg-back, .hw-ctx,
+  .hw-menu, .hw-ribbon, .hw-tools, .hw-statusbar, #hwIme, .hw-find, .hw-dlg-back, .hw-ctx,
   .hw-caret, .hw-sel, .hw-hit, .hw-cellblk, .hw-composing,
   .hw-objsel, .hw-handle { display: none !important; }
 

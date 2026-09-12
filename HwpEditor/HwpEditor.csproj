@@ -88,6 +88,7 @@
     </Compile>
     <Compile Include="cWebHost.cs" />
     <Compile Include="Files\cBorderMap.cs" />
+    <Compile Include="Files\cHeadMap.cs" />
     <Compile Include="Files\cDocument.cs" />
     <Compile Include="Files\cHwpDocument.cs" />
     <Compile Include="Files\cHwpIndex.cs" />
@@ -165,6 +166,8 @@
     <EmbeddedResource Include="Web\hwUnit.js" />
     <EmbeddedResource Include="Web\hwModel.js" />
     <EmbeddedResource Include="Web\hwMeasure.js" />
+    <EmbeddedResource Include="Web\hwHead.js" />
+    <EmbeddedResource Include="Web\hwLink.js" />
     <EmbeddedResource Include="Web\hwBreak.js" />
     <EmbeddedResource Include="Web\hwTable.js" />
     <EmbeddedResource Include="Web\hwPage.js" />

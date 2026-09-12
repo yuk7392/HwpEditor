@@ -777,6 +777,12 @@ function hwUiTest() {
     } catch (eS5) {
       ok('S5 세션 5 검사 중 예외', false, String(eS5 && eS5.stack ? eS5.stack : eS5).replace(/\s+/g, ' ').slice(0, 400));
     }
+    /* ★ S6 은 S5 <b>뒤</b>다 — S5 가 쪽 설정을 되돌려 놓은 배치에서 줄 나눔을 견준다(166). */
+    try {
+      hwUiTestS6({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+    } catch (eS6) {
+      ok('S6 세션 6 검사 중 예외', false, String(eS6 && eS6.stack ? eS6.stack : eS6).replace(/\s+/g, ' ').slice(0, 400));
+    }
     return hwWaitImages();
   }).then(function (r) {
     ok('20 그림이 실제로 그려짐', r.total === 0 || r.loaded === r.total, r.loaded + '/' + r.total + ' 장');
@@ -785,7 +791,8 @@ function hwUiTest() {
     hwPost({
       t: 'uitest', steps: steps, ops: hwBuildOps(), drift: hwCaretDriftMax(),
       charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
-      borderFills: hwDoc.borderFills
+      borderFills: hwDoc.borderFills,
+      numberings: hwDoc.numberings, bullets: hwDoc.bullets
     });
   });
 }
@@ -2595,6 +2602,303 @@ function hwUiTestS5(t) {
   if (window.hwObj) hwObj.clear();
 }
 
+/* 세션 6 — 문단 머리(E11)·하이퍼링크(E12)·스타일(E13). 160~179. */
+function hwUiTestS6(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn;
+
+  /* 본문 마지막 문단(검사가 만든 n… 문단이 아닌 것) 뒤에 검사용 문단을 셋 만든다 —
+     번호 누적은 <b>이어진 문단들</b>이라야 볼 수 있다. */
+  function toBody() {
+    var S = hwDoc.sections[0].paras, p = S[S.length - 1];
+    for (var i = S.length - 1; i >= 0; i--) if (S[i].id.charAt(0) !== 'n') { p = S[i]; break; }
+    hwCaret.set(p.id, p.len, false);
+    return p;
+  }
+
+  hwTable.clearBlock();
+  if (window.hwObj) hwObj.clear();
+  toBody();
+
+  var made = [];
+  for (var m = 0; m < 3; m++) {
+    key('Enter');
+    typeIn('머리' + (m + 1));
+    made.push(hwCaret.para());
+  }
+
+  var p160 = made[0];
+  hwCaret.set(p160.id, 0, false);
+
+  /* 160 글머리표 켜기. ★ 표본 대부분이 글머리표를 하나도 안 갖는다 — 그때는 목록이 하나 늘어야 한다.
+     ★ 먼저 꺼 둔다 — 원래 글머리표 문단이던 문서(lists-bullet.hwp)에서는 단축키가 <b>끄는</b> 쪽으로 돈다. */
+  hwFormat.applyPara({ head: 'none', headId: 0 });
+  var nBul160 = hwDoc.bullets.length;
+  key('Delete', { ctrl: true, shift: true });
+  var ps160 = hwModel.paraShape(p160.ps);
+  ok('160 Ctrl+Shift+Delete 로 글머리표가 켜진다',
+     ps160.head === 'bullet' && ps160.headId > 0
+       && (nBul160 > 1 ? hwDoc.bullets.length === nBul160 : hwDoc.bullets.length === nBul160 + 1),
+     'head=' + ps160.head + ' id=' + ps160.headId + ', 표 ' + nBul160 + '→' + hwDoc.bullets.length);
+
+  /* 163 은 여기서 같이 본다 — 켠 문단에 실제로 글자가 그려졌나. */
+  var head163 = hwHead.textOf(p160);
+  var dom163 = document.querySelectorAll('.hw-head').length;
+  ok('163 문단 머리가 화면에 그려진다(DOM)', !!head163 && dom163 > 0,
+     '머리 "' + head163 + '", .hw-head ' + dom163 + '개');
+
+  /* 161 같은 문단을 번호로 바꾼다(토글이 아니라 갈아타기). */
+  key('Delete', { ctrl: true, shift: true });   /* 껐다가 */
+  key('Insert', { ctrl: true, shift: true });   /* 번호로 */
+  ps160 = hwModel.paraShape(p160.ps);
+  ok('161 Ctrl+Shift+Insert 로 문단 번호가 켜진다',
+     ps160.head === 'number' && ps160.headId > 0,
+     'head=' + ps160.head + ' id=' + ps160.headId);
+
+  /* 162 목록 수준. ★ 숫자판 ± 다. 0~6 밖은 무시한다. */
+  key('NumpadAdd', { ctrl: true, code: 'NumpadAdd' });
+  key('NumpadAdd', { ctrl: true, code: 'NumpadAdd' });
+  var lvl162 = hwModel.paraShape(p160.ps).lvl;
+  for (var u162 = 0; u162 < 9; u162++) key('NumpadSubtract', { ctrl: true, code: 'NumpadSubtract' });
+  var lo162 = hwModel.paraShape(p160.ps).lvl;
+  ok('162 목록 수준이 0~6 안에서만 움직인다', lvl162 === 2 && lo162 === 0,
+     '두 번 내려 ' + lvl162 + ', 아홉 번 올려 ' + lo162);
+
+  /* 164 번호 누적 — 같은 목록 세 문단이 1·2·3 이다. */
+  var id164 = hwModel.paraShape(p160.ps).headId;
+  for (var q164 = 1; q164 < made.length; q164++) {
+    hwCaret.set(made[q164].id, 0, false);
+    hwFormat.applyPara({ head: 'number', headId: id164, lvl: 0 });
+  }
+  var t164 = [hwHead.textOf(made[0]), hwHead.textOf(made[1]), hwHead.textOf(made[2])];
+
+  /* ★ "셋째가 3" 으로 못 박으면 안 된다 — 그 목록을 <b>이미 쓰고 있던 문단</b>이 있으면 이어 세는 것이
+     맞다(실측 lists.hwp 는 V·VI·VII 로 이어졌다). 값 모양도 문서마다 다르다(로마자·한글). 그래서
+     서식 자리에 들어간 값이 <b>연달아 셋</b>인지로 본다. */
+  var lv164 = ((hwDoc.numberings[id164] || hwDoc.numberings[1] || {}).levels || [{}])[0] || {};
+  var fmt164 = lv164.numFmt || 'digit';
+  var base164 = -1;
+  for (var n164 = 1; n164 <= 500 && base164 < 0; n164++)
+    if (t164[0].indexOf(hwHead.numText(n164, fmt164)) >= 0
+        && t164[1].indexOf(hwHead.numText(n164 + 1, fmt164)) >= 0
+        && t164[2].indexOf(hwHead.numText(n164 + 2, fmt164)) >= 0) base164 = n164;
+
+  ok('164 같은 목록의 세 문단이 연달아 번호를 받는다', base164 > 0,
+     '머리 [' + t164.join('] [') + '] 모양 ' + fmt164 + ' 시작 ' + base164);
+
+  /* 166 머리를 켜도 <b>줄 나눔이 안 바뀐다</b> — E11 이 그리기만 한다는 설계의 단언이다. */
+  var body166 = hwDoc.sections[0].paras;
+  var long166 = null;
+  for (var b166 = 0; b166 < body166.length && !long166; b166++) {
+    var ls166 = window.hwLineIndex ? hwLineIndex[body166[b166].id] : null;
+    if (ls166 && ls166.length >= 2 && body166[b166].id.charAt(0) !== 'n') long166 = body166[b166];
+  }
+  if (long166) {
+    var before166 = hwLineIndex[long166.id].map(function (x) { return x.line.s; }).join(',');
+    var keep166 = long166.ps;
+    hwCaret.set(long166.id, 0, false);
+    hwFormat.applyPara({ head: 'bullet', headId: hwDoc.bullets.length > 1 ? 1 : 0 });
+    var after166 = (hwLineIndex[long166.id] || []).map(function (x) { return x.line.s; }).join(',');
+    hwFormat.applyPara({ head: 'none', headId: 0 });
+    long166.ps = keep166;
+    hwModel.markDirty(long166.id);
+    hwRelayout();
+    ok('166 머리를 켜도 줄 나눔이 그대로다(그리기만 한다)', before166 === after166,
+       '켜기 전 [' + before166 + '] 뒤 [' + after166 + ']');
+  } else {
+    ok('166 머리를 켜도 줄 나눔이 그대로다(그리기만 한다)', true, '여러 줄 문단이 없어 건너뜀');
+  }
+
+  /* 165 도구줄 단추로도 켜진다(키 말고 다른 길). */
+  hwCaret.set(made[2].id, 0, false);
+  var btn165 = document.querySelector('[data-head="bullet"]');
+  if (btn165) btn165.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  ok('165 도구줄 글머리표 단추가 같은 일을 한다',
+     !!btn165 && hwModel.paraShape(made[2].ps).head === 'bullet',
+     btn165 ? 'head=' + hwModel.paraShape(made[2].ps).head : '단추 없음');
+
+  /* ── E12 하이퍼링크·책갈피 ───────────────────────────────────────── */
+
+  /* 167 원본에 필드가 있는 문서면 그 범위에 클래스가 붙는다. 없으면 넣어서 본다(171 이 그 길이다). */
+  var had167 = 0, cross167 = false;
+  var all167 = hwModel.allParas();
+  for (var a167 = 0; a167 < all167.length; a167++) {
+    var objs167 = all167[a167].objs || [];
+    var open167 = 0;
+    for (var o167 = 0; o167 < objs167.length; o167++) {
+      if (objs167[o167].ctrl === 'fldb') { had167++; open167++; }
+      if (objs167[o167].ctrl === 'flde') open167--;
+    }
+    if (open167 > 0) cross167 = true;
+  }
+  var dom167 = document.querySelectorAll('.hw-link').length;
+  ok('167 원본 하이퍼링크 범위에 클래스가 붙는다(문단을 넘는 것 포함)',
+     had167 === 0 || dom167 > 0,
+     '필드 ' + had167 + '개(문단 넘김 ' + cross167 + '), .hw-link ' + dom167 + '개');
+
+  /* 171 하이퍼링크 넣기 — 고른 글자를 감싼다. */
+  var p171 = made[2];
+  hwCaret.set(p171.id, 0, false);
+  hwCaret.set(p171.id, Math.min(2, p171.len), true);
+  var nObj171 = (p171.objs || []).length;
+  hwLink.insert('https://example.com', '');
+  var objs171 = p171.objs || [];
+  var b171 = null, e171 = null;
+  for (var q171 = 0; q171 < objs171.length; q171++) {
+    if (objs171[q171].ctrl === 'fldb') b171 = objs171[q171];
+    if (objs171[q171].ctrl === 'flde') e171 = objs171[q171];
+  }
+  ok('171 하이퍼링크를 넣으면 시작·끝 표식이 한 쌍 생긴다',
+     !!b171 && !!e171 && b171.pos < e171.pos && b171.link === 'https://example.com'
+       && objs171.length === nObj171 + 2,
+     '개체 ' + nObj171 + '→' + objs171.length + (b171 ? ', 시작 ' + b171.pos + ' 끝 ' + (e171 ? e171.pos : '?') : ''));
+
+  var ops171 = hwBuildOps(), add171 = null, end171 = null;
+  for (var s171 = 0; s171 < ops171.length; s171++) {
+    if (ops171[s171].op === 'addLink') add171 = ops171[s171];
+    if (ops171[s171].op === 'addLinkEnd') end171 = ops171[s171];
+  }
+  ok('172 저장 요청에 addLink·addLinkEnd 가 실린다',
+     !!add171 && !!end171 && add171.link === 'https://example.com' && !!add171.tmpId && !!end171.tmpId,
+     add171 ? 'link=' + add171.link + ' tmpId=' + add171.tmpId + ', 끝 ' + (end171 ? end171.tmpId : '없음') : '요청 없음');
+
+  /* 168·169 Ctrl+클릭과 화이트리스트. ★ 검사에서는 <b>실제로 열지 않는다</b> — 무엇을 열려 했는지만 본다. */
+  hwLink.open('https://example.com');
+  var g168 = hwLink.lastOpen();
+  hwLink.open('file:///C:/Windows/System32/cmd.exe');
+  var g169 = hwLink.lastOpen();
+  ok('168 Ctrl+클릭 통로가 주소를 올린다', !!g168 && g168.ok && g168.url === 'https://example.com',
+     g168 ? g168.url + ' ok=' + g168.ok : '기록 없음');
+  ok('169 http·https·mailto 밖은 안 올라간다',
+     !!g169 && !g169.ok && !hwLink.allowed('file:///x') && !hwLink.allowed('javascript:1')
+       && hwLink.allowed('mailto:a@b.c'),
+     g169 ? g169.url + ' ok=' + g169.ok : '기록 없음');
+
+  /* 170 책갈피 — ★ <b>넣는 길은 아직 없다</b>(FEATURE-PLAN E12 잔여). 읽기·찾아가기만 본다:
+     모델에 책갈피 표식을 하나 얹어 목록과 이동을 태운다. */
+  var p170 = made[0];
+  (p170.objs = p170.objs || []).push({ pos: 0, kind: 'ctrl', ctrl: 'bookm', name: '검사책갈피',
+                                       hidden: true, inline: true, wHu: 0, hHu: 0, oid: p170.id + '#bm' });
+  hwModel.markDirty(p170.id);
+  var marks170 = hwLink.marks();
+  var found170 = false;
+  for (var m170 = 0; m170 < marks170.length; m170++) if (marks170[m170].name === '검사책갈피') found170 = true;
+  hwFind.openGoto();
+  var cnt170 = hwFind.markCount();
+  hwFind.closeGoto();
+  var moved170 = hwLink.goto('검사책갈피') && hwCaret.at().id === p170.id;
+  ok('170 책갈피가 목록에 뜨고 그리로 이동한다',
+     found170 && cnt170 >= 1 && moved170,
+     '목록 ' + marks170.length + '개, 찾아가기 ' + cnt170 + '개, 이동 ' + moved170);
+
+  /* 원래대로 — 검사가 얹은 표식은 문서에 없는 oid 라 저장 요청에 실리면 되쓰기가 그 자리를 버린다. */
+  p170.objs.pop();
+  hwModel.markDirty(p170.id);
+  hwRelayout();
+
+  /* 173 은 --apply 를 두 번 먹여 필드 수가 안 느는지로 본다(cEditTest 의 단언). */
+  ok('173 필드 수 단언은 --apply 가 본다', true, 'cEditTest.RunApply 의 obj 수 대조');
+
+  /* ── E13 스타일 ──────────────────────────────────────────────────── */
+
+  var list174 = hwFormat.styles();
+  var p174 = made[1];
+  hwCaret.set(p174.id, 0, false);
+
+  /* 쓰이지 않은 스타일을 고른다 — 지금 문단의 스타일과 같으면 아무것도 안 바뀌어 판정이 안 된다. */
+  var want174 = null;
+  for (var i174 = 0; i174 < list174.length && !want174; i174++)
+    if (list174[i174].id !== (p174.sty || 0)) want174 = list174[i174];
+
+  var ps174 = p174.ps, cs174 = p174.runs.length ? p174.runs[0].cs : -1;
+  if (want174) hwFormat.applyStyle(want174.id);
+  var csAfter174 = p174.runs.length ? p174.runs[0].cs : -1;
+
+  ok('174 스타일을 걸면 문단모양과 글자모양이 함께 바뀐다',
+     !want174 || (p174.sty === want174.id && p174.ps === want174.ps
+                  && (cs174 < 0 || csAfter174 === want174.cs)),
+     want174 ? '스타일 ' + want174.id + ' "' + want174.name + '" ps ' + ps174 + '→' + p174.ps
+               + ' cs ' + cs174 + '→' + csAfter174
+             : '문단에 걸 스타일이 없다');
+
+  /* 175·176 저장 요청에 sty 가 <b>바꾼 문단에만</b> 실린다. */
+  var ops175 = hwBuildOps(), mine175 = null, others175 = 0;
+  for (var s175 = 0; s175 < ops175.length; s175++) {
+    var op175 = ops175[s175];
+    if (op175.id === p174.id && (op175.op === 'replace' || op175.op === 'insertAfter')) mine175 = op175;
+    else if (op175.sty !== undefined) others175++;
+  }
+  ok('175 저장 요청의 sty 는 스타일을 건 문단에만 실린다',
+     !want174 || (!!mine175 && mine175.sty === want174.id && others175 === 0),
+     mine175 ? 'sty=' + mine175.sty + ', 다른 문단에 실린 수 ' + others175 : '요청 없음');
+
+  /* 177 Ctrl+Alt+1 — 목록 첫 스타일. */
+  hwCaret.set(made[0].id, 0, false);
+  key('1', { ctrl: true, alt: true });
+  ok('177 Ctrl+Alt+1 이 목록 첫 스타일을 건다',
+     !list174.length || made[0].sty === list174[0].id,
+     list174.length ? 'sty=' + made[0].sty + ' 기대 ' + list174[0].id : '스타일 없음');
+
+  /* 178 콤보가 캐럿 문단의 스타일을 보여 준다. */
+  hwUi.refresh();
+  var sel178 = document.getElementById('hwStyle');
+  ok('178 스타일 콤보가 캐럿 문단의 스타일을 보여 준다',
+     !!sel178 && (!list174.length || sel178.value === String(made[0].sty || 0)),
+     sel178 ? '콤보 ' + sel178.value + ', 문단 ' + (made[0].sty || 0) + ', 항목 ' + sel178.options.length : '콤보 없음');
+
+  /* 179 개요 머리를 가진 스타일을 걸면 E11 머리가 뜬다 — E13 이 E11 을 시험하는 자리다. */
+  var out179 = null;
+  for (var q179 = 0; q179 < list174.length && !out179; q179++) {
+    var sp179 = hwModel.paraShape(list174[q179].ps);
+    if (sp179 && sp179.head && sp179.head !== 'none') out179 = list174[q179];
+  }
+  if (out179) {
+    hwCaret.set(made[1].id, 0, false);
+    hwFormat.applyStyle(out179.id);
+    ok('179 머리를 가진 스타일을 걸면 문단 머리가 그려진다',
+       !!hwHead.textOf(made[1]),
+       '스타일 "' + out179.name + '" 머리 "' + hwHead.textOf(made[1]) + '"');
+  } else {
+    ok('179 머리를 가진 스타일을 걸면 문단 머리가 그려진다', true, '이 문서에는 머리를 가진 스타일이 없다');
+  }
+
+  /* ── 리본(메뉴 디자인 교체) 180~182 ─────────────────────────────────
+     ★ CSS 가 실제로 먹었는지는 <b>여기서만</b> 잴 수 있다 — 검사 창은 실물 WebView2 라
+       getComputedStyle 이 임베드 자산의 editor.css 를 그대로 본다. */
+  var tabs180 = document.querySelectorAll('.hw-rb-tab');
+  var panes180 = document.querySelectorAll('.hw-rb-pane');
+  var shown180 = 0;
+  for (var v180 = 0; v180 < panes180.length; v180++)
+    if (getComputedStyle(panes180[v180]).display !== 'none') shown180++;
+  ok('180 리본이 탭 5개로 서고 판은 하나만 보인다',
+     tabs180.length === 5 && panes180.length === 5 && shown180 === 1,
+     '탭 ' + tabs180.length + '개, 판 ' + panes180.length + '개, 보이는 판 ' + shown180 + '개');
+
+  /* 181 탭을 누르면 그 판으로 바뀐다 — 실제 click 이벤트로 태운다. */
+  var fmt181 = null;
+  for (var t181 = 0; t181 < tabs180.length; t181++)
+    if (tabs180[t181].getAttribute('data-rb') === 'format') fmt181 = tabs180[t181];
+  if (fmt181) fmt181.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+  var onPane181 = document.querySelector('.hw-rb-pane.on');
+  ok('181 탭을 누르면 그 판이 보인다',
+     !!fmt181 && !!onPane181 && onPane181.getAttribute('data-rb') === 'format'
+       && fmt181.classList.contains('on'),
+     onPane181 ? '보이는 판 ' + onPane181.getAttribute('data-rb') : '판 없음');
+
+  /* 182 ★ 안 보이는 탭의 단추도 <b>DOM 에 그대로</b> 있고 눌린다 — hwUi.refresh 와 앞 단계들이
+     탭과 상관없이 속성으로 단추를 찾는다(그래서 리본이 회귀를 안 깼다). */
+  var hidden182 = document.querySelector('.hw-rb-pane[data-rb="insert"] [data-tbl="newTable"]');
+  /* ★ 단추 자신의 display 를 보면 안 된다 — 감추는 것은 <b>판</b>이라 단추는 그대로 inline-block 이다.
+     실제로 안 보이는지는 offsetParent(그려진 자리)로 본다. */
+  var vis182 = hidden182 ? hidden182.offsetParent !== null : false;
+  var head182 = document.querySelector('[data-head="bullet"]');
+  ok('182 안 보이는 탭의 단추도 찾을 수 있다',
+     !!hidden182 && !vis182 && !!head182,
+     '표+ ' + (hidden182 ? '있음' : '없음') + '(보임 ' + vis182 + '), 글머리표 단추 ' + (head182 ? '있음' : '없음'));
+
+  if (window.hwUi && hwUi.showTab) hwUi.showTab('edit');
+}
+
 function firstCellPara() {
   for (var si = 0; si < hwDoc.sections.length; si++) {
     var paras = hwDoc.sections[si].paras;
@@ -2847,6 +3151,7 @@ function hwSave(saveAs) {
        문서 쪽은 그중 이미 있는 것은 다시 쓰고 없는 것만 등록한다. */
     charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
     borderFills: hwDoc.borderFills,
+    numberings: hwDoc.numberings, bullets: hwDoc.bullets,
     ops: ops
   });
   /* ★ 표에 넣은 새 칸에 친 글자는 이번 저장에 안 실린다 — 문서 쪽이 그 칸을 새로 만들기 때문이다.
@@ -2892,11 +3197,13 @@ var hwPingSeq = 0;
 document.addEventListener('DOMContentLoaded', function () {
   var menu = document.getElementById('hwMenu');
   if (menu) {
-    /* 캐럿 초점을 안 뺏는다. ★ 단 콤보 위에서는 막으면 안 된다 — Chromium 은 mousedown 의
-       기본 동작으로 목록을 펼치므로, 막으면 눌러도 아무 일이 안 일어난다(T0 과 같은 자리다). */
+    /* 캐럿 초점을 안 뺏는다. ★ 단 콤보·색 칸 위에서는 막으면 안 된다 — Chromium 은 mousedown 의
+       기본 동작으로 목록·색 고르개를 펼치므로, 막으면 눌러도 아무 일이 안 일어난다(T0 과 같은 자리다).
+       ★ INPUT 을 빠뜨리면 안 된다 — 리본이 되면서 글자색·형광펜 칸이 이 상자 안으로 들어왔다
+         (검사 36 이 잡았다). hwUi.onMouseDown 과 <b>같은 규칙</b>이어야 한다. */
     menu.addEventListener('mousedown', function (e) {
       var tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
-      if (tag === 'SELECT' || tag === 'OPTION') return;
+      if (tag === 'SELECT' || tag === 'OPTION' || tag === 'INPUT') return;
       e.preventDefault();
     });
 
@@ -2935,9 +3242,15 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (cmd === 'saveAs') { hwSave(true); return; }
       if (cmd === 'find') { hwFind.open(true); return; }
-      if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap' || cmd === 'pageSetup') {
+      if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap' || cmd === 'pageSetup'
+       || cmd === 'pageNumber' || cmd === 'hyperlink') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         hwDialog[cmd]();
+        return;
+      }
+      if (cmd === 'headInsert' || cmd === 'footInsert') {
+        if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
+        hwDialog.bandInsert(cmd === 'headInsert' ? 'head' : 'foot');
         return;
       }
       if (cmd) hwPost({ t: 'menu', cmd: cmd });

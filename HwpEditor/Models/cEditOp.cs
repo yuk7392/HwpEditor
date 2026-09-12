@@ -28,6 +28,13 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("borderFills")] public List<BorderFillModel> BorderFills;
 
+        /// <summary>
+        /// 문단 번호·글머리표 표 전체. ★ <b>문단모양보다 먼저</b> 등록한다 — 문단모양이 이 번호를
+        /// 가리킨다(테두리와 같은 규칙).
+        /// </summary>
+        [JsonProperty("numberings")] public List<NumberingModel> Numberings;
+        [JsonProperty("bullets")] public List<BulletModel> Bullets;
+
         [JsonProperty("ops")] public List<EditOp> Ops = new List<EditOp>();
     }
 
@@ -47,6 +54,12 @@ namespace HwpEditor.Models
         [JsonProperty("ref")] public string Ref;
 
         [JsonProperty("ps")] public int Ps;
+
+        /// <summary>
+        /// 스타일 번호. ★ <b>nullable 이다</b> — null 은 "안 바꿨다" 다. 값형으로 두면 글자 하나만 쳐도
+        /// 그 문단의 스타일이 0(바탕글)으로 밀린다(<see cref="EditObj.WHu"/> 와 같은 이유).
+        /// </summary>
+        [JsonProperty("sty", NullValueHandling = NullValueHandling.Ignore)] public int? Sty;
 
         /// <summary>
         /// 이 문단 앞의 강제 나눔. "page" | "column" | "section" | null.
@@ -105,6 +118,12 @@ namespace HwpEditor.Models
         [JsonProperty("tmpId")] public string TmpId;
 
         [JsonProperty("file")] public string File;
+
+        /// <summary>
+        /// <c>addLink</c> 가 걸 주소. 파일에는 <c>http\://google.com;1;0;0;</c> 꼴로 들어간다
+        /// (<c>:</c>·<c>;</c> 를 <c>\</c> 로 막고 뒤에 세 자리를 붙인다 — 실측 issue144).
+        /// </summary>
+        [JsonProperty("link")] public string Link;
 
         [JsonProperty("wHu")] public long WHu;
         [JsonProperty("hHu")] public long HHu;
@@ -262,10 +281,15 @@ namespace HwpEditor.Models
         [JsonProperty("csMap", NullValueHandling = NullValueHandling.Ignore)] public int[] CsMap;
         [JsonProperty("psMap", NullValueHandling = NullValueHandling.Ignore)] public int[] PsMap;
         [JsonProperty("bfMap", NullValueHandling = NullValueHandling.Ignore)] public int[] BfMap;
+        [JsonProperty("bulMap", NullValueHandling = NullValueHandling.Ignore)] public int[] BulMap;
+        [JsonProperty("numMap", NullValueHandling = NullValueHandling.Ignore)] public int[] NumMap;
 
         /// <summary>저장 뒤 문서가 실제로 들고 있는 목록. 화면은 자기 목록을 이것으로 갈아 끼운다.</summary>
         [JsonProperty("charShapes", NullValueHandling = NullValueHandling.Ignore)] public List<CharShapeModel> CharShapes;
         [JsonProperty("paraShapes", NullValueHandling = NullValueHandling.Ignore)] public List<ParaShapeModel> ParaShapes;
         [JsonProperty("borderFills", NullValueHandling = NullValueHandling.Ignore)] public List<BorderFillModel> BorderFills;
+        [JsonProperty("numberings", NullValueHandling = NullValueHandling.Ignore)] public List<NumberingModel> Numberings;
+        [JsonProperty("bullets", NullValueHandling = NullValueHandling.Ignore)] public List<BulletModel> Bullets;
+        [JsonProperty("styles", NullValueHandling = NullValueHandling.Ignore)] public List<StyleModel> Styles;
     }
 }

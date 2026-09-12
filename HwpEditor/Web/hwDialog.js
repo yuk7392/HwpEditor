@@ -922,6 +922,33 @@ var hwDialog = (function () {
     });
   }
 
+  /* 하이퍼링크 넣기(덤프 3). ★ 표시할 텍스트는 <b>고른 글자</b>다 — 고른 것이 없을 때만 쓴다. */
+  function hyperlink() {
+    if (!hwDoc) return null;
+
+    var sel = hwCaret.selection();
+    var shown = '';
+    if (sel && sel.fromId === sel.toId) {
+      var p = hwModel.byId(sel.fromId);
+      if (p) shown = hwModel.text(p).slice(sel.fromPos, sel.toPos);
+    }
+
+    return open({
+      title: '하이퍼링크', width: 420,
+      rows: [
+        { type: 'text', key: 'text', label: '표시할 텍스트', value: shown, width: 260 },
+        { type: 'text', key: 'url', label: '웹 주소', value: 'https://', width: 260 }
+      ],
+      buttons: [{ label: '넣기', ok: true }, { label: '취소', cancel: true }],
+      onOk: function (s) {
+        var url = String(s.get('url') || '').trim();
+        if (!hwLink.allowed(url)) { hwSetStatus({ text: '주소는 http·https·mailto 만 됩니다' }); return; }
+        close();
+        hwLink.insert(url, String(s.get('text') || '').trim());
+      }
+    });
+  }
+
   function tableSplit() {
     if (!hwTable.here() && !hwTable.block()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return null; }
     return open({
@@ -955,6 +982,7 @@ var hwDialog = (function () {
     tableLines: tableLines,
     tableInsert: tableInsert,
     tableSplit: tableSplit,
+    hyperlink: hyperlink,
     categories: function () { return cCats.map(function (c) { return c.t; }); }
   };
 })();

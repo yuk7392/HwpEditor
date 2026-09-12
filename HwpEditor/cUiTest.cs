@@ -153,6 +153,8 @@ namespace HwpEditor
                 if (o["charShapes"] != null) req["charShapes"] = o["charShapes"];
                 if (o["paraShapes"] != null) req["paraShapes"] = o["paraShapes"];
                 if (o["borderFills"] != null) req["borderFills"] = o["borderFills"];
+                if (o["numberings"] != null) req["numberings"] = o["numberings"];
+                if (o["bullets"] != null) req["bullets"] = o["bullets"];
                 req["ops"] = ops;
                 OpsJson = req.ToString(Newtonsoft.Json.Formatting.None);
             }

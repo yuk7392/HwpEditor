@@ -7,6 +7,7 @@ using HwpLib.Object;
 using HwpLib.Object.BodyText;
 using HwpLib.Object.BodyText.Control;
 using HwpLib.Object.BodyText.Control.CtrlHeader;
+using HwpLib.Object.BodyText.Control.Bookmark;
 using HwpLib.Object.BodyText.Control.CtrlHeader.Header;
 using HwpLib.Object.BodyText.Control.Gso;
 using HwpLib.Object.BodyText.Control.SectionDefine;
@@ -18,6 +19,8 @@ using HwpLib.Object.BodyText.Paragraph.Text;
 using HwpLib.Object.DocInfo;
 using HwpLib.Object.DocInfo.BorderFill;
 using HwpLib.Object.DocInfo.BorderFill.FillInfo;
+using HwpLib.Object.DocInfo.Numbering;
+using HwpLib.Object.DocInfo.Style;
 using HwpLib.Object.DocInfo.ParaShape;
 
 namespace HwpEditor.Files
@@ -44,6 +47,8 @@ namespace HwpEditor.Files
 
             ReadFaceNames(pFile.DocInfo, doc);
             ReadBorderFills(pFile.DocInfo, doc);
+            ReadHeads(pFile.DocInfo, doc);
+            ReadStyles(pFile.DocInfo, doc);
             ReadCharShapes(pFile.DocInfo, doc);
             ReadParaShapes(pFile.DocInfo, doc);
 
@@ -83,6 +88,27 @@ namespace HwpEditor.Files
             DocModel tmp = new DocModel();
             ReadParaShapes(pInfo, tmp);
             return tmp.ParaShapes;
+        }
+
+        public static List<NumberingModel> NumberingsOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadHeads(pInfo, tmp);
+            return tmp.Numberings;
+        }
+
+        public static List<BulletModel> BulletsOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadHeads(pInfo, tmp);
+            return tmp.Bullets;
+        }
+
+        public static List<StyleModel> StylesOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadStyles(pInfo, tmp);
+            return tmp.Styles;
         }
 
         public static List<BorderFillModel> BorderFillsOf(DocInfo pInfo)
@@ -154,6 +180,58 @@ namespace HwpEditor.Files
             }
         }
 
+        /// <summary>
+        /// 문단 번호·글머리표 표. ★ 번호가 <b>1부터</b>라 0번 자리는 비워 둔다(테두리와 같은 규칙).
+        /// </summary>
+        private static void ReadHeads(DocInfo pInfo, DocModel pDoc)
+        {
+            pDoc.Numberings.Add(new NumberingModel { Id = 0 });
+            IReadOnlyList<NumberingInfo> nums = pInfo.NumberingList;
+            for (int i = 0; i < nums.Count; i++)
+            {
+                NumberingModel m = new NumberingModel();
+                m.Id = i + 1;
+                m.Start = nums[i].StartNumber;
+
+                IReadOnlyList<LevelNumbering> levels = nums[i].LevelNumberingList;
+                for (int L = 0; L < levels.Count; L++)
+                {
+                    ParaHeadModel h = cHeadMap.Read(levels[L].ParagraphHeadInfo);
+                    h.Start = (int)levels[L].StartNumber;
+                    h.Fmt = levels[L].NumberFormat != null ? levels[L].NumberFormat.ToUTF16LEString() : "";
+                    m.Levels.Add(h);
+                }
+                pDoc.Numberings.Add(m);
+            }
+
+            pDoc.Bullets.Add(new BulletModel { Id = 0 });
+            IReadOnlyList<Bullet> buls = pInfo.BulletList;
+            for (int i = 0; i < buls.Count; i++)
+            {
+                BulletModel m = new BulletModel();
+                m.Id = i + 1;
+                m.Ch = buls[i].BulletChar != null ? buls[i].BulletChar.ToUTF16LEString() : "";
+                m.Head = cHeadMap.Read(buls[i].ParagraphHeadInfo);
+                pDoc.Bullets.Add(m);
+            }
+        }
+
+        /// <summary>문서 스타일 표. ★ 번호가 <b>0부터</b>라 목록 자리가 곧 번호다.</summary>
+        private static void ReadStyles(DocInfo pInfo, DocModel pDoc)
+        {
+            IReadOnlyList<StyleInfo> list = pInfo.StyleList;
+            for (int i = 0; i < list.Count; i++)
+            {
+                StyleModel m = new StyleModel();
+                m.Id = i;
+                m.Name = list[i].HangulName ?? list[i].EnglishName ?? "";
+                m.Sort = list[i].Property != null && list[i].Property.StyleSort == StyleSort.CharStyle ? "char" : "para";
+                m.Ps = list[i].ParaShapeId;
+                m.Cs = list[i].CharShapeId;
+                pDoc.Styles.Add(m);
+            }
+        }
+
         private static void ReadParaShapes(DocInfo pInfo, DocModel pDoc)
         {
             IReadOnlyList<ParaShapeInfo> list = pInfo.ParaShapeList;
@@ -185,6 +263,12 @@ namespace HwpEditor.Files
                 m.BsR = s.RightBorderSpace;
                 m.BsT = s.TopBorderSpace;
                 m.BsB = s.BottomBorderSpace;
+
+                // ★ 수준은 <b>Property1.ParaLevel</b> 에 든다 — 최상위 ParaShapeInfo.ParaLevel 은
+                //   표본 넷이 전부 0 인 빈 자리다(실측 2026-09-12). 개요는 headId 가 0 이다.
+                m.Head = cHeadMap.HeadOf(s.Property1.ParaHeadShape);
+                m.HeadId = s.ParaHeadId;
+                m.Lvl = s.Property1.ParaLevel;
                 pDoc.ParaShapes.Add(m);
             }
         }
@@ -330,6 +414,7 @@ namespace HwpEditor.Files
             ParagraphModel m = new ParagraphModel();
             m.Id = pId;
             m.Ps = pPara.Header.ParaShapeId;
+            m.Sty = pPara.Header.StyleId;
             m.Brk = DivideName(pPara.Header.DivideSort);
 
             if (pIndex != null) pIndex.Paras[pId] = new cParaRef(pPara, pSec, pList);
@@ -488,7 +573,10 @@ namespace HwpEditor.Files
                 else if (ch.Type == HWPCharType.ControlInline && ch.Code != 9)
                 {
                     // 탭(9)은 BuildRuns 가 이미 글자로 담았다 — 여기서 또 담으면 한 자리를 두 번 센다.
-                    o = Hidden(pModel.Id, objIdx, ToEdit(pRawToEdit, raw), "inline", "인라인");
+                    // ★ 필드 끝(4)은 따로 표시한다 — 화면이 시작(3)과 짝지어 링크 범위를 잡는다.
+                    bool end = ch.Code == 4;
+                    o = Hidden(pModel.Id, objIdx, ToEdit(pRawToEdit, raw),
+                               end ? "flde" : "inline", end ? "필드 끝" : "인라인");
                 }
 
                 if (o != null)
@@ -608,6 +696,34 @@ namespace HwpEditor.Files
                 return o;
             }
 
+            // 필드(하이퍼링크)·책갈피. ★ 크기가 없는 인라인 컨트롤이라 <b>배치는 안 바뀐다</b> —
+            //   화면은 시작·끝 짝으로 글자 범위를 잡아 칠하기만 한다.
+            ControlField fld = pControl as ControlField;
+            if (fld != null)
+            {
+                o.Kind = "ctrl";
+                o.Ctrl = "fldb";
+                o.Label = "필드";
+                o.Hidden = true;
+                o.Inline = true;
+                CtrlHeaderField fh = fld.GetHeader();
+                if (pControl.Type == ControlType.FIELD_HYPERLINK && fh != null && fh.Command != null)
+                    o.Link = FirstCommand(fh.Command.ToUTF16LEString());
+                return o;
+            }
+
+            ControlBookmark bm = pControl as ControlBookmark;
+            if (bm != null)
+            {
+                o.Kind = "ctrl";
+                o.Ctrl = "bookm";
+                o.Label = "책갈피";
+                o.Hidden = true;
+                o.Inline = true;
+                o.Name = BookmarkName(bm);
+                return o;
+            }
+
             // ★ 나머지는 opaque — 크기와 라벨만 갖고 회색 상자로 그린다.
             //   원본 Control 은 HWPFile 안에 그대로 남아 있으므로 저장할 때 손대지 않는다.
             o.Kind = "opaque";
@@ -668,6 +784,36 @@ namespace HwpEditor.Files
                 case HwpLib.Object.BodyText.Control.CtrlHeader.Gso.VertRelTo.Page: return "page";
                 default: return "para";
             }
+        }
+
+        /// <summary>
+        /// 하이퍼링크 명령의 첫 조각. <c>http\://google.com;1;0;0;</c> 처럼 <c>:</c> 가 <c>\</c> 로 막혀 있고
+        /// 조각은 <c>;</c> 로 끊긴다(실측 issue144). 막힌 글자는 그대로 살려 낸다.
+        /// </summary>
+        private static string FirstCommand(string pCommand)
+        {
+            if (string.IsNullOrEmpty(pCommand)) return null;
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < pCommand.Length; i++)
+            {
+                char c = pCommand[i];
+                if (c == '\\' && i + 1 < pCommand.Length) { sb.Append(pCommand[++i]); continue; }
+                if (c == ';') break;
+                sb.Append(c);
+            }
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+
+        /// <summary>책갈피 이름. 컨트롤 데이터의 <c>ParameterSet</c> 안 첫 문자열 항목이다.</summary>
+        private static string BookmarkName(ControlBookmark pBookmark)
+        {
+            CtrlData d = pBookmark.GetCtrlData();
+            if (d == null || d.ParameterSet == null) return null;
+
+            foreach (ParameterItem it in d.ParameterSet.ParameterItemList)
+                if (it.Type == ParameterType.String && !string.IsNullOrEmpty(it.Value_BSTR)) return it.Value_BSTR;
+            return null;
         }
 
         private static string OpaqueLabel(ControlType pType)

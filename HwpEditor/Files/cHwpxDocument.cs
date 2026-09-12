@@ -299,6 +299,9 @@ namespace HwpEditor.Files
                 pResult.CharShapes = cHwpxReader.CharShapesOf(cHeader);
                 pResult.ParaShapes = cHwpxReader.ParaShapesOf(cHeader);
                 pResult.BorderFills = cHwpxReader.BorderFillsOf(cHeader);
+                pResult.Numberings = cHwpxReader.NumberingsOf(cHeader);
+                pResult.Bullets = cHwpxReader.BulletsOf(cHeader);
+                pResult.Styles = cHwpxReader.StylesOf(cHeader);
             }
         }
 

@@ -26,12 +26,95 @@ namespace HwpEditor.Files
                 delegate (int i) { return pList[i].Base; });
         }
 
-        public static int[] RegisterParaShapes(XmlDocument pHeader, IList<ParaShapeModel> pList, int[] pBfMap)
+        public static int[] RegisterParaShapes(XmlDocument pHeader, IList<ParaShapeModel> pList, int[] pBfMap,
+                                               int[] pNumMap, int[] pBulMap)
         {
             int have = BorderFillCount(pHeader);
             return Register(pHeader, "paraProperties", "paraPr", pList == null ? 0 : pList.Count, 0,
-                delegate (XmlElement el, int i) { ApplyPara(el, pList[i], pBfMap, have); },
+                delegate (XmlElement el, int i) { ApplyPara(el, pList[i], pBfMap, have, pNumMap, pBulMap); },
                 delegate (int i) { return pList[i].Base; });
+        }
+
+        /// <summary>
+        /// 글머리표 표. ★ hwpx 표본 둘에는 <c>hh:bullets</c> 가 <b>아예 없다</b>(실측) — 없으면 만들어
+        /// <c>hh:numberings</c> 뒤에 끼운다(OWPML 의 refList 차례: … numberings · bullets · paraProperties).
+        /// </summary>
+        public static int[] RegisterBullets(XmlDocument pHeader, IList<BulletModel> pList)
+        {
+            int wanted = pList == null ? 0 : pList.Count;
+            if (wanted > BulletCount(pHeader) + 1) MakeBullets(pHeader);
+
+            return Register(pHeader, "bullets", "bullet", wanted, 1,
+                delegate (XmlElement el, int i) { ApplyBullet(el, pList[i]); },
+                delegate (int i) { return pList[i].Base; });
+        }
+
+        /// <summary>번호 정의는 화면이 안 고친다 — 있는 것을 가리키기만 하므로 새로 만들 일이 없다.</summary>
+        public static int[] RegisterNumberings(XmlDocument pHeader, IList<NumberingModel> pList)
+        {
+            int baseCount = ChildrenNamed(Find(pHeader, "numberings"), "numbering").Count + 1;
+            int[] map = new int[Math.Max(pList == null ? 0 : pList.Count, baseCount)];
+            for (int i = 0; i < map.Length; i++) map[i] = i < baseCount ? i : 1;
+            return map;
+        }
+
+        private static int BulletCount(XmlDocument pHeader)
+        {
+            return ChildrenNamed(Find(pHeader, "bullets"), "bullet").Count;
+        }
+
+        /// <summary>
+        /// <c>hh:bullets</c> 를 만들고 글머리표 하나를 심는다. ★ <see cref="Register"/> 는 <b>있는 것을 복제</b>해서
+        /// 새것을 만들므로, 그룹만 비워 두면 아무것도 안 만들어진다.
+        /// </summary>
+        private static void MakeBullets(XmlDocument pHeader)
+        {
+            if (Find(pHeader, "bullets") != null) return;
+
+            XmlElement nums = Find(pHeader, "numberings");
+            XmlElement pars = Find(pHeader, "paraProperties");
+            XmlNode host = nums != null ? nums.ParentNode : (pars != null ? pars.ParentNode : null);
+            if (host == null) return;
+
+            string ns = nums != null ? nums.NamespaceURI : pars.NamespaceURI;
+            string px = nums != null ? nums.Prefix : pars.Prefix;
+
+            XmlElement group = pHeader.CreateElement(px, "bullets", ns);
+            group.SetAttribute("itemCnt", "1");
+
+            XmlElement b = pHeader.CreateElement(px, "bullet", ns);
+            b.SetAttribute("id", "1");
+            b.SetAttribute("char", "●");
+            b.SetAttribute("checkedChar", "");
+            b.SetAttribute("useImage", "0");
+
+            XmlElement head = pHeader.CreateElement(px, "paraHead", ns);
+            head.SetAttribute("start", "1");
+            head.SetAttribute("level", "1");
+            head.SetAttribute("align", "LEFT");
+            head.SetAttribute("useInstWidth", "1");
+            head.SetAttribute("autoIndent", "1");
+            head.SetAttribute("widthAdjust", "0");
+            head.SetAttribute("textOffsetType", "PERCENT");
+            head.SetAttribute("textOffset", "50");
+            head.SetAttribute("numFormat", "DIGIT");
+            head.SetAttribute("charPrIDRef", "4294967295");
+            head.SetAttribute("checkable", "0");
+            b.AppendChild(head);
+            group.AppendChild(b);
+
+            if (pars != null) host.InsertBefore(group, pars);
+            else host.InsertAfter(group, nums);
+        }
+
+        private static void ApplyBullet(XmlElement pEl, BulletModel pModel)
+        {
+            pEl.SetAttribute("char", pModel.Ch ?? "");
+            XmlElement head = Child(pEl, "paraHead");
+            if (head == null || pModel.Head == null) return;
+            head.SetAttribute("textOffset", Str(pModel.Head.Dist));
+            head.SetAttribute("textOffsetType", pModel.Head.DistPct ? "PERCENT" : "HWPUNIT");
+            head.SetAttribute("numFormat", cHeadMap.HwpxNumFmt(pModel.Head.NumFmt));
         }
 
         private static int BorderFillCount(XmlDocument pHeader)
@@ -310,8 +393,20 @@ namespace HwpEditor.Files
 
         #region 문단모양
 
-        private static void ApplyPara(XmlElement pEl, ParaShapeModel pModel, int[] pBfMap, int pBfHave)
+        private static void ApplyPara(XmlElement pEl, ParaShapeModel pModel, int[] pBfMap, int pBfHave,
+                                      int[] pNumMap, int[] pBulMap)
         {
+            // ★ 우리 수준은 hwp 와 같은 0부터다. 여기 <c>hh:heading@level</c> 도 0부터라 그대로 쓴다 —
+            //   1부터인 것은 번호 정의 안의 <c>hh:paraHead@level</c> 뿐이다(실측).
+            foreach (XmlElement hd in AllNamed(pEl, "heading"))
+            {
+                hd.SetAttribute("type", cHeadMap.HwpxHead(pModel.Head));
+                hd.SetAttribute("level", Str(Math.Max(0, Math.Min(6, pModel.Lvl))));
+                hd.SetAttribute("idRef", Str(pModel.Head == "bullet" ? cShapeWriter.Map(pBulMap, pModel.HeadId)
+                                           : pModel.Head == "number" ? cShapeWriter.Map(pNumMap, pModel.HeadId)
+                                           : pModel.HeadId));
+            }
+
             foreach (XmlElement bd in AllNamed(pEl, "border"))
             {
                 bd.SetAttribute("borderFillIDRef", MapBf(bd, pBfMap, pModel.Bf, pBfHave));

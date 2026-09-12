@@ -49,6 +49,8 @@ namespace HwpEditor.Files
 
             ReadFaceNames(pHeader, doc);
             ReadBorderFills(pHeader, doc);
+            ReadHeads(pHeader, doc);
+            ReadStyles(pHeader, doc);
             ReadCharShapes(pHeader, doc);
             ReadParaShapes(pHeader, doc);
 
@@ -243,6 +245,27 @@ namespace HwpEditor.Files
             return tmp.ParaShapes;
         }
 
+        public static List<NumberingModel> NumberingsOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadHeads(pHeader, tmp);
+            return tmp.Numberings;
+        }
+
+        public static List<BulletModel> BulletsOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadHeads(pHeader, tmp);
+            return tmp.Bullets;
+        }
+
+        public static List<StyleModel> StylesOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadStyles(pHeader, tmp);
+            return tmp.Styles;
+        }
+
         public static List<BorderFillModel> BorderFillsOf(XmlDocument pHeader)
         {
             DocModel tmp = new DocModel();
@@ -356,6 +379,84 @@ namespace HwpEditor.Files
             }
         }
 
+        /// <summary>
+        /// 문단 번호·글머리표 표. ★ hwp 와 같이 <b>번호가 1부터</b>다(실측 — <c>hh:numbering id="1"</c>).
+        /// ★ 안의 <c>hh:paraHead@level</c> 만 <b>1부터</b>다 — 우리 목록은 hwp 와 같은 <b>0부터</b>로 담는다.
+        /// </summary>
+        private static void ReadHeads(XmlDocument pHeader, DocModel pDoc)
+        {
+            pDoc.Numberings.Add(new NumberingModel { Id = 0 });
+            foreach (XmlElement n in FindAll(pHeader, "numbering"))
+            {
+                NumberingModel m = new NumberingModel();
+                m.Id = NumI(n, "id", pDoc.Numberings.Count);
+                m.Start = NumI(n, "start", 0);
+
+                foreach (XmlElement h in ChildrenNamed(n, "paraHead"))
+                {
+                    int lvl = NumI(h, "level", 1) - 1;
+                    while (m.Levels.Count <= lvl) m.Levels.Add(new ParaHeadModel());
+                    if (lvl >= 0) m.Levels[lvl] = ReadHead(h);
+                }
+
+                while (pDoc.Numberings.Count <= m.Id) pDoc.Numberings.Add(new NumberingModel { Id = pDoc.Numberings.Count });
+                pDoc.Numberings[m.Id] = m;
+            }
+
+            pDoc.Bullets.Add(new BulletModel { Id = 0 });
+            foreach (XmlElement b in FindAll(pHeader, "bullet"))
+            {
+                BulletModel m = new BulletModel();
+                m.Id = NumI(b, "id", pDoc.Bullets.Count);
+                m.Ch = Attr(b, "char") ?? "";
+                m.Head = ReadHead(Child(b, "paraHead"));
+
+                while (pDoc.Bullets.Count <= m.Id) pDoc.Bullets.Add(new BulletModel { Id = pDoc.Bullets.Count });
+                pDoc.Bullets[m.Id] = m;
+            }
+        }
+
+        private static ParaHeadModel ReadHead(XmlElement pEl)
+        {
+            ParaHeadModel m = new ParaHeadModel();
+            if (pEl == null) return m;
+            m.Fmt = pEl.InnerText ?? "";
+            m.Start = NumI(pEl, "start", 0);
+            m.NumFmt = cHeadMap.NumFmtOfHwpx(Attr(pEl, "numFormat") ?? "DIGIT");
+            m.Dist = NumI(pEl, "textOffset", 0);
+            m.DistPct = Attr(pEl, "textOffsetType") != "HWPUNIT";
+            return m;
+        }
+
+        private static List<XmlElement> ChildrenNamed(XmlNode pNode, string pLocal)
+        {
+            List<XmlElement> outList = new List<XmlElement>();
+            if (pNode == null) return outList;
+            foreach (XmlNode n in pNode.ChildNodes)
+            {
+                XmlElement e = n as XmlElement;
+                if (e != null && e.LocalName == pLocal) outList.Add(e);
+            }
+            return outList;
+        }
+
+        /// <summary>문서 스타일 표. ★ 번호가 <b>0부터</b>다(실측 <c>hh:style id="0"</c>).</summary>
+        private static void ReadStyles(XmlDocument pHeader, DocModel pDoc)
+        {
+            foreach (XmlElement s in FindAll(pHeader, "style"))
+            {
+                StyleModel m = new StyleModel();
+                m.Id = NumI(s, "id", pDoc.Styles.Count);
+                m.Name = Attr(s, "name") ?? Attr(s, "engName") ?? "";
+                m.Sort = Attr(s, "type") == "CHAR" ? "char" : "para";
+                m.Ps = NumI(s, "paraPrIDRef", 0);
+                m.Cs = NumI(s, "charPrIDRef", 0);
+
+                while (pDoc.Styles.Count <= m.Id) pDoc.Styles.Add(new StyleModel { Id = pDoc.Styles.Count });
+                pDoc.Styles[m.Id] = m;
+            }
+        }
+
         private static void ReadParaShapes(XmlDocument pHeader, DocModel pDoc)
         {
             List<XmlElement> list = FindAll(pHeader, "paraPr");
@@ -389,6 +490,14 @@ namespace HwpEditor.Files
                 XmlElement bs = Find(p, "breakSetting");
                 m.LatinBreak = LatinBreakName(Attr(bs, "breakLatinWord"));
                 m.HangulByWord = Attr(bs, "breakNonLatinWord") == "KEEP_WORD";
+
+                XmlElement hd = Find(p, "heading");
+                if (hd != null)
+                {
+                    m.Head = cHeadMap.HeadOfHwpx(Attr(hd, "type"));
+                    m.HeadId = NumI(hd, "idRef", 0);
+                    m.Lvl = NumI(hd, "level", 0);
+                }
 
                 XmlElement bd = Find(p, "border");
                 if (bd != null)
@@ -504,6 +613,7 @@ namespace HwpEditor.Files
 
             if (pIndex != null) pIndex.Paras[pId] = pP;
             m.Ps = NumI(pP, "paraPrIDRef", 0);
+            m.Sty = NumI(pP, "styleIDRef", 0);
 
             if (Flag(pP, "pageBreak")) m.Brk = "page";
             else if (Flag(pP, "columnBreak")) m.Brk = "column";
@@ -647,10 +757,55 @@ namespace HwpEditor.Files
             if (local == "pic") { o.Kind = "image"; return o; }
             if (local == "tbl") { o.Kind = "table"; o.Table = ToTable(pEl, o.Oid, pMap); return o; }
 
+            // 필드(하이퍼링크)·책갈피. ★ hwpx 표본에 <c>hp:fieldBegin</c>·<c>hp:bookmark</c> 가 하나도 없다 —
+            //   이 길은 OWPML 을 보고 세웠고 우리 왕복으로만 봤다(hwp 쪽 모델과 같은 값을 채운다).
+            if (local == "fieldBegin" || local == "fieldEnd" || local == "bookmark")
+            {
+                o.Kind = "ctrl";
+                o.Hidden = true;
+                o.Inline = true;
+                o.WHu = 0;
+                o.HHu = 0;
+
+                if (local == "bookmark") { o.Ctrl = "bookm"; o.Label = "책갈피"; o.Name = Attr(pEl, "name"); }
+                else if (local == "fieldEnd") { o.Ctrl = "flde"; o.Label = "필드 끝"; }
+                else
+                {
+                    o.Ctrl = "fldb";
+                    o.Label = "필드";
+                    if (Attr(pEl, "type") == "HYPERLINK") o.Link = StringParam(pEl, "Command");
+                }
+                return o;
+            }
+
             o.Kind = "opaque";
             o.Ctrl = local;
             o.Label = OpaqueLabel(local);
             return o;
+        }
+
+        /// <summary>&lt;hp:parameters&gt;&lt;hp:stringParam name="Command"&gt;…&lt;/&gt; 에서 값 하나.</summary>
+        private static string StringParam(XmlElement pEl, string pName)
+        {
+            foreach (XmlElement sp in FindAll(pEl, "stringParam"))
+                if (Attr(sp, "name") == pName) return FirstCommand(sp.InnerText);
+            return null;
+        }
+
+        /// <summary>hwp 쪽 <c>cHwpReader.FirstCommand</c> 와 <b>같은 규칙</b>이어야 한다.</summary>
+        private static string FirstCommand(string pCommand)
+        {
+            if (string.IsNullOrEmpty(pCommand)) return null;
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < pCommand.Length; i++)
+            {
+                char c = pCommand[i];
+                if (c == '\\' && i + 1 < pCommand.Length) { sb.Append(pCommand[++i]); continue; }
+                if (c == ';') break;
+                sb.Append(c);
+            }
+            return sb.Length > 0 ? sb.ToString() : null;
         }
 
         /// <summary>

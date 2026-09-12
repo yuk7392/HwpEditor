@@ -312,11 +312,13 @@ namespace HwpEditor
             cSnapshot twice = cSnapshot.Of(cDocument.Open(dst2).Model);
             Console.WriteLine("  두 번 " + twice);
 
-            bool grew = twice.CharShapes != after.CharShapes || twice.ParaShapes != after.ParaShapes;
+            bool grew = twice.CharShapes != after.CharShapes || twice.ParaShapes != after.ParaShapes
+                     || twice.BorderFills != after.BorderFills;
             Console.WriteLine();
             Console.WriteLine(grew
                 ? "두 번 먹였더니 모양이 늘었다 — 실패 (cs " + after.CharShapes + "→" + twice.CharShapes
-                  + ", ps " + after.ParaShapes + "→" + twice.ParaShapes + ")"
+                  + ", ps " + after.ParaShapes + "→" + twice.ParaShapes
+                  + ", bf " + after.BorderFills + "→" + twice.BorderFills + ")"
                 : "두 번 먹여도 모양 개수 그대로 — 통과");
             return (r.Ok && !grew && !(needReload && !r.Reload)) ? 0 : 3;
         }
@@ -378,7 +380,7 @@ namespace HwpEditor
 
         private sealed class cSnapshot
         {
-            internal int Paras, Objs, Images, Tables, CharShapes, ParaShapes;
+            internal int Paras, Objs, Images, Tables, CharShapes, ParaShapes, BorderFills;
             internal string FirstText, TailHash;
 
             internal static cSnapshot Of(DocModel pDoc)
@@ -386,6 +388,7 @@ namespace HwpEditor
                 cSnapshot s = new cSnapshot();
                 s.CharShapes = pDoc.CharShapes.Count;
                 s.ParaShapes = pDoc.ParaShapes.Count;
+                s.BorderFills = pDoc.BorderFills.Count;
 
                 StringBuilder tail = new StringBuilder();
                 bool first = true;
@@ -439,7 +442,7 @@ namespace HwpEditor
             public override string ToString()
             {
                 return "para=" + Paras + " obj=" + Objs + " img=" + Images + " tbl=" + Tables
-                     + " cs=" + CharShapes + " ps=" + ParaShapes + " h=" + TailHash;
+                     + " cs=" + CharShapes + " ps=" + ParaShapes + " bf=" + BorderFills + " h=" + TailHash;
             }
         }
 

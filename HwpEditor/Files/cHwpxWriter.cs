@@ -30,9 +30,11 @@ namespace HwpEditor.Files
 
             // ★ 모양을 먼저 등록한다. 화면 번호와 문서 번호가 다를 수 있고(같은 모양 재사용),
             //   그 표가 있어야 아래에서 cs·ps 를 옮겨 적을 수 있다.
+            // ★ 테두리/배경 표가 맨 먼저다 — 문단모양과 칸이 그 번호를 가리킨다.
             cShapes = new cShapeMap();
-            cShapes.Cs = cHwpxShapeWriter.RegisterCharShapes(pDoc.Header, pReq.CharShapes);
-            cShapes.Ps = cHwpxShapeWriter.RegisterParaShapes(pDoc.Header, pReq.ParaShapes);
+            cShapes.Bf = cHwpxShapeWriter.RegisterBorderFills(pDoc.Header, pReq.BorderFills);
+            cShapes.Cs = cHwpxShapeWriter.RegisterCharShapes(pDoc.Header, pReq.CharShapes, cShapes.Bf);
+            cShapes.Ps = cHwpxShapeWriter.RegisterParaShapes(pDoc.Header, pReq.ParaShapes, cShapes.Bf);
 
             IList<EditOp> pOps = pReq.Ops;
 
@@ -47,19 +49,93 @@ namespace HwpEditor.Files
             // ★ 표 구조는 맨 마지막에 — 앞의 셀 문단 요청이 아직 옛 구조를 가리키고 있다.
             bool rebuilt = ApplyTableOps(pIndex, pOps);
 
+            // ★ 서식은 구조 뒤다 — 표를 다시 세우면 칸 요소가 새것이라 앞서 건 서식이 사라진다.
+            ApplyFormatOps(pIndex, pOps);
+
             if (pResult != null)
             {
                 pResult.CsMap = cShapes.Cs;
                 pResult.PsMap = cShapes.Ps;
+                pResult.BfMap = cShapes.Bf;
                 if (rebuilt) pResult.Reload = true;
             }
             cShapes = null;
+        }
+
+        /// <summary>
+        /// 칸·표 서식(<c>cellFmt</c>·<c>tableFmt</c>). hwp 쪽 <c>cHwpWriter.ApplyFormatOps</c> 와 같은 규칙이다.
+        /// </summary>
+        private static void ApplyFormatOps(cHwpxIndex pIndex, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "cellFmt" && op.Op != "tableFmt") continue;
+
+                XmlElement tbl;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out tbl)) continue;
+                if (tbl.LocalName != "tbl") continue;
+
+                if (op.Op == "tableFmt") { ApplyTableFmt(tbl, op); continue; }
+
+                foreach (XmlElement tr in ChildElements(tbl, "tr"))
+                    foreach (XmlElement tc in ChildElements(tr, "tc"))
+                    {
+                        XmlElement addr = Kid(tc, "cellAddr");
+                        if (addr == null) continue;
+                        int row = NumI(addr, "rowAddr", 0), col = NumI(addr, "colAddr", 0);
+                        if (!InRect(op, row, col)) continue;
+
+                        if (op.Bf.HasValue) tc.SetAttribute("borderFillIDRef", Str(cShapeWriter.Map(cShapes.Bf, op.Bf.Value)));
+                        if (op.Head.HasValue) tc.SetAttribute("header", op.Head.Value ? "1" : "0");
+
+                        XmlElement sub = Kid(tc, "subList");
+                        if (op.Valign.HasValue && sub != null)
+                            sub.SetAttribute("vertAlign", op.Valign.Value == 1 ? "CENTER" : op.Valign.Value == 2 ? "BOTTOM" : "TOP");
+
+                        if (op.CmL.HasValue || op.CmR.HasValue || op.CmT.HasValue || op.CmB.HasValue)
+                        {
+                            XmlElement cmg = KidOrMake(tc, "cellMargin", "cellSz");
+                            if (op.CmL.HasValue) cmg.SetAttribute("left", Str(op.CmL.Value));
+                            if (op.CmR.HasValue) cmg.SetAttribute("right", Str(op.CmR.Value));
+                            if (op.CmT.HasValue) cmg.SetAttribute("top", Str(op.CmT.Value));
+                            if (op.CmB.HasValue) cmg.SetAttribute("bottom", Str(op.CmB.Value));
+                            tc.SetAttribute("hasMargin", "1");
+                        }
+                    }
+            }
+        }
+
+        private static void ApplyTableFmt(XmlElement pTbl, EditOp pOp)
+        {
+            if (pOp.Bf.HasValue) pTbl.SetAttribute("borderFillIDRef", Str(cShapeWriter.Map(cShapes.Bf, pOp.Bf.Value)));
+            if (pOp.Divide.HasValue)
+                pTbl.SetAttribute("pageBreak", pOp.Divide.Value == 1 ? "CELL" : pOp.Divide.Value == 2 ? "TABLE" : "NONE");
+            if (pOp.RepeatHeader.HasValue) pTbl.SetAttribute("repeatHeader", pOp.RepeatHeader.Value ? "1" : "0");
+
+            if (!pOp.OmL.HasValue && !pOp.OmR.HasValue && !pOp.OmT.HasValue && !pOp.OmB.HasValue) return;
+
+            XmlElement om = KidOrMake(pTbl, "outMargin", "pos");
+            if (pOp.OmL.HasValue) om.SetAttribute("left", Str(pOp.OmL.Value));
+            if (pOp.OmR.HasValue) om.SetAttribute("right", Str(pOp.OmR.Value));
+            if (pOp.OmT.HasValue) om.SetAttribute("top", Str(pOp.OmT.Value));
+            if (pOp.OmB.HasValue) om.SetAttribute("bottom", Str(pOp.OmB.Value));
+        }
+
+        /// <summary>칸 사각형 안인가. 값이 안 온 변(-1)은 제한 없음이다.</summary>
+        private static bool InRect(EditOp pOp, int pRow, int pCol)
+        {
+            if (pOp.R0 >= 0 && pRow < pOp.R0) return false;
+            if (pOp.R1 >= 0 && pRow > pOp.R1) return false;
+            if (pOp.C0 >= 0 && pCol < pOp.C0) return false;
+            if (pOp.C1 >= 0 && pCol > pOp.C1) return false;
+            return true;
         }
 
         private sealed class cShapeMap
         {
             public int[] Cs;
             public int[] Ps;
+            public int[] Bf;
         }
 
         [ThreadStatic]
@@ -596,6 +672,26 @@ namespace HwpEditor.Files
         }
 
         /// <summary>바로 아래 자식만 본다. 자손까지 뒤지는 <see cref="Find"/> 와 다르다.</summary>
+        private static int NumI(XmlElement pEl, string pName, int pDefault)
+        {
+            if (pEl == null) return pDefault;
+            XmlAttribute at = pEl.Attributes[pName];
+            int v;
+            return (at != null && int.TryParse(at.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out v)) ? v : pDefault;
+        }
+
+        /* 여백 자식이 아예 없는 문서가 있다(hasMargin="0"). 없다고 건너뛰면 걸어 준 여백이 조용히 사라진다. */
+        private static XmlElement KidOrMake(XmlElement pParent, string pLocal, string pAfter)
+        {
+            XmlElement got = Kid(pParent, pLocal);
+            if (got != null) return got;
+
+            XmlElement made = Margin(pParent.OwnerDocument, pParent.Prefix, pParent.NamespaceURI, pLocal, 0, 0, 0, 0);
+            XmlElement at = Kid(pParent, pAfter);
+            if (at != null) pParent.InsertAfter(made, at); else pParent.AppendChild(made);
+            return made;
+        }
+
         private static XmlElement Kid(XmlNode pNode, string pLocal)
         {
             foreach (XmlNode n in pNode.ChildNodes)
@@ -796,12 +892,16 @@ namespace HwpEditor.Files
             tbl.SetAttribute("textFlow", "BOTH_SIDES");
             tbl.SetAttribute("lock", "0");
             tbl.SetAttribute("dropcapstyle", "None");
-            tbl.SetAttribute("pageBreak", "CELL");
-            tbl.SetAttribute("repeatHeader", "0");
+            /* ★ 표 서식도 여기서 받는다 — 새 표에는 tableFmt 를 보낼 길이 없다(oid 가 아직 없다). */
+            tbl.SetAttribute("pageBreak", !pOp.Divide.HasValue ? "CELL"
+                : pOp.Divide.Value == 1 ? "CELL" : pOp.Divide.Value == 2 ? "TABLE" : "NONE");
+            tbl.SetAttribute("repeatHeader", pOp.RepeatHeader.HasValue && pOp.RepeatHeader.Value ? "1" : "0");
             tbl.SetAttribute("rowCnt", Str(rows));
             tbl.SetAttribute("colCnt", Str(cols));
             tbl.SetAttribute("cellSpacing", "0");
-            tbl.SetAttribute("borderFillIDRef", "1");
+            tbl.SetAttribute("borderFillIDRef", pOp.Bf.HasValue && pOp.Bf.Value > 0
+                ? Str(cShapeWriter.Map(cShapes == null ? null : cShapes.Bf, pOp.Bf.Value))
+                : Str(cHwpxShapeWriter.TableBorderFill(pDoc.Header)));
             tbl.SetAttribute("noAdjust", "0");
 
             XmlElement sz = El(xd, px, ns, "sz", "width", Str(wAll), "height", Str(hAll));
@@ -824,7 +924,8 @@ namespace HwpEditor.Files
             pos.SetAttribute("horzOffset", "0");
             tbl.AppendChild(pos);
 
-            tbl.AppendChild(Margin(xd, px, ns, "outMargin", 0, 0, 0, 0));
+            tbl.AppendChild(Margin(xd, px, ns, "outMargin",
+                pOp.OmL ?? 0, pOp.OmR ?? 0, pOp.OmT ?? 0, pOp.OmB ?? 0));
             tbl.AppendChild(Margin(xd, px, ns, "inMargin", 0, 0, 0, 0));
 
             long nextId = NextParagraphIdDeep(xd);
@@ -857,12 +958,16 @@ namespace HwpEditor.Files
 
             XmlElement tc = xd.CreateElement(px, "tc", ns);
             tc.SetAttribute("name", "");
-            tc.SetAttribute("header", "0");
             tc.SetAttribute("hasMargin", "0");
             tc.SetAttribute("protect", "0");
             tc.SetAttribute("editable", "0");
             tc.SetAttribute("dirty", "0");
-            tc.SetAttribute("borderFillIDRef", "1");
+
+            /* 칸이 자기 테두리를 들고 오면 그것을 쓴다 — 새 표에는 cellFmt 를 못 보낸다(oid 가 아직 없다). */
+            tc.SetAttribute("borderFillIDRef", pModel.Bf > 0
+                ? Str(cShapeWriter.Map(cShapes == null ? null : cShapes.Bf, pModel.Bf))
+                : Str(cHwpxShapeWriter.TableBorderFill(pDoc.Header)));
+            tc.SetAttribute("header", pModel.Head ? "1" : "0");
 
             tc.AppendChild(El(xd, px, ns, "cellAddr", "colAddr", Str(pModel.C), "rowAddr", Str(pModel.R)));
             tc.AppendChild(El(xd, px, ns, "cellSpan", "colSpan", Str(Math.Max(1, pModel.Cs)),
@@ -874,7 +979,7 @@ namespace HwpEditor.Files
             sub.SetAttribute("id", "");
             sub.SetAttribute("textDirection", "HORIZONTAL");
             sub.SetAttribute("lineWrap", "BREAK");
-            sub.SetAttribute("vertAlign", "TOP");
+            sub.SetAttribute("vertAlign", pModel.Valign == 1 ? "CENTER" : pModel.Valign == 2 ? "BOTTOM" : "TOP");
             sub.SetAttribute("linkListIDRef", "0");
             sub.SetAttribute("linkListNextIDRef", "0");
             sub.SetAttribute("textWidth", "0");

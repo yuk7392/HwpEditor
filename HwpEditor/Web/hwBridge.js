@@ -765,6 +765,12 @@ function hwUiTest() {
     } catch (eS3) {
       ok('S3 세션 3 검사 중 예외', false, String(eS3 && eS3.stack ? eS3.stack : eS3).replace(/\s+/g, ' ').slice(0, 400));
     }
+    /* ★ S4 는 S3 <b>뒤</b>다 — S3 이 끝에 남긴 새 표를 건드리지 않도록 자기 문단을 따로 만든다. */
+    try {
+      hwUiTestS4({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+    } catch (eS4) {
+      ok('S4 세션 4 검사 중 예외', false, String(eS4 && eS4.stack ? eS4.stack : eS4).replace(/\s+/g, ' ').slice(0, 400));
+    }
     return hwWaitImages();
   }).then(function (r) {
     ok('20 그림이 실제로 그려짐', r.total === 0 || r.loaded === r.total, r.loaded + '/' + r.total + ' 장');
@@ -772,7 +778,8 @@ function hwUiTest() {
        그것을 내보내면 --apply 가 표 편집을 한 번도 안 태운다(실측으로 걸렸다). */
     hwPost({
       t: 'uitest', steps: steps, ops: hwBuildOps(), drift: hwCaretDriftMax(),
-      charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes
+      charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
+      borderFills: hwDoc.borderFills
     });
   });
 }
@@ -1996,6 +2003,236 @@ function hwUiTestS3(t) {
   if (window.hwObj) hwObj.clear();
 }
 
+/* 세션 4 — 서식 확장(테두리·채우기). 단계 120~139. */
+function hwUiTestS4(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn;
+
+  function csAt(p, k) { return hwDoc.charShapes[hwModel.shapeAt(p, k || 0)]; }
+  function psOf(p) { return hwDoc.paraShapes[p.ps]; }
+  function pick(p, a, b) { hwCaret.set(p.id, a, false); hwCaret.set(p.id, b, true); }
+  function click(el) { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); return !!el; }
+  function tool(sel) { return click(document.querySelector(sel)); }
+  function setPick(id, v) {
+    var e = document.getElementById(id);
+    if (!e) return false;
+    e.value = v;
+    e.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+  function dlgSet(k, v) {
+    var d = hwDialog.current(), e = d ? d.field(k) : null;
+    if (!e) return false;
+    if (e.type === 'checkbox') { e.checked = !!v; e.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+    /* 누름 단추(속성 묶음)는 눌러서 켠다 — 값 대입으로는 touched 가 안 찍힌다. */
+    if (e.classList.contains('hw-dlg-tog')) return click(e);
+    e.value = String(v);
+    e.dispatchEvent(new Event(e.tagName === 'SELECT' || e.type === 'color' ? 'change' : 'input', { bubbles: true }));
+    return true;
+  }
+  function dlgPress(label) {
+    var d = hwDialog.current(), b = d ? d.button(label) : null;
+    return click(b);
+  }
+
+  /* 화면이 만든 문단(n…) 뒤에는 만들지 않는다 — S1 과 같은 이유(저장 요청에 문서에 없는 id 가 실린다). */
+  var S0 = hwDoc.sections[0].paras, tail = S0[S0.length - 1];
+  for (var ti = S0.length - 1; ti >= 0; ti--) if (S0[ti].id.charAt(0) !== 'n') { tail = S0[ti]; break; }
+  hwCaret.set(tail.id, tail.len, false);
+  key('Enter');
+  var sp = hwCaret.para();
+  typeIn('서식확장검사');
+
+  pick(sp, 0, 3);
+  key('s', { alt: true, shift: true, code: 'KeyS' });
+  ok('121 Alt+Shift+S 는 아래첨자', csAt(sp, 0).sub === true && csAt(sp, 0).sup === false,
+     'sub ' + csAt(sp, 0).sub + ' sup ' + csAt(sp, 0).sup);
+
+  key('o', { alt: true, shift: true, code: 'KeyO' });
+  ok('122 Alt+Shift+O 는 위첨자(아래첨자를 끈다)', csAt(sp, 0).sup === true && csAt(sp, 0).sub === false,
+     'sub ' + csAt(sp, 0).sub + ' sup ' + csAt(sp, 0).sup);
+
+  key('a', { ctrl: true, alt: true, code: 'KeyA' });
+  var swap1 = csAt(sp, 0).sub === true && csAt(sp, 0).sup === false;
+  key('a', { ctrl: true, alt: true, code: 'KeyA' });
+  ok('123 Ctrl+Alt+A 는 위 → 아래 → 없음으로 돈다',
+     swap1 && csAt(sp, 0).sub === false && csAt(sp, 0).sup === false,
+     '한 번 ' + (swap1 ? '아래' : '아님') + ', 두 번 sub ' + csAt(sp, 0).sub + ' sup ' + csAt(sp, 0).sup);
+
+  var shadeOn = setPick('hwShade', '#ffff00');
+  var got124 = (csAt(sp, 0).shade || '').toUpperCase();
+  tool('[data-fmt="noShade"]');
+  ok('124 도구줄 형광펜은 색을 걸고 "형광펜×" 는 없앤다(흰색이 아니라 없음)',
+     shadeOn && got124 === '#FFFF00' && !csAt(sp, 0).shade,
+     '걸린 값 ' + got124 + ', 뒤 ' + (csAt(sp, 0).shade === null ? 'null' : String(csAt(sp, 0).shade)));
+
+  pick(sp, 0, 3);
+  key('l', { alt: true });
+  var f125 = dlgSet('underline', '1') && dlgSet('ulShape', 'dash') && dlgSet('ulColor', '#ff0000');
+  dlgPress('설정');
+  ok('125 글자 모양 — 밑줄 모양·색이 걸린다',
+     f125 && !hwDialog.isOpen() && csAt(sp, 0).underline === 1 && csAt(sp, 0).ulShape === 'dash'
+       && (csAt(sp, 0).ulColor || '').toUpperCase() === '#FF0000',
+     '밑줄 ' + csAt(sp, 0).underline + '/' + csAt(sp, 0).ulShape + '/' + csAt(sp, 0).ulColor);
+
+  pick(sp, 0, 3);
+  key('l', { alt: true });
+  var f126 = dlgSet('outline', '1') && dlgSet('shadow', '2') && dlgSet('emph', '1') && dlgSet('emboss', true);
+  dlgPress('설정');
+  var c126 = csAt(sp, 0);
+  ok('126 글자 모양 — 외곽선·그림자·강조점·양각이 걸린다',
+     f126 && !hwDialog.isOpen() && c126.outline === 1 && c126.shadow === 2 && c126.emph === 1,
+     '외 ' + c126.outline + ' 그 ' + c126.shadow + ' 강 ' + c126.emph + ' 양 ' + c126.emboss);
+
+  /* ── E2 문단 테두리·음영 ── */
+
+  hwCaret.set(sp.id, 0, false);
+  var nBf = hwDoc.borderFills.length;
+  key('t', { alt: true });
+  var f127 = dlgSet('bType', 'dash') && dlgSet('bWidth', '0.5') && dlgSet('bColor', '#0000ff');
+  dlgPress('설정');
+  var ps127 = psOf(sp), bf127 = hwModel.borderFill(ps127.bf);
+  ok('127 문단 모양 테두리 탭 — 테두리가 걸리고 표에 줄이 하나 는다',
+     f127 && !hwDialog.isOpen() && !!bf127 && bf127.t.type === 'dash' && bf127.t.w === '0.5'
+       && (bf127.t.color || '').toUpperCase() === '#0000FF' && hwDoc.borderFills.length === nBf + 1,
+     'bf ' + ps127.bf + ' ' + (bf127 ? bf127.t.type + '/' + bf127.t.w + '/' + bf127.t.color : '없음')
+       + ', 표 ' + nBf + '→' + hwDoc.borderFills.length);
+
+  hwCaret.set(sp.id, 0, false);
+  key('t', { alt: true });
+  var f128 = dlgSet('bNoFill', false) && dlgSet('bFill', '#00ff00');
+  dlgPress('설정');
+  var bf128 = hwModel.borderFill(psOf(sp).bf);
+  ok('128 문단 음영이 걸린다', f128 && !!bf128 && (bf128.fill || '').toUpperCase() === '#00FF00',
+     '면 색 ' + (bf128 ? String(bf128.fill) : '없음'));
+
+  hwCaret.set(sp.id, 0, false);
+  key('t', { alt: true });
+  var f129 = dlgSet('bsT', 3) && dlgSet('bsB', 3) && dlgSet('bsL', 2) && dlgSet('bsR', 2);
+  dlgPress('설정');
+  var ps129 = psOf(sp);
+  ok('129 테두리 간격(pt)이 문단모양에 들어간다',
+     f129 && ps129.bsT === 300 && ps129.bsB === 300 && ps129.bsL === 200 && ps129.bsR === 200,
+     '위 ' + ps129.bsT + ' 아래 ' + ps129.bsB + ' 왼 ' + ps129.bsL + ' 오 ' + ps129.bsR);
+
+  hwCaret.scrollIntoView();
+  hwRenderRefresh();
+  var box130 = document.querySelector('.hw-parabox');
+  ok('130 화면에 문단 테두리 상자가 그려진다',
+     !!box130 && box130.style.borderTopStyle === 'dashed' && box130.offsetWidth > 0,
+     box130 ? (box130.style.borderTop + ' / ' + box130.offsetWidth + 'x' + box130.offsetHeight) : '상자 없음');
+
+  /* ── E3 표 서식 ── 검사용 표를 따로 넣어 쓴다(다른 검사가 쓰는 표를 안 건드린다). */
+
+  hwCaret.set(sp.id, sp.len, false);
+  key('Enter');
+  hwTable.insertTable(2, 2);
+  var at131 = hwTable.here();
+  var obj131 = at131 ? at131.obj : null;
+  if (!obj131) { ok('131 검사용 표를 못 넣었다', false, '표 없음'); return; }
+
+  function cellOf(r, c) {
+    var cs = obj131.table.cells;
+    for (var i = 0; i < cs.length; i++) if (cs[i].r === r && cs[i].c === c) return cs[i];
+    return null;
+  }
+
+  hwTable.selectRange('table');
+  key('b');
+  var f131 = dlgSet('lType', 'dot') && dlgSet('lWidth', '0.4') && dlgSet('lColor', '#008000');
+  dlgPress('설정');
+  var bf131 = hwModel.borderFill(cellOf(0, 0) ? cellOf(0, 0).bf : 0);
+  ok('131 셀 블록에서 B — 테두리/배경 대화상자로 칸 테두리가 걸린다',
+     f131 && !hwDialog.isOpen() && !!bf131 && bf131.t.type === 'dot' && bf131.t.w === '0.4',
+     bf131 ? (bf131.t.type + '/' + bf131.t.w + '/' + bf131.t.color) : '테두리 없음');
+
+  hwTable.selectRange('table');
+  key('b');
+  var f132 = dlgSet('noFill', false) && dlgSet('fill', '#c0c0c0');
+  dlgPress('설정');
+  var bf132 = hwModel.borderFill(cellOf(0, 0) ? cellOf(0, 0).bf : 0);
+  hwCaret.scrollIntoView();
+  hwRenderRefresh();
+  /* ★ 아무 .hw-cell 이나 잡으면 안 된다 — 문서에 이미 있던 표의 칸이 먼저 걸려, 우리가 칠한 칸을
+     한 번도 안 보고 통과한다. 이 표의 격자 상자 안에서 찾는다. */
+  var host132 = hwModel.hostOf(obj131);
+  var boxEl = host132 ? document.querySelector('.hw-table[data-tpara="' + host132.id + '"]') : null;
+  var cellEl = boxEl ? boxEl.querySelector('.hw-cell') : null;
+  ok('132 칸 배경이 걸리고 화면에도 칠해진다',
+     !!bf132 && (bf132.fill || '').toUpperCase() === '#C0C0C0'
+       && !!cellEl && cellEl.style.backgroundColor === 'rgb(192, 192, 192)',
+     '면 색 ' + (bf132 ? String(bf132.fill) : '없음') + ', 화면 ' + (cellEl ? cellEl.style.backgroundColor : '칸 없음'));
+
+  /* 옆 칸을 두 줄로 만들어 <b>줄 하나보다 높은 칸</b>을 만든다 — 남는 높이가 없으면 세로 맞춤은
+     걸어도 아무것도 안 움직여서, 그대로 재면 통과·실패를 못 가른다. */
+  hwTable.clearBlock();
+  hwCaret.set(cellOf(0, 1).paras[0].id, 0, false);
+  typeIn('두줄');
+  key('Enter');
+  typeIn('만들기');
+  hwRelayout();
+
+  hwCaret.set(cellOf(0, 0).paras[0].id, 0, false);
+  var y133a = (hwLineIndex[cellOf(0, 0).paras[0].id] || [{}])[0].yHu;
+  hwTable.setCellFmt({ valign: 2 });
+  var y133b = (hwLineIndex[cellOf(0, 0).paras[0].id] || [{}])[0].yHu;
+  ok('133 세로 맞춤 — 아래쪽으로 두면 칸 안 글줄이 내려간다',
+     cellOf(0, 0).valign === 2 && y133b > y133a, 'y ' + y133a + '→' + y133b);
+
+  hwTable.setCellFmt({ cmL: 500, cmR: 500, cmT: 500, cmB: 500 });
+  /* ★ 새 표는 cellFmt 를 따로 안 보낸다(아직 oid 가 없다) — 서식은 addTable 꾸러미에 실려 가야 한다.
+     여기서 보는 것이 그 자리다. */
+  var pay134 = null, all134 = hwBuildOps();
+  for (var q134 = 0; q134 < all134.length; q134++)
+    if (all134[q134].op === 'addTable' && all134[q134].tmpId === obj131.tmpId) pay134 = all134[q134];
+  var pc134 = pay134 ? pay134.cells[0] : null;
+  ok('134 칸 안 여백·세로 맞춤·테두리가 모델과 addTable 꾸러미에 들어간다',
+     cellOf(0, 0).mlHu === 500 && !!pc134 && pc134.mlHu === 500 && pc134.valign === 2 && pc134.bf > 0,
+     '모델 ' + cellOf(0, 0).mlHu + ', 꾸러미 ' + (pc134 ? pc134.mlHu + '/valign ' + pc134.valign + '/bf ' + pc134.bf : '없음'));
+
+  hwCaret.set(cellOf(0, 0).paras[0].id, 0, false);
+  hwTable.selectRange('table');
+  key('p');
+  var f135 = dlgSet('omL', 2) && dlgSet('omR', 2) && dlgSet('omT', 1) && dlgSet('omB', 1);
+  dlgPress('설정');
+  ok('135 표 속성 P — 바깥 여백이 개체에 들어간다',
+     f135 && !hwDialog.isOpen() && obj131.omLHu === 567 && obj131.omTHu === 283,
+     '바깥 ' + obj131.omLHu + '/' + obj131.omRHu + '/' + obj131.omTHu + '/' + obj131.omBHu);
+
+  hwCaret.set(cellOf(0, 0).paras[0].id, 0, false);
+  hwTable.selectRange('table');
+  key('p');
+  var f136 = dlgSet('divide', '0');
+  dlgPress('설정');
+  ok('136 쪽 경계에서 나누지 않음', f136 && obj131.table.divide === 0, 'divide ' + obj131.table.divide);
+
+  hwCaret.set(cellOf(0, 0).paras[0].id, 0, false);
+  hwTable.selectRange('table');
+  key('p');
+  var f137 = dlgSet('repeatHeader', true) && dlgSet('head', true);
+  dlgPress('설정');
+  ok('137 제목 줄 반복과 제목 칸',
+     f137 && obj131.table.repeatHeader === true && cellOf(0, 0).head === true,
+     '반복 ' + obj131.table.repeatHeader + ', 제목 칸 ' + cellOf(0, 0).head);
+
+  hwCaret.set(cellOf(0, 0).paras[0].id, 0, false);
+  hwTable.selectRange('table');
+  key('p');
+  var d138 = hwDialog.current();
+  var tabs138 = d138 ? d138.el.querySelectorAll('.hw-dlg-tab').length : 0;
+  dlgPress('취소');
+  ok('138 표 속성이 2탭으로 열리고 값이 실려 있다', tabs138 === 2 && !hwDialog.isOpen(), '탭 ' + tabs138 + '개');
+
+  hwTable.selectRange('table');
+  key('b');
+  var d139 = hwDialog.current();
+  var tabs139 = d139 ? d139.el.querySelectorAll('.hw-dlg-tab').length : 0;
+  dlgPress('취소');
+  ok('139 테두리/배경이 2탭으로 열린다', tabs139 === 2 && !hwDialog.isOpen(), '탭 ' + tabs139 + '개');
+
+  hwTable.clearBlock();
+  if (window.hwObj) hwObj.clear();
+}
+
 function firstCellPara() {
   for (var si = 0; si < hwDoc.sections.length; si++) {
     var paras = hwDoc.sections[si].paras;
@@ -2247,6 +2484,7 @@ function hwSave(saveAs) {
     /* ★ 모양 목록을 통째로 같이 보낸다. 화면이 새로 만든 모양이 뒤에 붙어 있고,
        문서 쪽은 그중 이미 있는 것은 다시 쓰고 없는 것만 등록한다. */
     charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
+    borderFills: hwDoc.borderFills,
     ops: ops
   });
   /* ★ 표에 넣은 새 칸에 친 글자는 이번 저장에 안 실린다 — 문서 쪽이 그 칸을 새로 만들기 때문이다.

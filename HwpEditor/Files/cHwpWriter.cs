@@ -41,9 +41,11 @@ namespace HwpEditor.Files
 
             // ★ 모양을 먼저 등록한다. 화면이 매긴 번호와 문서 번호가 다를 수 있고(같은 모양 재사용),
             //   그 표가 있어야 아래에서 runs 의 cs 와 문단의 ps 를 옮겨 적을 수 있다.
+            // ★ 테두리/배경 표가 <b>맨 먼저</b>다 — 문단모양과 칸이 그 번호를 가리킨다.
             cShapes = new cShapeMap();
-            cShapes.Cs = cShapeWriter.RegisterCharShapes(pFile, pReq.CharShapes);
-            cShapes.Ps = cShapeWriter.RegisterParaShapes(pFile, pReq.ParaShapes);
+            cShapes.Bf = cShapeWriter.RegisterBorderFills(pFile, pReq.BorderFills);
+            cShapes.Cs = cShapeWriter.RegisterCharShapes(pFile, pReq.CharShapes, cShapes.Bf);
+            cShapes.Ps = cShapeWriter.RegisterParaShapes(pFile, pReq.ParaShapes, cShapes.Bf);
 
             IList<EditOp> pOps = pReq.Ops;
 
@@ -63,18 +65,84 @@ namespace HwpEditor.Files
             bool rebuilt = cTableWriter.Apply(pIndex, pOps);
             if (pResult != null && rebuilt) pResult.Reload = true;
 
+            // ★ 서식은 구조 <b>뒤</b>다 — 표를 다시 세우면 칸 객체가 새것이라 앞서 건 서식이 사라진다.
+            ApplyFormatOps(pIndex, pOps);
+
             if (pResult != null)
             {
                 pResult.CsMap = cShapes.Cs;
                 pResult.PsMap = cShapes.Ps;
+                pResult.BfMap = cShapes.Bf;
             }
             cShapes = null;
+        }
+
+        /// <summary>
+        /// 칸·표 서식(<c>cellFmt</c>·<c>tableFmt</c>). 구조를 안 바꾸므로 <see cref="SaveResult.Reload"/> 는 안 켠다.
+        /// </summary>
+        private static void ApplyFormatOps(cHwpIndex pIndex, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "cellFmt" && op.Op != "tableFmt") continue;
+
+                cObjRef r;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out r)) continue;
+                ControlTable tbl = r.Control as ControlTable;
+                if (tbl == null) continue;
+
+                if (op.Op == "tableFmt") { ApplyTableFmt(tbl, op); continue; }
+
+                foreach (Row row in tbl.RowList)
+                    foreach (Cell cell in row.CellList)
+                    {
+                        ListHeaderForCell h = cell.ListHeader;
+                        if (h == null || !InRect(op, h.RowIndex, h.ColIndex)) continue;
+
+                        if (op.Bf.HasValue) h.BorderFillId = cShapeWriter.Map(cShapes.Bf, op.Bf.Value);
+                        if (op.Valign.HasValue) h.Property.TextVerticalAlignment =
+                                (HwpLib.Object.BodyText.Control.Gso.TextBox.TextVerticalAlignment)op.Valign.Value;
+                        if (op.Head.HasValue) h.Property.TitleCell = op.Head.Value;
+                        if (op.CmL.HasValue) h.LeftMargin = (int)op.CmL.Value;
+                        if (op.CmR.HasValue) h.RightMargin = (int)op.CmR.Value;
+                        if (op.CmT.HasValue) h.TopMargin = (int)op.CmT.Value;
+                        if (op.CmB.HasValue) h.BottomMargin = (int)op.CmB.Value;
+                    }
+            }
+        }
+
+        private static void ApplyTableFmt(ControlTable pTbl, EditOp pOp)
+        {
+            if (pTbl.Table != null)
+            {
+                if (pOp.Bf.HasValue) pTbl.Table.BorderFillId = cShapeWriter.Map(cShapes.Bf, pOp.Bf.Value);
+                if (pOp.Divide.HasValue) pTbl.Table.Property.DivideAtPageBoundary = (DivideAtPageBoundary)pOp.Divide.Value;
+                if (pOp.RepeatHeader.HasValue) pTbl.Table.Property.AutoRepeatTitleRow = pOp.RepeatHeader.Value;
+            }
+
+            CtrlHeaderGso gso = pTbl.GetHeader() as CtrlHeaderGso;
+            if (gso == null) return;
+            if (pOp.OmL.HasValue) gso.OutterMarginLeft = (int)pOp.OmL.Value;
+            if (pOp.OmR.HasValue) gso.OutterMarginRight = (int)pOp.OmR.Value;
+            if (pOp.OmT.HasValue) gso.OutterMarginTop = (int)pOp.OmT.Value;
+            if (pOp.OmB.HasValue) gso.OutterMarginBottom = (int)pOp.OmB.Value;
+        }
+
+        /// <summary>칸 사각형 안인가. 값이 안 온 변(-1)은 <b>제한 없음</b>이다.</summary>
+        private static bool InRect(EditOp pOp, int pRow, int pCol)
+        {
+            if (pOp.R0 >= 0 && pRow < pOp.R0) return false;
+            if (pOp.R1 >= 0 && pRow > pOp.R1) return false;
+            if (pOp.C0 >= 0 && pCol < pOp.C0) return false;
+            if (pOp.C1 >= 0 && pCol > pOp.C1) return false;
+            return true;
         }
 
         private sealed class cShapeMap
         {
             public int[] Cs;
             public int[] Ps;
+            public int[] Bf;
         }
 
         [ThreadStatic]
@@ -492,11 +560,21 @@ namespace HwpEditor.Files
                 h.Property.SetVertRelTo(VertRelTo.Para);
             }
 
+            /* ★ 표 서식도 여기서 받는다 — 새 표에는 tableFmt 를 보낼 길이 없다(oid 가 아직 없다).
+               안 받으면 표를 넣고 건 "쪽 경계·제목 줄 반복·바깥 여백" 이 첫 저장에서 통째로 빠진다. */
+            if (pOp.OmL.HasValue) h.OutterMarginLeft = (int)pOp.OmL.Value;
+            if (pOp.OmR.HasValue) h.OutterMarginRight = (int)pOp.OmR.Value;
+            if (pOp.OmT.HasValue) h.OutterMarginTop = (int)pOp.OmT.Value;
+            if (pOp.OmB.HasValue) h.OutterMarginBottom = (int)pOp.OmB.Value;
+
             Table t = tbl.Table;
             t.RowCount = rows;
             t.ColumnCount = cols;
             t.CellSpacing = 0;
-            t.BorderFillId = bf;
+            t.BorderFillId = pOp.Bf.HasValue && pOp.Bf.Value > 0
+                           ? cShapeWriter.Map(cShapes == null ? null : cShapes.Bf, pOp.Bf.Value) : bf;
+            if (pOp.Divide.HasValue) t.Property.DivideAtPageBoundary = (DivideAtPageBoundary)pOp.Divide.Value;
+            if (pOp.RepeatHeader.HasValue) t.Property.AutoRepeatTitleRow = pOp.RepeatHeader.Value;
             t.ClearCellCountOfRowList();
 
             for (int r = 0; r < rows; r++)
@@ -530,7 +608,12 @@ namespace HwpEditor.Files
             lh.RightMargin = (int)pModel.MrHu;
             lh.TopMargin = (int)pModel.MtHu;
             lh.BottomMargin = (int)pModel.MbHu;
-            lh.BorderFillId = pBorderFill;
+            /* 칸이 자기 테두리를 들고 오면 그것을 쓴다 — 새 표에는 cellFmt 를 못 보낸다(그 표는 아직
+               문서에 없어 oid 가 없다). 서식이 이 꾸러미에 실려야 첫 저장에 같이 들어간다. */
+            lh.BorderFillId = pModel.Bf > 0 ? cShapeWriter.Map(cShapes == null ? null : cShapes.Bf, pModel.Bf) : pBorderFill;
+            lh.Property.TextVerticalAlignment =
+                (HwpLib.Object.BodyText.Control.Gso.TextBox.TextVerticalAlignment)pModel.Valign;
+            lh.Property.TitleCell = pModel.Head;
             lh.TextWidth = Math.Max(0, pModel.WHu - pModel.MlHu - pModel.MrHu);
             lh.ParaCount = Math.Max(1, pModel.Paras.Count);
 

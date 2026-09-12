@@ -18,17 +18,43 @@ namespace HwpEditor.Files
     /// </summary>
     public static class cHwpxShapeWriter
     {
-        public static int[] RegisterCharShapes(XmlDocument pHeader, IList<CharShapeModel> pList)
+        public static int[] RegisterCharShapes(XmlDocument pHeader, IList<CharShapeModel> pList, int[] pBfMap)
         {
-            return Register(pHeader, "charProperties", "charPr", pList == null ? 0 : pList.Count,
-                delegate (XmlElement el, int i) { ApplyChar(el, pList[i]); },
+            int have = BorderFillCount(pHeader);
+            return Register(pHeader, "charProperties", "charPr", pList == null ? 0 : pList.Count, 0,
+                delegate (XmlElement el, int i) { ApplyChar(el, pList[i], pBfMap, have); },
                 delegate (int i) { return pList[i].Base; });
         }
 
-        public static int[] RegisterParaShapes(XmlDocument pHeader, IList<ParaShapeModel> pList)
+        public static int[] RegisterParaShapes(XmlDocument pHeader, IList<ParaShapeModel> pList, int[] pBfMap)
         {
-            return Register(pHeader, "paraProperties", "paraPr", pList == null ? 0 : pList.Count,
-                delegate (XmlElement el, int i) { ApplyPara(el, pList[i]); },
+            int have = BorderFillCount(pHeader);
+            return Register(pHeader, "paraProperties", "paraPr", pList == null ? 0 : pList.Count, 0,
+                delegate (XmlElement el, int i) { ApplyPara(el, pList[i], pBfMap, have); },
+                delegate (int i) { return pList[i].Base; });
+        }
+
+        private static int BorderFillCount(XmlDocument pHeader)
+        {
+            return ChildrenNamed(Find(pHeader, "borderFills"), "borderFill").Count;
+        }
+
+        /// <summary>
+        /// ★ hwp 쪽 <c>cShapeWriter.MapBf</c> 와 같은 규칙 — 문서에 없는 번호는 안 쓰고 원본 값을 지킨다.
+        /// </summary>
+        private static string MapBf(XmlElement pEl, int[] pMap, int pValue, int pHave)
+        {
+            int to = cShapeWriter.Map(pMap, pValue);
+            if (to >= 0 && to <= pHave) return Str(to);
+            XmlAttribute had = pEl.Attributes["borderFillIDRef"];
+            return had == null ? "1" : had.Value;
+        }
+
+        /// <summary>★ 테두리/배경만 <b>번호가 1부터</b>다 — 모델 목록의 0번 자리는 비어 있다.</summary>
+        public static int[] RegisterBorderFills(XmlDocument pHeader, IList<BorderFillModel> pList)
+        {
+            return Register(pHeader, "borderFills", "borderFill", pList == null ? 0 : pList.Count, 1,
+                delegate (XmlElement el, int i) { ApplyBorderFill(el, pList[i]); },
                 delegate (int i) { return pList[i].Base; });
         }
 
@@ -36,29 +62,29 @@ namespace HwpEditor.Files
         private delegate int cBaseOf(int pIndex);
 
         private static int[] Register(XmlDocument pHeader, string pGroupLocal, string pItemLocal,
-                                      int pWanted, cApply pApply, cBaseOf pBase)
+                                      int pWanted, int pIdBase, cApply pApply, cBaseOf pBase)
         {
             XmlElement group = Find(pHeader, pGroupLocal);
             List<XmlElement> have = ChildrenNamed(group, pItemLocal);
 
-            int baseCount = have.Count;
+            int baseCount = have.Count + pIdBase;
             int[] map = new int[Math.Max(pWanted, baseCount)];
-            for (int i = 0; i < map.Length; i++) map[i] = i < baseCount ? i : 0;
+            for (int i = 0; i < map.Length; i++) map[i] = i < baseCount ? i : pIdBase;
             if (group == null || pWanted <= baseCount) return map;
 
             for (int i = baseCount; i < pWanted; i++)
             {
                 int from = pBase(i);
                 if (from >= 0 && from < i && from < map.Length) from = map[from];
-                if (from < 0 || from >= have.Count) from = 0;
+                if (from < pIdBase || from - pIdBase >= have.Count) from = pIdBase;
 
-                XmlElement want = (XmlElement)have[from].CloneNode(true);
+                XmlElement want = (XmlElement)have[from - pIdBase].CloneNode(true);
                 pApply(want, i);
 
                 int same = FindSame(have, want);
-                if (same >= 0) { map[i] = same; continue; }
+                if (same >= 0) { map[i] = same + pIdBase; continue; }
 
-                int id = have.Count;
+                int id = have.Count + pIdBase;
                 want.SetAttribute("id", id.ToString(CultureInfo.InvariantCulture));
                 group.AppendChild(want);
                 have.Add(want);
@@ -85,17 +111,20 @@ namespace HwpEditor.Files
 
         #region 글자모양
 
-        private static void ApplyChar(XmlElement pEl, CharShapeModel pModel)
+        private static void ApplyChar(XmlElement pEl, CharShapeModel pModel, int[] pBfMap, int pBfHave)
         {
             pEl.SetAttribute("height", Str(pModel.SizeHu));
             if (!string.IsNullOrEmpty(pModel.Color)) pEl.SetAttribute("textColor", pModel.Color);
+            pEl.SetAttribute("shadeColor", pModel.Shade ?? "none");
+            pEl.SetAttribute("symMark", cBorderMap.HwpxEmph(pModel.Emph));
+            pEl.SetAttribute("borderFillIDRef", MapBf(pEl, pBfMap, pModel.Bf, pBfHave));
 
             SetForAll(Child(pEl, "fontRef"), pModel.Face);
             SetForAll(Child(pEl, "ratio"), pModel.Ratio);
             SetForAll(Child(pEl, "spacing"), pModel.Spacing);
 
-            Toggle(pEl, "bold", pModel.Bold);
-            Toggle(pEl, "italic", pModel.Italic);
+            Toggle(pEl, "bold", pModel.Bold, cBeforeBold);
+            Toggle(pEl, "italic", pModel.Italic, cBeforeBold);
 
             // ★ 요소가 없으면 <b>만들어서</b> 쓴다. 있을 때만 고치면, 원본에 밑줄 요소가 없는 글자모양에
             //   밑줄을 걸었을 때 아무 일도 안 일어난다 — 화면에는 밑줄이 그어지고 파일에만 안 들어간다.
@@ -103,17 +132,38 @@ namespace HwpEditor.Files
             ul.SetAttribute("type", pModel.Underline == 0 ? "NONE"
                                   : pModel.Underline == 2 ? "CENTER"
                                   : pModel.Underline == 3 ? "TOP" : "BOTTOM");
-            if (ul.Attributes["shape"] == null) ul.SetAttribute("shape", "SOLID");
-            if (ul.Attributes["color"] == null) ul.SetAttribute("color", "#000000");
+            ul.SetAttribute("shape", cBorderMap.HwpxTypeOf(pModel.UlShape));
+            ul.SetAttribute("color", pModel.UlColor ?? "#000000");
 
             XmlElement st = Need(pEl, "strikeout", cBeforeStrikeout);
             st.SetAttribute("shape", pModel.Strike ? "SOLID" : "NONE");
             if (st.Attributes["color"] == null) st.SetAttribute("color", "#000000");
+
+            XmlElement ol = Need(pEl, "outline", cBeforeOutline);
+            ol.SetAttribute("type", cBorderMap.HwpxOutline(pModel.Outline));
+
+            XmlElement sh = Need(pEl, "shadow", cBeforeShadow);
+            sh.SetAttribute("type", cBorderMap.HwpxShadow(pModel.Shadow));
+            if (sh.Attributes["color"] == null) sh.SetAttribute("color", "#B2B2B2");
+            if (sh.Attributes["offsetX"] == null) sh.SetAttribute("offsetX", "10");
+            if (sh.Attributes["offsetY"] == null) sh.SetAttribute("offsetY", "10");
+
+            Toggle(pEl, "emboss", pModel.Emboss, cBeforeEmboss);
+            Toggle(pEl, "engrave", pModel.Engrave, cBeforeEngrave);
+            Toggle(pEl, "supscript", pModel.Sup, cBeforeSup);
+            Toggle(pEl, "subscript", pModel.Sub, cNothingAfter);
         }
 
         /* 스키마 차례상 이 요소들보다 앞에 와야 한다. 먼저 찾히는 것 앞에 끼운다. */
         private static readonly string[] cBeforeUnderline = { "strikeout", "outline", "shadow", "emboss", "engrave" };
         private static readonly string[] cBeforeStrikeout = { "outline", "shadow", "emboss", "engrave" };
+        private static readonly string[] cBeforeOutline = { "shadow", "emboss", "engrave", "supscript", "subscript" };
+        private static readonly string[] cBeforeShadow = { "emboss", "engrave", "supscript", "subscript" };
+        private static readonly string[] cBeforeBold = { "underline", "strikeout", "outline", "shadow" };
+        private static readonly string[] cBeforeEmboss = { "engrave", "supscript", "subscript" };
+        private static readonly string[] cBeforeEngrave = { "supscript", "subscript" };
+        private static readonly string[] cBeforeSup = { "subscript" };
+        private static readonly string[] cNothingAfter = { };
 
         private static XmlElement Need(XmlElement pParent, string pLocal, string[] pBefore)
         {
@@ -143,7 +193,7 @@ namespace HwpEditor.Files
         /// ★ 넣는 자리가 정해져 있다 — <c>offset</c> 뒤, <c>underline</c> 앞. 아무 데나 붙이면
         ///   여는 쪽이 스키마 차례를 어겼다고 볼 수 있다.
         /// </summary>
-        private static void Toggle(XmlElement pParent, string pLocal, bool pOn)
+        private static void Toggle(XmlElement pParent, string pLocal, bool pOn, string[] pBefore)
         {
             XmlElement had = Child(pParent, pLocal);
             if (!pOn)
@@ -154,17 +204,123 @@ namespace HwpEditor.Files
             if (had != null) return;
 
             XmlElement made = pParent.OwnerDocument.CreateElement(pParent.Prefix, pLocal, pParent.NamespaceURI);
-            XmlElement before = Child(pParent, "underline") ?? Child(pParent, "strikeout");
+            XmlElement before = null;
+            for (int i = 0; i < pBefore.Length && before == null; i++) before = Child(pParent, pBefore[i]);
+
             if (before != null) pParent.InsertBefore(made, before);
             else pParent.AppendChild(made);
         }
 
         #endregion
 
+        #region 테두리/배경
+
+        private static void ApplyBorderFill(XmlElement pEl, BorderFillModel pModel)
+        {
+            WriteBorder(Child(pEl, "leftBorder"), pModel.L);
+            WriteBorder(Child(pEl, "rightBorder"), pModel.R);
+            WriteBorder(Child(pEl, "topBorder"), pModel.T);
+            WriteBorder(Child(pEl, "bottomBorder"), pModel.B);
+            WriteBorder(Child(pEl, "diagonal"), pModel.D);
+
+            XmlElement brush = Find(pEl, "winBrush");
+            if (brush == null)
+            {
+                if (pModel.Fill == null && pModel.Pat == "none") return;
+                brush = MakeBrush(pEl);
+                if (brush == null) return;
+            }
+
+            brush.SetAttribute("faceColor", pModel.Fill ?? "none");
+            brush.SetAttribute("hatchStyle", cBorderMap.HwpxPatOf(pModel.Pat));
+            brush.SetAttribute("hatchColor", pModel.PatColor);
+            if (brush.Attributes["alpha"] == null) brush.SetAttribute("alpha", "0");
+        }
+
+        private static void WriteBorder(XmlElement pEl, BorderLineModel pModel)
+        {
+            if (pEl == null || pModel == null) return;
+            pEl.SetAttribute("type", cBorderMap.HwpxTypeOf(pModel.Type));
+            pEl.SetAttribute("width", cBorderMap.HwpxWidthOf(pModel.W));
+            pEl.SetAttribute("color", pModel.Color);
+        }
+
+        /// <summary>
+        /// <c>hc:fillBrush/hc:winBrush</c> 를 만들어 붙인다. ★ 이름공간을 문서에서 가져온다 —
+        /// 접두사만 맞춘 요소를 붙이면 여는 쪽이 아예 다른 요소로 본다.
+        /// </summary>
+        private static XmlElement MakeBrush(XmlElement pBorderFill)
+        {
+            XmlDocument doc = pBorderFill.OwnerDocument;
+            string hc = doc.DocumentElement == null ? null : doc.DocumentElement.GetNamespaceOfPrefix("hc");
+            if (string.IsNullOrEmpty(hc)) return null;
+
+            XmlElement fillBrush = doc.CreateElement("hc", "fillBrush", hc);
+            XmlElement winBrush = doc.CreateElement("hc", "winBrush", hc);
+            fillBrush.AppendChild(winBrush);
+            pBorderFill.AppendChild(fillBrush);
+            return winBrush;
+        }
+
+        /// <summary>
+        /// 새 표가 쓸 테두리. hwp 쪽 <c>cHwpWriter.TableBorderFill</c> 과 <b>같은 규칙</b>이다 —
+        /// 문서에 있는 "네 변 실선" 을 다시 쓰고, 없을 때만 만든다.
+        /// ★ 예전에는 <c>"1"</c> 고정이었다. 그 문서의 1번이 테두리가 아니면 표가 선 없이 보인다.
+        /// </summary>
+        public static int TableBorderFill(XmlDocument pHeader)
+        {
+            XmlElement group = Find(pHeader, "borderFills");
+            List<XmlElement> have = ChildrenNamed(group, "borderFill");
+
+            for (int i = 0; i < have.Count; i++)
+                if (AllSolid(have[i])) return i + 1;
+
+            if (group == null || have.Count == 0) return 1;
+
+            XmlElement made = (XmlElement)have[0].CloneNode(true);
+            string[] sides = { "leftBorder", "rightBorder", "topBorder", "bottomBorder" };
+            for (int i = 0; i < sides.Length; i++)
+            {
+                XmlElement side = Child(made, sides[i]);
+                if (side == null) continue;
+                side.SetAttribute("type", "SOLID");
+                side.SetAttribute("width", "0.12 mm");
+                side.SetAttribute("color", "#000000");
+            }
+
+            int id = have.Count + 1;
+            made.SetAttribute("id", id.ToString(CultureInfo.InvariantCulture));
+            group.AppendChild(made);
+            group.SetAttribute("itemCnt", id.ToString(CultureInfo.InvariantCulture));
+            return id;
+        }
+
+        private static bool AllSolid(XmlElement pEl)
+        {
+            string[] sides = { "leftBorder", "rightBorder", "topBorder", "bottomBorder" };
+            for (int i = 0; i < sides.Length; i++)
+            {
+                XmlElement side = Child(pEl, sides[i]);
+                if (side == null || side.GetAttribute("type") != "SOLID") return false;
+            }
+            return true;
+        }
+
+        #endregion
+
         #region 문단모양
 
-        private static void ApplyPara(XmlElement pEl, ParaShapeModel pModel)
+        private static void ApplyPara(XmlElement pEl, ParaShapeModel pModel, int[] pBfMap, int pBfHave)
         {
+            foreach (XmlElement bd in AllNamed(pEl, "border"))
+            {
+                bd.SetAttribute("borderFillIDRef", MapBf(bd, pBfMap, pModel.Bf, pBfHave));
+                bd.SetAttribute("offsetLeft", Str(pModel.BsL));
+                bd.SetAttribute("offsetRight", Str(pModel.BsR));
+                bd.SetAttribute("offsetTop", Str(pModel.BsT));
+                bd.SetAttribute("offsetBottom", Str(pModel.BsB));
+            }
+
             foreach (XmlElement al in AllNamed(pEl, "align"))
                 al.SetAttribute("horizontal", AlignName(pModel.Align));
 

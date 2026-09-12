@@ -23,6 +23,10 @@ namespace HwpEditor.Models
         [JsonProperty("faceNames")] public List<FaceNameModel> FaceNames = new List<FaceNameModel>();
         [JsonProperty("charShapes")] public List<CharShapeModel> CharShapes = new List<CharShapeModel>();
         [JsonProperty("paraShapes")] public List<ParaShapeModel> ParaShapes = new List<ParaShapeModel>();
+
+        /// <summary>테두리/배경 표. ★ 번호가 1부터라 0번 자리는 비어 있다(<see cref="BorderFillModel"/>).</summary>
+        [JsonProperty("borderFills")] public List<BorderFillModel> BorderFills = new List<BorderFillModel>();
+
         [JsonProperty("sections")] public List<SectionModel> Sections = new List<SectionModel>();
     }
 
@@ -151,6 +155,12 @@ namespace HwpEditor.Models
         [JsonProperty("ctrl", NullValueHandling = NullValueHandling.Ignore)] public string Ctrl;
         [JsonProperty("label", NullValueHandling = NullValueHandling.Ignore)] public string Label;
 
+        /// <summary>개체 바깥 여백(HWPUNIT). 표 속성의 "바깥 여백" 이 이것이다.</summary>
+        [JsonProperty("omLHu")] public long OmLHu;
+        [JsonProperty("omRHu")] public long OmRHu;
+        [JsonProperty("omTHu")] public long OmTHu;
+        [JsonProperty("omBHu")] public long OmBHu;
+
         [JsonProperty("table", NullValueHandling = NullValueHandling.Ignore)] public TableModel Table;
     }
 
@@ -158,6 +168,16 @@ namespace HwpEditor.Models
     {
         [JsonProperty("rows")] public int Rows;
         [JsonProperty("cols")] public int Cols;
+
+        /// <summary>표 전체가 가리키는 <see cref="BorderFillModel"/> 번호. 0 이면 없음.</summary>
+        [JsonProperty("bf")] public int Bf;
+
+        /// <summary>쪽 경계에서 0=나누지 않음 1=셀 단위로 나눔 2=나눔.</summary>
+        [JsonProperty("divide")] public int Divide;
+
+        /// <summary>제목 줄을 쪽마다 반복한다.</summary>
+        [JsonProperty("repeatHeader")] public bool RepeatHeader;
+
         [JsonProperty("cells")] public List<CellModel> Cells = new List<CellModel>();
     }
 
@@ -175,6 +195,15 @@ namespace HwpEditor.Models
         [JsonProperty("mrHu")] public long MrHu;
         [JsonProperty("mtHu")] public long MtHu;
         [JsonProperty("mbHu")] public long MbHu;
+
+        /// <summary>칸이 가리키는 <see cref="BorderFillModel"/> 번호. 0 이면 없음.</summary>
+        [JsonProperty("bf")] public int Bf;
+
+        /// <summary>세로 맞춤 0=위 1=가운데 2=아래(덤프 5-8).</summary>
+        [JsonProperty("valign")] public int Valign;
+
+        /// <summary>제목 칸(쪽마다 반복할 줄).</summary>
+        [JsonProperty("head")] public bool Head;
 
         [JsonProperty("paras")] public List<ParagraphModel> Paras = new List<ParagraphModel>();
     }

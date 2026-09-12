@@ -298,6 +298,7 @@ namespace HwpEditor.Files
             {
                 pResult.CharShapes = cHwpxReader.CharShapesOf(cHeader);
                 pResult.ParaShapes = cHwpxReader.ParaShapesOf(cHeader);
+                pResult.BorderFills = cHwpxReader.BorderFillsOf(cHeader);
             }
         }
 

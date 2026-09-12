@@ -18,8 +18,14 @@ var hwFormat = (function () {
   var cPending = null;      /* { base: 글자모양번호, over: {바꿀 속성} } */
   var cPendingAt = null;
 
-  var cCharKeys = ['face', 'sizeHu', 'bold', 'italic', 'underline', 'strike', 'color', 'ratio', 'spacing'];
-  var cParaKeys = ['align', 'indentHu', 'mlHu', 'mrHu', 'mtHu', 'mbHu', 'lsType', 'ls', 'latinBreak', 'hangulByWord'];
+  /* ★ 새 글자 효과를 여기 <b>빠짐없이</b> 넣는다. 빠뜨린 속성은 비교에서 안 보여, 그것만 다른 두 모양이
+     하나로 합쳐진다 — 형광펜만 다른 글자에 형광펜이 조용히 사라지는 자리다.
+     C# 쪽 짝은 cShapeWriter.SameChar 다. */
+  var cCharKeys = ['face', 'sizeHu', 'bold', 'italic', 'underline', 'strike', 'color', 'ratio', 'spacing',
+                   'sup', 'sub', 'shade', 'ulShape', 'ulColor', 'emph', 'outline', 'shadow',
+                   'emboss', 'engrave', 'bf'];
+  var cParaKeys = ['align', 'indentHu', 'mlHu', 'mrHu', 'mtHu', 'mbHu', 'lsType', 'ls', 'latinBreak', 'hangulByWord',
+                   'bf', 'bsL', 'bsR', 'bsT', 'bsB'];
 
   function pick(src, keys) {
     var out = {};
@@ -59,6 +65,41 @@ var hwFormat = (function () {
     for (var k = 0; k < keys.length; k++) made[keys[k]] = want[keys[k]];
     list.push(made);
     return made.id;
+  }
+
+  /* 테두리/배경 표에서 원하는 줄을 찾거나 만들고 그 <b>번호</b>를 준다(글자·문단 모양과 같은 규칙).
+     ★ 번호는 1부터다 — 0 은 "가리키는 것 없음". base 가 0 이면 목록의 1번을 뿌리로 삼는다.
+     C# 쪽 짝은 cShapeWriter.RegisterBorderFills 다. */
+  function borderFillFor(baseId, over) {
+    var list = hwDoc.borderFills;
+    var root = baseId && list[baseId] ? (list[baseId].base > 0 ? list[baseId].base : baseId) : 1;
+    var from = list[root] || list[1];
+    if (!from) return 0;
+
+    var want = {
+      l: over.l || from.l, r: over.r || from.r, t: over.t || from.t, b: over.b || from.b,
+      d: from.d, fill: over.fill === undefined ? from.fill : over.fill,
+      pat: over.pat === undefined ? from.pat : over.pat,
+      patColor: over.patColor === undefined ? from.patColor : over.patColor
+    };
+
+    for (var i = 1; i < list.length; i++) if (sameFill(list[i], want)) return i;
+
+    var made = { id: list.length, base: root, l: want.l, r: want.r, t: want.t, b: want.b, d: want.d,
+                 fill: want.fill, pat: want.pat, patColor: want.patColor };
+    list.push(made);
+    return made.id;
+  }
+
+  function sameLine(a, b) {
+    if (!a || !b) return a === b;
+    return a.type === b.type && a.w === b.w && a.color === b.color;
+  }
+
+  function sameFill(a, b) {
+    return sameLine(a.l, b.l) && sameLine(a.r, b.r) && sameLine(a.t, b.t) && sameLine(a.b, b.b)
+        && sameLine(a.d, b.d) && (a.fill || null) === (b.fill || null)
+        && (a.pat || 'none') === (b.pat || 'none') && (a.patColor || '#000000') === (b.patColor || '#000000');
   }
 
   function eachRange(fn) {
@@ -200,6 +241,24 @@ var hwFormat = (function () {
     over[key] = key === 'underline' ? (allOn ? 0 : 1) : !allOn;
     applyChar(over);
   }
+
+  /* 위·아래 첨자. ★ 둘은 <b>같이 켜지지 않는다</b> — 한쪽을 켜면 다른 쪽을 끈다.
+     which: 'sup' | 'sub' | 'swap'(번갈아 — 덤프 4-2 Ctrl+Alt+A). */
+  function toggleScript(which) {
+    var cur = currentShape(hwCaret.para(), hwCaret.at().pos) || hwDoc.charShapes[0];
+    var on = { sup: false, sub: false };
+
+    if (which === 'swap') {
+      /* 없음 → 위 → 아래 → 없음 */
+      if (!cur.sup && !cur.sub) on.sup = true;
+      else if (cur.sup) on.sub = true;
+    } else if (!cur[which]) on[which] = true;
+
+    applyChar({ sup: on.sup, sub: on.sub });
+  }
+
+  /* 형광펜. color 가 null 이면 없앤다(흰색이 아니다 — CharShapeModel.Shade 주석). */
+  function setShade(color) { applyChar({ shade: color || null }); }
 
   /* 캐럿 자리에 걸린 글자모양의 <b>속성</b>. 대기 중인 서식은 아직 목록에 없으므로 그때만 임시로 만든다. */
   function currentShape(para, pos) {
@@ -387,6 +446,8 @@ var hwFormat = (function () {
     setAlign: setAlign,
     indent: indent,
     stepSize: stepSize,
+    toggleScript: toggleScript,
+    setShade: setShade,
     stepRatio: stepRatio,
     stepSpacing: stepSpacing,
     stepLineSpace: stepLineSpace,
@@ -398,6 +459,7 @@ var hwFormat = (function () {
     state: state,
     selectedChar: selectedChar,
     selectedPara: selectedPara,
-    charShapeWith: charShapeWith
+    charShapeWith: charShapeWith,
+    borderFillFor: borderFillFor
   };
 })();

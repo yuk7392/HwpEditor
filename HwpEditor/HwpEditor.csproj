@@ -87,6 +87,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="cWebHost.cs" />
+    <Compile Include="Files\cBorderMap.cs" />
     <Compile Include="Files\cDocument.cs" />
     <Compile Include="Files\cHwpDocument.cs" />
     <Compile Include="Files\cHwpIndex.cs" />

@@ -4,6 +4,8 @@ using System.Globalization;
 using HwpEditor.Models;
 using HwpLib.Object;
 using HwpLib.Object.DocInfo;
+using HwpLib.Object.DocInfo.BorderFill;
+using HwpLib.Object.DocInfo.BorderFill.FillInfo;
 using HwpLib.Object.DocInfo.CharShape;
 using HwpLib.Object.DocInfo.ParaShape;
 
@@ -22,7 +24,7 @@ namespace HwpEditor.Files
         /// 화면 목록을 문서에 맞추고 <b>화면 번호 → 문서 번호</b> 표를 준다.
         /// 원본 범위(0 … 기존 개수-1)는 그대로다.
         /// </summary>
-        public static int[] RegisterCharShapes(HWPFile pFile, IList<CharShapeModel> pList)
+        public static int[] RegisterCharShapes(HWPFile pFile, IList<CharShapeModel> pList, int[] pBfMap)
         {
             IReadOnlyList<CharShapeInfo> have = pFile.DocInfo.CharShapeList;
             int baseCount = have.Count;
@@ -41,7 +43,7 @@ namespace HwpEditor.Files
                 if (from < 0 || from >= have.Count) from = 0;
 
                 CharShapeInfo want = have.Count > 0 ? have[from].Clone() : new CharShapeInfo();
-                ApplyChar(want, m);
+                ApplyChar(want, m, pBfMap, pFile.DocInfo.BorderFillList.Count);
 
                 int same = FindChar(have, want);
                 if (same >= 0) { map[i] = same; continue; }
@@ -53,7 +55,119 @@ namespace HwpEditor.Files
             return map;
         }
 
-        public static int[] RegisterParaShapes(HWPFile pFile, IList<ParaShapeModel> pList)
+        /// <summary>
+        /// 테두리/배경 표. ★ 번호가 <b>1부터</b>라 표의 0번 자리는 쓰지 않는다(실측 table.hwp —
+        /// 목록이 2개인데 표가 2번을 가리킨다). <see cref="TableBorderFill"/> 을 여기로 올린 것이다.
+        /// </summary>
+        public static int[] RegisterBorderFills(HWPFile pFile, IList<BorderFillModel> pList)
+        {
+            IReadOnlyList<BorderFillInfo> have = pFile.DocInfo.BorderFillList;
+            int baseCount = have.Count + 1;
+            if (pList == null || pList.Count <= baseCount) return Identity(baseCount);
+
+            int[] map = new int[pList.Count];
+            for (int i = 0; i < baseCount && i < map.Length; i++) map[i] = i;
+
+            for (int i = baseCount; i < pList.Count; i++)
+            {
+                BorderFillModel m = pList[i];
+
+                int from = m.Base;
+                if (from >= 0 && from < map.Length && from < i) from = map[from];
+                if (from < 1 || from > have.Count) from = 1;
+
+                BorderFillInfo want = have.Count > 0 ? have[from - 1].Clone() : new BorderFillInfo();
+                ApplyBorderFill(want, m);
+
+                int same = FindBorderFill(have, want);
+                if (same >= 0) { map[i] = same + 1; continue; }
+
+                BorderFillInfo added = pFile.DocInfo.AddNewBorderFill();
+                CopyBorderFill(want, added);
+                map[i] = have.Count;
+            }
+            return map;
+        }
+
+        private static void ApplyBorderFill(BorderFillInfo pTo, BorderFillModel pFrom)
+        {
+            cBorderMap.Write(pTo.LeftBorder, pFrom.L);
+            cBorderMap.Write(pTo.RightBorder, pFrom.R);
+            cBorderMap.Write(pTo.TopBorder, pFrom.T);
+            cBorderMap.Write(pTo.BottomBorder, pFrom.B);
+            cBorderMap.Write(pTo.DiagonalBorder, pFrom.D);
+
+            // ★ 면 색·무늬는 <b>PatternFill 하나</b>에 들어 있고, 그것을 쓰려면 채우기 종류 비트도 켜야 한다.
+            //   비트만 켜고 실물을 안 만들면 되쓰기가 널을 만진다.
+            FillInfo fill = pTo.FillInfo;
+            if (fill == null) return;
+
+            if (pFrom.Fill == null && pFrom.Pat == "none")
+            {
+                // 그러데이션·그림 채우기는 원본에서 복제해 온 것이므로 건드리지 않는다.
+                if (fill.PatternFill != null) cBorderMap.SetNone(fill.PatternFill.BackColor);
+                return;
+            }
+
+            if (fill.PatternFill == null) fill.CreatePatternFill();
+            if (fill.PatternFill == null) return;
+            fill.Type.HasPatternFill = true;
+
+            if (pFrom.Fill == null) cBorderMap.SetNone(fill.PatternFill.BackColor);
+            else cBorderMap.SetHex(fill.PatternFill.BackColor, pFrom.Fill);
+
+            fill.PatternFill.PatternType = cBorderMap.PatOf(pFrom.Pat);
+            cBorderMap.SetHex(fill.PatternFill.PatternColor, pFrom.PatColor);
+        }
+
+        private static int FindBorderFill(IReadOnlyList<BorderFillInfo> pList, BorderFillInfo pWant)
+        {
+            for (int i = 0; i < pList.Count; i++) if (SameBorderFill(pList[i], pWant)) return i;
+            return -1;
+        }
+
+        private static bool SameBorderFill(BorderFillInfo a, BorderFillInfo b)
+        {
+            return a.Property.Value == b.Property.Value
+                && SameBorder(a.LeftBorder, b.LeftBorder)
+                && SameBorder(a.RightBorder, b.RightBorder)
+                && SameBorder(a.TopBorder, b.TopBorder)
+                && SameBorder(a.BottomBorder, b.BottomBorder)
+                && SameBorder(a.DiagonalBorder, b.DiagonalBorder)
+                && SameFill(a.FillInfo, b.FillInfo);
+        }
+
+        private static bool SameBorder(EachBorder a, EachBorder b)
+        {
+            if (a == null || b == null) return a == b;
+            return a.Type == b.Type && a.Thickness == b.Thickness && a.Color.Value == b.Color.Value;
+        }
+
+        private static bool SameFill(FillInfo a, FillInfo b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Type.Value != b.Type.Value) return false;
+
+            PatternFill pa = a.PatternFill, pb = b.PatternFill;
+            if (pa == null || pb == null) return pa == pb;
+            return pa.BackColor.Value == pb.BackColor.Value
+                && pa.PatternColor.Value == pb.PatternColor.Value
+                && pa.PatternType == pb.PatternType;
+        }
+
+        /// <summary><c>AddNewBorderFill()</c> 은 빈 것을 붙여 주기만 한다 — 내용은 여기서 옮긴다.</summary>
+        private static void CopyBorderFill(BorderFillInfo pFrom, BorderFillInfo pTo)
+        {
+            pTo.Property.Copy(pFrom.Property);
+            pTo.LeftBorder.Copy(pFrom.LeftBorder);
+            pTo.RightBorder.Copy(pFrom.RightBorder);
+            pTo.TopBorder.Copy(pFrom.TopBorder);
+            pTo.BottomBorder.Copy(pFrom.BottomBorder);
+            pTo.DiagonalBorder.Copy(pFrom.DiagonalBorder);
+            if (pFrom.FillInfo != null && pTo.FillInfo != null) pTo.FillInfo.Copy(pFrom.FillInfo);
+        }
+
+        public static int[] RegisterParaShapes(HWPFile pFile, IList<ParaShapeModel> pList, int[] pBfMap)
         {
             IReadOnlyList<ParaShapeInfo> have = pFile.DocInfo.ParaShapeList;
             int baseCount = have.Count;
@@ -71,7 +185,7 @@ namespace HwpEditor.Files
                 if (from < 0 || from >= have.Count) from = 0;
 
                 ParaShapeInfo want = have.Count > 0 ? have[from].Clone() : new ParaShapeInfo();
-                ApplyPara(want, m);
+                ApplyPara(want, m, pBfMap, pFile.DocInfo.BorderFillList.Count);
 
                 int same = FindPara(have, want);
                 if (same >= 0) { map[i] = same; continue; }
@@ -88,6 +202,17 @@ namespace HwpEditor.Files
             int[] map = new int[pCount];
             for (int i = 0; i < pCount; i++) map[i] = i;
             return map;
+        }
+
+        /// <summary>
+        /// 테두리/배경 번호를 옮기되 <b>문서에 없는 번호는 안 쓴다</b>. 화면이 테두리 표를 안 보냈는데
+        /// (검사 통로가 빠뜨리면 그렇다) 문단·글자가 새 번호를 가리키면, 그대로 쓰면 문서에 없는
+        /// 번호가 파일에 들어가 여는 쪽에서 테두리가 통째로 어긋난다 — 그때는 <b>원본 값을 지킨다</b>.
+        /// </summary>
+        private static int MapBf(int[] pMap, int pValue, int pHave, int pKeep)
+        {
+            int to = Map(pMap, pValue);
+            return (to >= 0 && to <= pHave) ? to : pKeep;
         }
 
         /// <summary>표를 지나 번호를 옮긴다. 표 밖이면 그대로 둔다 — 못 옮기는 번호로 바꾸는 것이 더 나쁘다.</summary>
@@ -123,7 +248,7 @@ namespace HwpEditor.Files
 
         #region 글자모양
 
-        private static void ApplyChar(CharShapeInfo pTo, CharShapeModel pFrom)
+        private static void ApplyChar(CharShapeInfo pTo, CharShapeModel pFrom, int[] pBfMap, int pBfHave)
         {
             pTo.FaceNameIds.SetForAll(pFrom.Face);
             pTo.BaseSize = pFrom.SizeHu;
@@ -134,6 +259,19 @@ namespace HwpEditor.Files
             pTo.Ratios.SetForAll((short)pFrom.Ratio);
             pTo.CharSpaces.SetForAll((sbyte)pFrom.Spacing);
             SetColor(pTo.CharColor, pFrom.Color);
+
+            pTo.Property.IsSuperScript = pFrom.Sup;
+            pTo.Property.IsSubScript = pFrom.Sub;
+            if (pFrom.Shade == null) cBorderMap.SetNone(pTo.ShadeColor);
+            else SetColor(pTo.ShadeColor, pFrom.Shade);
+            pTo.Property.UnderLineShape = cBorderMap.Type2Of(pFrom.UlShape);
+            SetColor(pTo.UnderLineColor, pFrom.UlColor);
+            pTo.Property.EmphasisSort = (EmphasisSort)pFrom.Emph;
+            pTo.Property.OutterLineSort = (OutterLineSort)pFrom.Outline;
+            pTo.Property.ShadowSort = (ShadowSort)pFrom.Shadow;
+            pTo.Property.IsEmboss = pFrom.Emboss;
+            pTo.Property.IsEngrave = pFrom.Engrave;
+            pTo.BorderFillId = MapBf(pBfMap, pFrom.Bf, pBfHave, pTo.BorderFillId);
         }
 
         private static UnderLineSort ToUnderLine(int pValue)
@@ -222,8 +360,14 @@ namespace HwpEditor.Files
         /// ★ 여백·들여쓰기·줄간격은 파일에 <b>lineseg 좌표의 2배</b>로 들어 있다.
         ///   읽을 때 반으로 줄였으니 쓸 때 두 배로 되돌린다. 안 그러면 저장할 때마다 여백이 반씩 준다.
         /// </summary>
-        private static void ApplyPara(ParaShapeInfo pTo, ParaShapeModel pFrom)
+        private static void ApplyPara(ParaShapeInfo pTo, ParaShapeModel pFrom, int[] pBfMap, int pBfHave)
         {
+            pTo.BorderFillId = MapBf(pBfMap, pFrom.Bf, pBfHave, pTo.BorderFillId);
+            pTo.LeftBorderSpace = (short)pFrom.BsL;
+            pTo.RightBorderSpace = (short)pFrom.BsR;
+            pTo.TopBorderSpace = (short)pFrom.BsT;
+            pTo.BottomBorderSpace = (short)pFrom.BsB;
+
             pTo.Property1.Alignment = ToAlign(pFrom.Align);
             pTo.Indent = pFrom.IndentHu * 2;
             pTo.LeftMargin = pFrom.MlHu * 2;

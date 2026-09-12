@@ -28,6 +28,7 @@ var hwUi = (function () {
     bind(el('hwFont'), function (v) { hwFormat.applyChar({ face: parseInt(v, 10) }); });
     bind(el('hwSize'), function (v) { hwFormat.applyChar({ sizeHu: parseInt(v, 10) * 100 }); });
     bind(el('hwColor'), function (v) { hwFormat.applyChar({ color: v }); });
+    bind(el('hwShade'), function (v) { hwFormat.setShade(v); });
     bind(el('hwLine'), function (v) { hwFormat.applyPara({ lsType: 'percent', ls: parseInt(v, 10) }); });
 
     var sb = el('hwStatusBar');
@@ -175,6 +176,8 @@ var hwUi = (function () {
     if (act) { if (act === 'undo') hwInput.undo(); else hwInput.redo(); hwInput.focus(); return; }
 
     var fmt = btn.getAttribute('data-fmt');
+    if (fmt === 'sup' || fmt === 'sub') { hwFormat.toggleScript(fmt); hwInput.focus(); return; }
+    if (fmt === 'noShade') { hwFormat.setShade(null); hwInput.focus(); return; }
     if (fmt) { hwFormat.toggleChar(fmt); hwInput.focus(); return; }
 
     var align = btn.getAttribute('data-align');
@@ -405,6 +408,14 @@ var hwUi = (function () {
           fn: function () { hwTable.sameSize(true); } },
         { label: '셀 높이를 같게', key: 'H', disabled: !blk || blk.rect.r1 <= blk.rect.r0,
           fn: function () { hwTable.sameSize(false); } },
+        '-',
+        { label: '테두리/배경…', key: 'B', fn: function () { hwDialog.cellBorder(); } },
+        { label: '셀 맞춤', sub: [
+          { label: '위쪽', fn: function () { hwTable.setCellFmt({ valign: 0 }); } },
+          { label: '가운데', fn: function () { hwTable.setCellFmt({ valign: 1 }); } },
+          { label: '아래쪽', fn: function () { hwTable.setCellFmt({ valign: 2 }); } }
+        ] },
+        { label: '표 속성…', key: 'P', fn: function () { hwDialog.tableProps(); } },
         '-');
     }
     if (kind !== 'cell')
@@ -441,6 +452,8 @@ var hwUi = (function () {
     mark('italic', !!st.cs.italic);
     mark('underline', (st.cs.underline || 0) !== 0);
     mark('strike', !!st.cs.strike);
+    mark('sup', !!st.cs.sup);
+    mark('sub', !!st.cs.sub);
 
     var bar = el('hwTools');
     var aligns = bar.querySelectorAll('[data-align]');
@@ -464,6 +477,7 @@ var hwUi = (function () {
     set(el('hwFont'), String(st.cs.face));
     set(el('hwSize'), String(Math.round(st.cs.sizeHu / 100)));
     set(el('hwColor'), st.cs.color || '#000000');
+    if (st.cs.shade) set(el('hwShade'), st.cs.shade);
     if (st.ps.lsType === 'percent') set(el('hwLine'), String(st.ps.ls));
 
     var ub = bar.querySelector('[data-act="undo"]'), rb = bar.querySelector('[data-act="redo"]');

@@ -78,6 +78,7 @@ namespace HwpEditor.Files
             {
                 pResult.CharShapes = cHwpReader.CharShapesOf(cFile.DocInfo);
                 pResult.ParaShapes = cHwpReader.ParaShapesOf(cFile.DocInfo);
+                pResult.BorderFills = cHwpReader.BorderFillsOf(cFile.DocInfo);
             }
         }
 

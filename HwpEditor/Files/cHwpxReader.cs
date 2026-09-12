@@ -48,6 +48,7 @@ namespace HwpEditor.Files
             if (pIndex != null) pIndex.Clear();
 
             ReadFaceNames(pHeader, doc);
+            ReadBorderFills(pHeader, doc);
             ReadCharShapes(pHeader, doc);
             ReadParaShapes(pHeader, doc);
 
@@ -242,6 +243,65 @@ namespace HwpEditor.Files
             return tmp.ParaShapes;
         }
 
+        public static List<BorderFillModel> BorderFillsOf(XmlDocument pHeader)
+        {
+            DocModel tmp = new DocModel();
+            ReadBorderFills(pHeader, tmp);
+            return tmp.BorderFills;
+        }
+
+        /// <summary>★ hwpx 도 번호가 1부터다 — 0번 자리는 비워 둔다.</summary>
+        private static void ReadBorderFills(XmlDocument pHeader, DocModel pDoc)
+        {
+            pDoc.BorderFills.Add(new BorderFillModel { Id = 0 });
+
+            List<XmlElement> list = FindAll(pHeader, "borderFill");
+            for (int i = 0; i < list.Count; i++)
+            {
+                XmlElement b = list[i];
+                BorderFillModel m = new BorderFillModel();
+                m.Id = NumI(b, "id", i + 1);
+                m.L = ReadBorderLine(Child(b, "leftBorder"));
+                m.R = ReadBorderLine(Child(b, "rightBorder"));
+                m.T = ReadBorderLine(Child(b, "topBorder"));
+                m.B = ReadBorderLine(Child(b, "bottomBorder"));
+                m.D = ReadBorderLine(Child(b, "diagonal"));
+
+                XmlElement brush = Find(b, "winBrush");
+                if (brush != null)
+                {
+                    m.Fill = HexColor(Attr(brush, "faceColor"));
+                    m.Pat = cBorderMap.PatFromHwpx(Attr(brush, "hatchStyle"));
+                    m.PatColor = HexColor(Attr(brush, "hatchColor")) ?? "#000000";
+                }
+
+                while (pDoc.BorderFills.Count <= m.Id) pDoc.BorderFills.Add(new BorderFillModel { Id = pDoc.BorderFills.Count });
+                pDoc.BorderFills[m.Id] = m;
+            }
+        }
+
+        private static BorderLineModel ReadBorderLine(XmlElement pEl)
+        {
+            BorderLineModel m = new BorderLineModel();
+            if (pEl == null) return m;
+            m.Type = cBorderMap.TypeFromHwpx(Attr(pEl, "type"));
+            m.W = cBorderMap.MmFromHwpx(Attr(pEl, "width"));
+            m.Color = HexColor(Attr(pEl, "color")) ?? "#000000";
+            return m;
+        }
+
+        /// <summary>
+        /// hwpx 색은 <c>"none"</c> 이거나 <c>"#RRGGBB"</c>, 또는 <b>알파가 앞에 붙은</b> <c>"#AARRGGBB"</c> 다
+        /// (실측 — <c>hatchColor="#FF000000"</c>). 화면은 6자리만 쓴다. 못 읽으면 null.
+        /// </summary>
+        private static string HexColor(string pText)
+        {
+            if (string.IsNullOrEmpty(pText) || pText == "none" || pText[0] != '#') return null;
+            if (pText.Length == 7) return pText;
+            if (pText.Length == 9) return "#" + pText.Substring(3);
+            return null;
+        }
+
         private static void ReadCharShapes(XmlDocument pHeader, DocModel pDoc)
         {
             List<XmlElement> list = FindAll(pHeader, "charPr");
@@ -274,9 +334,22 @@ namespace HwpEditor.Files
                             : ulType == "CENTER" ? 2
                             : ulType == "TOP" ? 3 : 1;
 
+                m.UlShape = cBorderMap.TypeFromHwpx(Attr(ul, "shape"));
+                m.UlColor = HexColor(Attr(ul, "color")) ?? "#000000";
+
                 XmlElement st = Child(c, "strikeout");
                 string stShape = Attr(st, "shape");
                 m.Strike = stShape != null && stShape != "NONE";
+
+                m.Sup = Child(c, "supscript") != null;
+                m.Sub = Child(c, "subscript") != null;
+                m.Shade = HexColor(Attr(c, "shadeColor"));
+                m.Emph = cBorderMap.EmphOf(Attr(c, "symMark"));
+                m.Outline = cBorderMap.OutlineOf(Attr(Child(c, "outline"), "type"));
+                m.Shadow = cBorderMap.ShadowOf(Attr(Child(c, "shadow"), "type"));
+                m.Emboss = Child(c, "emboss") != null;
+                m.Engrave = Child(c, "engrave") != null;
+                m.Bf = NumI(c, "borderFillIDRef", 0);
 
                 while (pDoc.CharShapes.Count <= m.Id) pDoc.CharShapes.Add(new CharShapeModel { Id = pDoc.CharShapes.Count, SizeHu = 1000, Color = "#000000" });
                 pDoc.CharShapes[m.Id] = m;
@@ -316,6 +389,16 @@ namespace HwpEditor.Files
                 XmlElement bs = Find(p, "breakSetting");
                 m.LatinBreak = LatinBreakName(Attr(bs, "breakLatinWord"));
                 m.HangulByWord = Attr(bs, "breakNonLatinWord") == "KEEP_WORD";
+
+                XmlElement bd = Find(p, "border");
+                if (bd != null)
+                {
+                    m.Bf = NumI(bd, "borderFillIDRef", 0);
+                    m.BsL = NumI(bd, "offsetLeft", 0);
+                    m.BsR = NumI(bd, "offsetRight", 0);
+                    m.BsT = NumI(bd, "offsetTop", 0);
+                    m.BsB = NumI(bd, "offsetBottom", 0);
+                }
 
                 while (pDoc.ParaShapes.Count <= m.Id) pDoc.ParaShapes.Add(new ParaShapeModel { Id = pDoc.ParaShapes.Count });
                 pDoc.ParaShapes[m.Id] = m;
@@ -513,6 +596,15 @@ namespace HwpEditor.Files
                 o.HHu = Num(sz, "height", 0);
             }
 
+            XmlElement om = Find(pEl, "outMargin");
+            if (om != null)
+            {
+                o.OmLHu = Num(om, "left", 0);
+                o.OmRHu = Num(om, "right", 0);
+                o.OmTHu = Num(om, "top", 0);
+                o.OmBHu = Num(om, "bottom", 0);
+            }
+
             XmlElement posEl = Find(pEl, "pos");
             if (posEl != null)
             {
@@ -586,11 +678,29 @@ namespace HwpEditor.Files
             }
         }
 
+        /// <summary>쪽 경계 나눔 — 모델 번호는 hwp <c>DivideAtPageBoundary</c> 를 따른다(0 안 나눔 … 2 나눔).</summary>
+        private static int DivideOf(string pText)
+        {
+            if (pText == "CELL") return 1;
+            if (pText == "TABLE") return 2;
+            return 0;
+        }
+
+        private static int ValignOf(string pText)
+        {
+            if (pText == "CENTER") return 1;
+            if (pText == "BOTTOM") return 2;
+            return 0;
+        }
+
         private static TableModel ToTable(XmlElement pTbl, string pOid, cHwpxIndex pMap)
         {
             TableModel t = new TableModel();
             t.Rows = NumI(pTbl, "rowCnt", 0);
             t.Cols = NumI(pTbl, "colCnt", 0);
+            t.Bf = NumI(pTbl, "borderFillIDRef", 0);
+            t.Divide = DivideOf(Attr(pTbl, "pageBreak"));
+            t.RepeatHeader = Flag(pTbl, "repeatHeader");
 
             List<XmlElement> rows = new List<XmlElement>();
             foreach (XmlNode n in pTbl.ChildNodes)
@@ -635,9 +745,13 @@ namespace HwpEditor.Files
                         cm.MbHu = Num(cmg, "bottom", ValueOf(cmg, "bottom", 0));
                     }
 
+                    cm.Bf = NumI(tc, "borderFillIDRef", 0);
+                    cm.Head = Flag(tc, "header");
+
                     XmlElement sub = Kid(tc, "subList");
                     if (sub != null)
                     {
+                        cm.Valign = ValignOf(Attr(sub, "vertAlign"));
                         int k = 0;
                         foreach (XmlNode sn in sub.ChildNodes)
                         {

@@ -135,6 +135,15 @@ var hwTable = (function () {
 
       var y0 = originY + rect.yHu + pad(cell, 'mt');
       var x0 = originX + rect.xHu + pad(cell, 'ml');
+
+      /* 세로 맞춤 1=가운데 2=아래. ★ 남는 높이는 <b>격자가 정한 칸 높이</b>에서 재야 한다 —
+         칸이 들고 있는 hHu 로 재면 내용이 늘린 행에서 글이 칸 밖으로 나간다. */
+      if (cell.valign) {
+        var room = rect.hHu - pad(cell, 'mt') - pad(cell, 'mb')
+                 - contentHeight(cell, textWidth(cell, rect.wHu));
+        if (room > 0) y0 += cell.valign === 1 ? room / 2 : room;
+      }
+
       var y = y0;
 
       for (var p = 0; p < cell.paras.length; p++) {
@@ -482,6 +491,8 @@ var hwTable = (function () {
       if (low === 's') { hwDialog.tableSplit(); return true; }
       if (low === 'w') { sameSize(true); return true; }
       if (low === 'h') { sameSize(false); return true; }
+      if (low === 'b' || low === 'l') { hwDialog.cellBorder(); return true; }
+      if (low === 'p') { hwDialog.tableProps(); return true; }
     }
 
     cBlock = null;
@@ -937,6 +948,59 @@ var hwTable = (function () {
     return true;
   }
 
+  /* 칸 서식. 지금 블록(없으면 캐럿이 든 칸 하나)에 걸고 <c>cellFmt</c> 를 쌓는다.
+     ★ 구조를 안 바꾸니 <c>finish</c> 를 안 부른다 — 되돌리기 이력을 끊을 이유가 없고,
+       문단 id 도 그대로라 저장 뒤 재적재도 필요 없다. */
+  function setCellFmt(over) {
+    var b = blockCells();
+    if (!b) {
+      var at = here();
+      if (!at) { hwSetStatus({ text: '표 칸 안에서 쓰세요' }); return false; }
+      b = { obj: at.obj, rect: { r0: at.cell.r, c0: at.cell.c, r1: at.cell.r, c1: at.cell.c }, cells: [at.cell] };
+    }
+
+    for (var i = 0; i < b.cells.length; i++) {
+      var c = b.cells[i];
+      if (over.bf !== undefined) c.bf = over.bf;
+      if (over.valign !== undefined) c.valign = over.valign;
+      if (over.head !== undefined) c.head = over.head;
+      if (over.cmL !== undefined) { c.mlHu = over.cmL; c.mrHu = over.cmR; c.mtHu = over.cmT; c.mbHu = over.cmB; }
+    }
+
+    var op = { op: 'cellFmt', r0: b.rect.r0, c0: b.rect.c0, r1: b.rect.r1, c1: b.rect.c1 };
+    for (var k in over) if (over.hasOwnProperty(k)) op[k] = over[k];
+    pushOp(b.obj, op);
+
+    b.obj._grid = null;
+    hwRelayout();
+    if (window.hwPostDirty) hwPostDirty();
+    hwCaret.paint();
+    return true;
+  }
+
+  /* 표 서식(표 속성). 캐럿이 든 표 또는 고른 표 개체에 건다. */
+  function setTableFmt(over) {
+    var b = blockCells(), obj = b ? b.obj : null;
+    if (!obj) { var at = here(); obj = at ? at.obj : null; }
+    if (!obj) { hwSetStatus({ text: '표 칸 안에서 쓰세요' }); return false; }
+
+    var t = obj.table;
+    if (over.bf !== undefined) t.bf = over.bf;
+    if (over.divide !== undefined) t.divide = over.divide;
+    if (over.repeatHeader !== undefined) t.repeatHeader = over.repeatHeader;
+    if (over.omL !== undefined) { obj.omLHu = over.omL; obj.omRHu = over.omR; obj.omTHu = over.omT; obj.omBHu = over.omB; }
+
+    var op = { op: 'tableFmt' };
+    for (var k in over) if (over.hasOwnProperty(k)) op[k] = over[k];
+    pushOp(obj, op);
+
+    obj._grid = null;
+    hwRelayout();
+    if (window.hwPostDirty) hwPostDirty();
+    hwCaret.paint();
+    return true;
+  }
+
   /* 고친 표를 화면에 반영하고 요청을 쌓는다.
      ★ 캐럿은 <b>있던 칸에 그대로</b> 둔다. 표를 고칠 때마다 첫 칸으로 튀면, 이어서 누르는
        "행 빼기" 가 방금 넣은 행이 아니라 엉뚱한 행을 지운다. 그 칸이 사라졌을 때만 첫 칸으로 간다. */
@@ -981,6 +1045,7 @@ var hwTable = (function () {
     block: function () { return cBlock; }, blockCells: blockCells, blockOff: blockOff,
     clearBlock: clearBlock, cycleBlock: cycleBlock, dragBlock: dragBlock, paintBlock: paintBlock,
     selectRange: selectRange, onKey: onKey,
-    mergeBlock: mergeBlock, splitCell: splitCell, sameSize: sameSize
+    mergeBlock: mergeBlock, splitCell: splitCell, sameSize: sameSize,
+    setCellFmt: setCellFmt, setTableFmt: setTableFmt
   };
 })();

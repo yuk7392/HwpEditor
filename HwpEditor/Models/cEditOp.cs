@@ -22,6 +22,12 @@ namespace HwpEditor.Models
         [JsonProperty("charShapes")] public List<CharShapeModel> CharShapes;
         [JsonProperty("paraShapes")] public List<ParaShapeModel> ParaShapes;
 
+        /// <summary>
+        /// 테두리/배경 표 전체. ★ <b>글자모양·문단모양보다 먼저</b> 등록해야 한다 — 문단모양과 칸이
+        /// 이 번호를 가리키므로, 거꾸로 하면 아직 없는 번호를 가리킨다.
+        /// </summary>
+        [JsonProperty("borderFills")] public List<BorderFillModel> BorderFills;
+
         [JsonProperty("ops")] public List<EditOp> Ops = new List<EditOp>();
     }
 
@@ -31,7 +37,7 @@ namespace HwpEditor.Models
     /// </summary>
     public sealed class EditOp
     {
-        /// <summary>"replace" | "insertAfter" | "delete" | "addImage"</summary>
+        /// <summary>"replace" | "insertAfter" | "delete" | "addImage" | "cellFmt" | "tableFmt"</summary>
         [JsonProperty("op")] public string Op;
 
         /// <summary>대상 문단 id. insertAfter 면 <b>새로 붙일</b> 문단의 id 다.</summary>
@@ -104,6 +110,33 @@ namespace HwpEditor.Models
         [JsonProperty("hHu")] public long HHu;
 
         #endregion
+
+        #region cellFmt · tableFmt
+
+        /// <summary>
+        /// 칸·표 서식. ★ 전부 nullable 이다 — null 은 "안 바꿨다" 이지 0 이 아니다
+        /// (<see cref="EditObj.WHu"/> 와 같은 이유: 화면은 고른 것만 싣는다).
+        /// <c>cellFmt</c> 는 <see cref="R0"/>~<see cref="C1"/> 사각형의 칸에, <c>tableFmt</c> 는 표에 건다.
+        /// ★ 둘 다 <b>구조를 안 바꾼다</b> — <see cref="SaveResult.Reload"/> 를 켜지 않는다.
+        /// </summary>
+        [JsonProperty("bf", NullValueHandling = NullValueHandling.Ignore)] public int? Bf;
+        [JsonProperty("valign", NullValueHandling = NullValueHandling.Ignore)] public int? Valign;
+        [JsonProperty("head", NullValueHandling = NullValueHandling.Ignore)] public bool? Head;
+
+        [JsonProperty("cmL", NullValueHandling = NullValueHandling.Ignore)] public long? CmL;
+        [JsonProperty("cmR", NullValueHandling = NullValueHandling.Ignore)] public long? CmR;
+        [JsonProperty("cmT", NullValueHandling = NullValueHandling.Ignore)] public long? CmT;
+        [JsonProperty("cmB", NullValueHandling = NullValueHandling.Ignore)] public long? CmB;
+
+        [JsonProperty("divide", NullValueHandling = NullValueHandling.Ignore)] public int? Divide;
+        [JsonProperty("repeatHeader", NullValueHandling = NullValueHandling.Ignore)] public bool? RepeatHeader;
+
+        [JsonProperty("omL", NullValueHandling = NullValueHandling.Ignore)] public long? OmL;
+        [JsonProperty("omR", NullValueHandling = NullValueHandling.Ignore)] public long? OmR;
+        [JsonProperty("omT", NullValueHandling = NullValueHandling.Ignore)] public long? OmT;
+        [JsonProperty("omB", NullValueHandling = NullValueHandling.Ignore)] public long? OmB;
+
+        #endregion
     }
 
     /// <summary>replace·insertAfter 가 들고 오는 개체 자리. 실물은 원본이거나(oid) 새 그림이다(tmpId).</summary>
@@ -168,9 +201,11 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("csMap", NullValueHandling = NullValueHandling.Ignore)] public int[] CsMap;
         [JsonProperty("psMap", NullValueHandling = NullValueHandling.Ignore)] public int[] PsMap;
+        [JsonProperty("bfMap", NullValueHandling = NullValueHandling.Ignore)] public int[] BfMap;
 
         /// <summary>저장 뒤 문서가 실제로 들고 있는 목록. 화면은 자기 목록을 이것으로 갈아 끼운다.</summary>
         [JsonProperty("charShapes", NullValueHandling = NullValueHandling.Ignore)] public List<CharShapeModel> CharShapes;
         [JsonProperty("paraShapes", NullValueHandling = NullValueHandling.Ignore)] public List<ParaShapeModel> ParaShapes;
+        [JsonProperty("borderFills", NullValueHandling = NullValueHandling.Ignore)] public List<BorderFillModel> BorderFills;
     }
 }

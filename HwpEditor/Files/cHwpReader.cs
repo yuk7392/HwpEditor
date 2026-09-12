@@ -15,6 +15,8 @@ using HwpLib.Object.BodyText.Paragraph.CharShape;
 using HwpLib.Object.BodyText.Paragraph.LineSeg;
 using HwpLib.Object.BodyText.Paragraph.Text;
 using HwpLib.Object.DocInfo;
+using HwpLib.Object.DocInfo.BorderFill;
+using HwpLib.Object.DocInfo.BorderFill.FillInfo;
 using HwpLib.Object.DocInfo.ParaShape;
 
 namespace HwpEditor.Files
@@ -40,6 +42,7 @@ namespace HwpEditor.Files
             if (pIndex != null) pIndex.Clear();
 
             ReadFaceNames(pFile.DocInfo, doc);
+            ReadBorderFills(pFile.DocInfo, doc);
             ReadCharShapes(pFile.DocInfo, doc);
             ReadParaShapes(pFile.DocInfo, doc);
 
@@ -81,6 +84,42 @@ namespace HwpEditor.Files
             return tmp.ParaShapes;
         }
 
+        public static List<BorderFillModel> BorderFillsOf(DocInfo pInfo)
+        {
+            DocModel tmp = new DocModel();
+            ReadBorderFills(pInfo, tmp);
+            return tmp.BorderFills;
+        }
+
+        /// <summary>★ 번호가 1부터라 0번 자리를 비워 두고 시작한다(<see cref="BorderFillModel"/>).</summary>
+        private static void ReadBorderFills(DocInfo pInfo, DocModel pDoc)
+        {
+            pDoc.BorderFills.Add(new BorderFillModel { Id = 0 });
+
+            IReadOnlyList<BorderFillInfo> list = pInfo.BorderFillList;
+            for (int i = 0; i < list.Count; i++)
+            {
+                BorderFillInfo s = list[i];
+                BorderFillModel m = new BorderFillModel();
+                m.Id = i + 1;
+                m.L = cBorderMap.Read(s.LeftBorder);
+                m.R = cBorderMap.Read(s.RightBorder);
+                m.T = cBorderMap.Read(s.TopBorder);
+                m.B = cBorderMap.Read(s.BottomBorder);
+                m.D = cBorderMap.Read(s.DiagonalBorder);
+
+                PatternFill pf = s.FillInfo == null ? null : s.FillInfo.PatternFill;
+                if (pf != null)
+                {
+                    if (pf.BackColor != null && pf.BackColor.Value != cBorderMap.cNoneColor)
+                        m.Fill = cBorderMap.Hex(pf.BackColor);
+                    m.Pat = cBorderMap.NameOf(pf.PatternType);
+                    m.PatColor = cBorderMap.Hex(pf.PatternColor);
+                }
+                pDoc.BorderFills.Add(m);
+            }
+        }
+
         private static void ReadCharShapes(DocInfo pInfo, DocModel pDoc)
         {
             IReadOnlyList<CharShapeInfo> list = pInfo.CharShapeList;
@@ -98,6 +137,18 @@ namespace HwpEditor.Files
                 m.Color = Hex(s.CharColor);
                 m.Ratio = s.Ratios.Hangul;
                 m.Spacing = s.CharSpaces.Hangul;
+
+                m.Sup = s.Property.IsSuperScript;
+                m.Sub = s.Property.IsSubScript;
+                if (s.ShadeColor != null && s.ShadeColor.Value != cBorderMap.cNoneColor) m.Shade = Hex(s.ShadeColor);
+                m.UlShape = cBorderMap.NameOf(s.Property.UnderLineShape);
+                m.UlColor = Hex(s.UnderLineColor);
+                m.Emph = (int)s.Property.EmphasisSort;
+                m.Outline = (int)s.Property.OutterLineSort;
+                m.Shadow = (int)s.Property.ShadowSort;
+                m.Emboss = s.Property.IsEmboss;
+                m.Engrave = s.Property.IsEngrave;
+                m.Bf = s.BorderFillId;
                 pDoc.CharShapes.Add(m);
             }
         }
@@ -124,6 +175,15 @@ namespace HwpEditor.Files
                 m.Ls = m.LsType == "percent" ? s.LineSpace : Half(s.LineSpace);
                 m.LatinBreak = LatinBreakName(s.Property1.LineDivideForEnglish);
                 m.HangulByWord = s.Property1.LineDivideForHangul == LineDivideForHangul.ByWord;
+
+                m.Bf = s.BorderFillId;
+
+                // ★ 테두리 간격은 여백과 달리 2배 단위가 아니다 — 그대로 HWPUNIT 이다(hwp 는 Int16).
+                //   표본에 값이 든 문단이 없어 왕복(우리가 쓴 값을 우리가 읽음)으로만 맞춰 두었다.
+                m.BsL = s.LeftBorderSpace;
+                m.BsR = s.RightBorderSpace;
+                m.BsT = s.TopBorderSpace;
+                m.BsB = s.BottomBorderSpace;
                 pDoc.ParaShapes.Add(m);
             }
         }
@@ -478,6 +538,10 @@ namespace HwpEditor.Files
                 //   크기(Width·Height)는 진짜 부호 없는 값이라 그대로 둔다.
                 o.XOffHu = unchecked((int)gso.XOffset);
                 o.YOffHu = unchecked((int)gso.YOffset);
+                o.OmLHu = gso.OutterMarginLeft;
+                o.OmRHu = gso.OutterMarginRight;
+                o.OmTHu = gso.OutterMarginTop;
+                o.OmBHu = gso.OutterMarginBottom;
                 if (gso.Property != null)
                 {
                     o.Inline = gso.Property.IsLikeWord();
@@ -569,6 +633,13 @@ namespace HwpEditor.Files
         {
             TableModel t = new TableModel();
 
+            if (pTable.Table != null)
+            {
+                t.Bf = pTable.Table.BorderFillId;
+                t.Divide = (int)pTable.Table.Property.DivideAtPageBoundary;
+                t.RepeatHeader = pTable.Table.Property.AutoRepeatTitleRow;
+            }
+
             // ★ 행 목록은 Table 이 아니라 ControlTable 이 들고 있다. Table 은 칸 여백·테두리 같은 속성만이다.
             IReadOnlyList<Row> rows = pTable.RowList;
             if (rows == null) return t;
@@ -597,6 +668,9 @@ namespace HwpEditor.Files
                         cm.MrHu = h.RightMargin;
                         cm.MtHu = h.TopMargin;
                         cm.MbHu = h.BottomMargin;
+                        cm.Bf = h.BorderFillId;
+                        cm.Valign = (int)h.Property.TextVerticalAlignment;
+                        cm.Head = h.Property.TitleCell;
                     }
                     else { cm.R = r; cm.C = c; }
 

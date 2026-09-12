@@ -381,8 +381,11 @@ var hwModel = (function () {
     for (var i = 0; i < t.cells.length; i++) {
       var c = t.cells[i], paras = [];
       for (var q = 0; q < c.paras.length; q++) paras.push({ ps: c.paras[q].ps, runs: c.paras[q].runs });
+      /* ★ 칸 서식도 같이 싣는다 — 새 표에는 cellFmt 를 보낼 길이 없다(oid 가 아직 없다).
+         이 꾸러미에 안 실으면 새 표에 건 테두리·세로 맞춤이 첫 저장에서 통째로 빠진다. */
       out.push({ r: c.r, c: c.c, rs: c.rs, cs: c.cs, wHu: c.wHu, hHu: c.hHu,
-                 mlHu: c.mlHu, mrHu: c.mrHu, mtHu: c.mtHu, mbHu: c.mbHu, paras: paras });
+                 mlHu: c.mlHu, mrHu: c.mrHu, mtHu: c.mtHu, mbHu: c.mbHu,
+                 bf: c.bf || 0, valign: c.valign || 0, head: !!c.head, paras: paras });
     }
     return out;
   }
@@ -405,6 +408,12 @@ var hwModel = (function () {
           op: 'addTable', id: p.id, pos: objs[j].pos, tmpId: objs[j].tmpId,
           rows: objs[j].table.rows, cols: objs[j].table.cols,
           wHu: objs[j].wHu, hHu: objs[j].hHu,
+          /* ★ 표 서식도 같이 — 새 표에는 tableFmt 를 보낼 길이 없다(oid 가 아직 없다). */
+          bf: objs[j].table.bf || 0,
+          divide: objs[j].table.divide || 0,
+          repeatHeader: !!objs[j].table.repeatHeader,
+          omL: objs[j].omLHu || 0, omR: objs[j].omRHu || 0,
+          omT: objs[j].omTHu || 0, omB: objs[j].omBHu || 0,
           cells: tableCells(objs[j].table)
         });
 
@@ -456,8 +465,12 @@ var hwModel = (function () {
       remapShapes(result.csMap, result.psMap);
       if (window.hwInput) hwInput.remapClip(result.csMap, result.psMap);
     }
+    /* 테두리/배경 번호도 문서 쪽에서 바뀔 수 있다 — 문단모양·칸이 가리키는 번호를 다시 매긴다. */
+    if (result && result.bfMap) remapBorderFills(result.bfMap);
+
     if (result && result.charShapes) hwDoc.charShapes = result.charShapes;
     if (result && result.paraShapes) hwDoc.paraShapes = result.paraShapes;
+    if (result && result.borderFills) hwDoc.borderFills = result.borderFills;
 
     var all = allParas();
     for (var i = 0; i < all.length; i++) {
@@ -474,6 +487,24 @@ var hwModel = (function () {
         objs[j].oid = oid;
         delete objs[j].tmpId;
         delete objs[j].file;
+      }
+    }
+  }
+
+  /* 문단모양의 bf 는 문서 목록(result.paraShapes)이 그대로 덮으므로 여기서 손대지 않는다 —
+     화면에만 있는 번호는 표·칸이 가리키는 것뿐이다. */
+  function remapBorderFills(bfMap) {
+    var cells = allCells();
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i];
+      if (c.bf && c.bf < bfMap.length) c.bf = bfMap[c.bf];
+    }
+    var all = allParas();
+    for (var p = 0; p < all.length; p++) {
+      var objs = all[p].objs || [];
+      for (var o = 0; o < objs.length; o++) {
+        var t = objs[o].table;
+        if (t && t.bf && t.bf < bfMap.length) t.bf = bfMap[t.bf];
       }
     }
   }
@@ -527,6 +558,12 @@ var hwModel = (function () {
     },
     paraShape: function (id) {
       return (hwDoc && hwDoc.paraShapes[id]) || hwDoc.paraShapes[0];
+    },
+
+    /* 테두리/배경 표. ★ 번호는 1부터고 0 은 "가리키는 것 없음" 이다 — 0 을 목록의 0번으로 읽으면 안 된다. */
+    borderFill: function (id) {
+      if (!id || !hwDoc || !hwDoc.borderFills) return null;
+      return hwDoc.borderFills[id] || null;
     },
     faceName: function (id) {
       return (hwDoc && hwDoc.faceNames[id]) || null;

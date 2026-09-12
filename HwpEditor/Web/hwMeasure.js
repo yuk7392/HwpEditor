@@ -60,6 +60,15 @@ var hwMeasure = (function () {
         || (c >= 0xFFE0 && c <= 0xFFE6);
   }
 
+  /* 첨자는 글자 크기의 0.7배로 그린다(한글 관례).
+     ★ <b>재는 쪽과 그리는 쪽이 같은 비율</b>을 써야 한다 — 한쪽만 줄이면 그 구간에서
+       캐럿이 글자와 어긋나고 줄 나눔이 화면과 갈린다. hwRender.applyCs 가 이 값을 쓴다. */
+  var cScriptEm = 0.7;
+
+  function drawSize(cs) {
+    return (cs.sup || cs.sub) ? cs.sizeHu * cScriptEm : cs.sizeHu;
+  }
+
   function width100(key, ch) {
     var box = cCache[key];
     if (!box) { box = cCache[key] = {}; }
@@ -111,20 +120,25 @@ var hwMeasure = (function () {
          (실측 — complaint-form.hwpx 가 41자에서 끊기는 줄을 우리는 45자까지 넣었다).
          대체 글꼴의 개성을 문서의 조판으로 착각하지 않으려면 여기서 끊어야 한다. */
     charHu: function (ch, cs) {
-      var w = isFullWidth(ch) ? cs.sizeHu
-            : (ch === ' ' ? cs.sizeHu * cSpaceEm : width100(fontKey(cs), ch) * cs.sizeHu / 100);
+      var sz = drawSize(cs);
+      var w = isFullWidth(ch) ? sz
+            : (ch === ' ' ? sz * cSpaceEm : width100(fontKey(cs), ch) * sz / 100);
       if (cs.ratio && cs.ratio !== 100) w = w * cs.ratio / 100;
       if (cs.spacing) w += cs.sizeHu * cs.spacing / 100;
       return w;
     },
 
+    /* 줄 높이에 쓰는 값 — 첨자여도 <b>줄이 얇아지지 않는다</b>(한글도 그렇다). */
     sizeHu: function (cs) { return cs.sizeHu; },
+
+    /* 화면에 실제로 그릴 글자 크기. 첨자만 여기서 작아진다. */
+    drawSizeHu: drawSize,
 
     /* ★ <b>브라우저가 실제로 그릴</b> 폭(HWPUNIT). 장평·자간을 안 얹은 날 것이다.
        charHu 와 이 값의 차이가 곧 화면에 자간으로 메워야 할 양이다 — 그래야 우리가 계산한
        캐럿 자리와 눈에 보이는 글자 자리가 같아진다. */
     naturalHu: function (ch, cs) {
-      return width100(fontKey(cs), ch) * cs.sizeHu / 100;
+      return width100(fontKey(cs), ch) * drawSize(cs) / 100;
     },
 
     stats: function () {

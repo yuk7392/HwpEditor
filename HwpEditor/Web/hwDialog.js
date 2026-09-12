@@ -157,6 +157,11 @@ var hwDialog = (function () {
         e.type = 'text';
         e.value = row.value || '';
         break;
+      case 'check':
+        e = el('input', 'hw-dlg-check');
+        e.type = 'checkbox';
+        e.checked = !!row.value;
+        break;
       case 'toggles':
         e = el('span', 'hw-dlg-toggles');
         for (var t = 0; t < row.items.length; t++) {
@@ -229,6 +234,7 @@ var hwDialog = (function () {
       return on === 'mixed' ? null : on === '1';
     }
     if (e.classList.contains('hw-dlg-radio')) return e.getAttribute('data-value') || null;
+    if (e.type === 'checkbox') return e.checked;
     if (e.type === 'number') {
       var n = parseFloat(e.value);
       return isNaN(n) ? null : n;
@@ -241,6 +247,7 @@ var hwDialog = (function () {
     if (!e) return;
     if (e.classList.contains('hw-dlg-tog')) { paintToggle(e, v); return; }
     if (e.classList.contains('hw-dlg-radio')) { e.setAttribute('data-value', v === null ? '' : String(v)); paintRadio(e); return; }
+    if (e.type === 'checkbox') { e.checked = !!v; return; }
     if (e.type === 'number') { e.value = fmt(v, (st.rows[k] || {}).dec); return; }
     e.value = v === null || v === undefined ? '' : String(v);
   }
@@ -311,6 +318,35 @@ var hwDialog = (function () {
 
   var cMm = 283.465;
 
+  /* 선 모양·굵기·강조점·외곽선·그림자 목록. ★ 값은 C# cBorderMap 의 이름·번호와 <b>같아야</b> 한다 —
+     여기서 지어낸 이름은 저장할 때 "없음" 으로 떨어진다. 굵기는 덤프 5-4 의 16단. */
+  var cLineTypes = [
+    { v: 'none', t: '없음' }, { v: 'solid', t: '실선' }, { v: 'dash', t: '파선' }, { v: 'dot', t: '점선' },
+    { v: 'dashDot', t: '일점쇄선' }, { v: 'dashDotDot', t: '이점쇄선' }, { v: 'longDash', t: '긴 파선' },
+    { v: 'circleDot', t: '원점선' }, { v: 'double', t: '이중선' }, { v: 'thinThick', t: '얇고 굵은' },
+    { v: 'thickThin', t: '굵고 얇은' }, { v: 'thinThickThin', t: '얇고 굵고 얇은' },
+    { v: 'wave', t: '물결' }, { v: 'doubleWave', t: '이중 물결' }
+  ];
+
+  var cLineWidths = ['0.1', '0.12', '0.15', '0.2', '0.25', '0.3', '0.4', '0.5',
+                     '0.6', '0.7', '1.0', '1.5', '2.0', '3.0', '4.0', '5.0'];
+
+  var cOutlines = [{ v: '0', t: '없음' }, { v: '1', t: '실선' }, { v: '2', t: '점선' }, { v: '3', t: '굵은 실선' },
+                   { v: '4', t: '파선' }, { v: '5', t: '일점쇄선' }, { v: '6', t: '이점쇄선' }];
+
+  var cShadows = [{ v: '0', t: '없음' }, { v: '1', t: '비연속' }, { v: '2', t: '연속' }];
+
+  var cEmphs = [{ v: '0', t: '없음' }, { v: '1', t: '위 점' }, { v: '2', t: '위 원' }, { v: '3', t: '틸데' },
+                { v: '4', t: '캐론' }, { v: '5', t: '옆 점' }, { v: '6', t: '콜론' }, { v: '7', t: '그레이브' },
+                { v: '8', t: '아큐트' }, { v: '9', t: '서컴플렉스' }, { v: '10', t: '마크론' },
+                { v: '11', t: '후크' }, { v: '12', t: '아래 점' }];
+
+  function widthOptions() {
+    var out = [];
+    for (var i = 0; i < cLineWidths.length; i++) out.push({ v: cLineWidths[i], t: cLineWidths[i] + ' mm' });
+    return out;
+  }
+
   function any(o) { for (var k in o) if (o.hasOwnProperty(k)) return true; return false; }
 
   function charShape() {
@@ -343,21 +379,30 @@ var hwDialog = (function () {
           { key: 'bold', label: '가', title: '굵게', on: v.bold },
           { key: 'italic', label: '가', title: '기울임', on: v.italic },
           { key: 'strike', label: '가', title: '취소선', on: v.strike },
-          { key: 'sup', label: 'x²', title: '위 첨자', disabled: true },
-          { key: 'sub', label: 'x₂', title: '아래 첨자', disabled: true },
-          { key: 'outline', label: '외', title: '외곽선', disabled: true },
-          { key: 'shadow', label: '그', title: '그림자', disabled: true },
-          { key: 'emboss', label: '양', title: '양각', disabled: true },
-          { key: 'engrave', label: '음', title: '음각', disabled: true }
+          { key: 'sup', label: 'x²', title: '위 첨자', on: v.sup },
+          { key: 'sub', label: 'x₂', title: '아래 첨자', on: v.sub },
+          { key: 'emboss', label: '양', title: '양각', on: v.emboss },
+          { key: 'engrave', label: '음', title: '음각', on: v.engrave }
         ] },
         { type: 'select', key: 'underline', label: '밑줄', width: 100,
           value: v.underline === null ? null : String(v.underline || 0),
           options: [{ v: '0', t: '없음' }, { v: '1', t: '아래' }, { v: '2', t: '가운데' }, { v: '3', t: '위' }] },
-        { type: 'group', label: '밑줄 모양', disabled: true, items: [
-          { type: 'select', key: 'ulShape', width: 100, value: '0', options: [{ v: '0', t: '실선' }], disabled: true },
-          { type: 'color', key: 'ulColor', disabled: true }
+        { type: 'group', label: '밑줄 모양', items: [
+          { type: 'select', key: 'ulShape', width: 110, value: v.ulShape, options: cLineTypes },
+          { type: 'color', key: 'ulColor', value: v.ulColor || '#000000' }
         ] },
-        { type: 'select', key: 'emph', label: '강조점', width: 100, value: '0', options: [{ v: '0', t: '없음' }], disabled: true },
+        { type: 'group', label: '외곽선·그림자', items: [
+          { type: 'select', key: 'outline', width: 110, value: v.outline === null ? null : String(v.outline || 0),
+            options: cOutlines },
+          { type: 'select', key: 'shadow', width: 110, value: v.shadow === null ? null : String(v.shadow || 0),
+            options: cShadows }
+        ] },
+        { type: 'select', key: 'emph', label: '강조점', width: 130,
+          value: v.emph === null ? null : String(v.emph || 0), options: cEmphs },
+        { type: 'group', label: '형광펜', items: [
+          { type: 'color', key: 'shade', value: v.shade || '#FFFF00' },
+          { type: 'check', key: 'noShade', label: '없음', value: !v.shade }
+        ] },
         { type: 'color', key: 'color', label: '글자 색', value: v.color || '#000000' }
       ],
       onOk: function (s) {
@@ -370,6 +415,20 @@ var hwDialog = (function () {
         if (t.italic && s.get('italic') !== null) over.italic = s.get('italic');
         if (t.strike && s.get('strike') !== null) over.strike = s.get('strike');
         if (t.underline && s.get('underline') !== null) over.underline = parseInt(s.get('underline'), 10);
+        if (t.sup || t.sub) {
+          /* 위·아래 첨자는 같이 켜지지 않는다 — 방금 누른 쪽이 이긴다. */
+          var wantSup = !!s.get('sup'), wantSub = !!s.get('sub');
+          if (wantSup && wantSub) { if (t.sup) wantSub = false; else wantSup = false; }
+          over.sup = wantSup; over.sub = wantSub;
+        }
+        if (t.emboss && s.get('emboss') !== null) over.emboss = s.get('emboss');
+        if (t.engrave && s.get('engrave') !== null) over.engrave = s.get('engrave');
+        if (t.ulShape && s.get('ulShape')) over.ulShape = s.get('ulShape');
+        if (t.ulColor && s.get('ulColor')) over.ulColor = s.get('ulColor').toUpperCase();
+        if (t.outline && s.get('outline') !== null) over.outline = parseInt(s.get('outline'), 10);
+        if (t.shadow && s.get('shadow') !== null) over.shadow = parseInt(s.get('shadow'), 10);
+        if (t.emph && s.get('emph') !== null) over.emph = parseInt(s.get('emph'), 10);
+        if (t.shade || t.noShade) over.shade = s.get('noShade') ? null : (s.get('shade') || '#FFFF00').toUpperCase();
         if (t.color && s.get('color')) over.color = s.get('color').toUpperCase();
         if (any(over)) hwFormat.applyChar(over);
       }
@@ -385,6 +444,7 @@ var hwDialog = (function () {
     var v = hwFormat.selectedPara();
     if (!v) return null;
     var ind = v.indentHu;
+    var bf = hwModel.borderFill(v.bf);
     var lsUnit = v.lsType === 'percent' ? '%' : 'pt';
     var lsVal = v.ls === null || v.lsType === null ? null : (v.lsType === 'percent' ? v.ls : v.ls / 100);
 
@@ -415,7 +475,21 @@ var hwDialog = (function () {
           ] }
         ] },
         { label: '테두리', rows: [
-          { type: 'note', label: '', text: '문단 테두리·음영은 아직 지원하지 않습니다.' }
+          { type: 'group', label: '테두리', items: [
+            { type: 'select', key: 'bType', width: 110, value: bf ? bf.t.type : 'none', options: cLineTypes },
+            { type: 'select', key: 'bWidth', width: 90, value: bf ? bf.t.w : '0.12', options: widthOptions() },
+            { type: 'color', key: 'bColor', value: bf ? bf.t.color : '#000000' }
+          ] },
+          { type: 'group', label: '음영', items: [
+            { type: 'color', key: 'bFill', value: (bf && bf.fill) || '#FFFF00' },
+            { type: 'check', key: 'bNoFill', label: '없음', value: !(bf && bf.fill) }
+          ] },
+          { type: 'group', label: '간격', items: [
+            { type: 'number', key: 'bsT', unit: 'pt 위', value: v.bsT === null ? null : v.bsT / 100, min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'bsB', unit: 'pt 아래', value: v.bsB === null ? null : v.bsB / 100, min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'bsL', unit: 'pt 왼쪽', value: v.bsL === null ? null : v.bsL / 100, min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'bsR', unit: 'pt 오른쪽', value: v.bsR === null ? null : v.bsR / 100, min: 0, step: 1, dec: 1, width: 60 }
+          ] }
         ] }
       ],
       onOk: function (s) {
@@ -435,7 +509,140 @@ var hwDialog = (function () {
           over.lsType = ty;
           over.ls = ty === 'percent' ? Math.round(Math.max(50, Math.min(500, val))) : Math.round(Math.max(0, val) * 100);
         }
+        if (t.bsL && (n = s.get('bsL')) !== null) over.bsL = Math.round(Math.max(0, n) * 100);
+        if (t.bsR && (n = s.get('bsR')) !== null) over.bsR = Math.round(Math.max(0, n) * 100);
+        if (t.bsT && (n = s.get('bsT')) !== null) over.bsT = Math.round(Math.max(0, n) * 100);
+        if (t.bsB && (n = s.get('bsB')) !== null) over.bsB = Math.round(Math.max(0, n) * 100);
+
+        /* 테두리·음영은 값을 문단모양에 직접 넣지 않는다 — 테두리/배경 표에 한 줄을 만들고 그 번호를 건다. */
+        if (t.bType || t.bWidth || t.bColor || t.bFill || t.bNoFill) {
+          var line = { type: s.get('bType') || 'none', w: s.get('bWidth') || '0.12',
+                       color: (s.get('bColor') || '#000000').toUpperCase() };
+          over.bf = hwFormat.borderFillFor(v.bf, {
+            l: line, r: line, t: line, b: line,
+            fill: s.get('bNoFill') ? null : (s.get('bFill') || '#FFFF00').toUpperCase()
+          });
+        }
         if (any(over)) hwFormat.applyPara(over);
+      }
+    });
+  }
+
+  /* 테두리/배경(덤프 3). 셀 블록에서 B·L.
+     ★ 적용 위치는 <b>모두·없음</b>만이다 — 바깥쪽·안쪽은 칸마다 변을 달리 줘야 하는데
+       우리 cellFmt 는 칸 하나에 테두리 한 벌(네 변)을 건다. */
+  function cellBorder() {
+    if (!hwDoc) return null;
+    var b = hwTable.blockCells();
+    var at = b ? null : hwTable.here();
+    if (!b && !at) { hwSetStatus({ text: '표 칸 안에서 쓰세요' }); return null; }
+
+    var cell = b ? b.cells[0] : at.cell;
+    var bf = hwModel.borderFill(cell.bf);
+
+    return open({
+      title: '테두리/배경', width: 460,
+      tabs: [
+        { label: '테두리', rows: [
+          { type: 'radio', key: 'where', label: '위치', value: 'all',
+            options: [{ v: 'all', t: '모두' }, { v: 'none', t: '없음' }] },
+          { type: 'group', label: '선', items: [
+            { type: 'select', key: 'lType', width: 110, value: bf ? bf.t.type : 'solid', options: cLineTypes },
+            { type: 'select', key: 'lWidth', width: 90, value: bf ? bf.t.w : '0.12', options: widthOptions() },
+            { type: 'color', key: 'lColor', value: bf ? bf.t.color : '#000000' }
+          ] }
+        ] },
+        { label: '배경', rows: [
+          { type: 'group', label: '면 색', items: [
+            { type: 'color', key: 'fill', value: (bf && bf.fill) || '#FFFF00' },
+            { type: 'check', key: 'noFill', label: '없음', value: !(bf && bf.fill) }
+          ] },
+          { type: 'group', label: '무늬', items: [
+            { type: 'select', key: 'pat', width: 130, value: (bf && bf.pat) || 'none', options: cPatterns },
+            { type: 'color', key: 'patColor', value: (bf && bf.patColor) || '#000000' }
+          ] }
+        ] }
+      ],
+      onOk: function (s) {
+        var none = s.get('where') === 'none';
+        var line = none ? { type: 'none', w: '0.12', color: '#000000' }
+                        : { type: s.get('lType') || 'solid', w: s.get('lWidth') || '0.12',
+                            color: (s.get('lColor') || '#000000').toUpperCase() };
+        hwTable.setCellFmt({
+          bf: hwFormat.borderFillFor(cell.bf, {
+            l: line, r: line, t: line, b: line,
+            fill: s.get('noFill') ? null : (s.get('fill') || '#FFFF00').toUpperCase(),
+            pat: s.get('pat') || 'none',
+            patColor: (s.get('patColor') || '#000000').toUpperCase()
+          })
+        });
+      }
+    });
+  }
+
+  var cPatterns = [{ v: 'none', t: '없음' }, { v: 'horz', t: '가로 줄' }, { v: 'vert', t: '세로 줄' },
+                   { v: 'backSlash', t: '왼쪽 대각' }, { v: 'slash', t: '오른쪽 대각' },
+                   { v: 'cross', t: '격자' }, { v: 'crossDiagonal', t: '대각 격자' }];
+
+  var cDivides = [{ v: '2', t: '나눔' }, { v: '1', t: '셀 단위로 나눔' }, { v: '0', t: '나누지 않음' }];
+
+  /* 표 속성(덤프 3). 셀 블록에서 P. */
+  function tableProps() {
+    if (!hwDoc) return null;
+    var b = hwTable.blockCells();
+    var at = b ? null : hwTable.here();
+    if (!b && !at) { hwSetStatus({ text: '표 칸 안에서 쓰세요' }); return null; }
+
+    var obj = b ? b.obj : at.obj, t = obj.table;
+    var cell = b ? b.cells[0] : at.cell;
+
+    return open({
+      title: '표 속성', width: 470,
+      tabs: [
+        { label: '표', rows: [
+          { type: 'select', key: 'divide', label: '쪽 경계에서', width: 150,
+            value: String(t.divide || 0), options: cDivides },
+          { type: 'check', key: 'repeatHeader', label: '제목 줄 반복', value: !!t.repeatHeader },
+          { type: 'group', label: '바깥 여백', items: [
+            { type: 'number', key: 'omL', unit: 'mm 왼쪽', value: (obj.omLHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'omR', unit: 'mm 오른쪽', value: (obj.omRHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'omT', unit: 'mm 위', value: (obj.omTHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'omB', unit: 'mm 아래', value: (obj.omBHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 }
+          ] }
+        ] },
+        { label: '셀', rows: [
+          { type: 'radio', key: 'valign', label: '세로 맞춤', value: String(cell.valign || 0),
+            options: [{ v: '0', t: '위쪽' }, { v: '1', t: '가운데' }, { v: '2', t: '아래쪽' }] },
+          { type: 'check', key: 'head', label: '제목 칸', value: !!cell.head },
+          { type: 'group', label: '셀 여백', items: [
+            { type: 'number', key: 'cmL', unit: 'mm 왼쪽', value: (cell.mlHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'cmR', unit: 'mm 오른쪽', value: (cell.mrHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'cmT', unit: 'mm 위', value: (cell.mtHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 },
+            { type: 'number', key: 'cmB', unit: 'mm 아래', value: (cell.mbHu || 0) / cMm, min: 0, step: 0.1, dec: 1, width: 60 }
+          ] }
+        ] }
+      ],
+      onOk: function (s) {
+        var tv = {}, cv = {};
+        if (s.touched.divide && s.get('divide') !== null) tv.divide = parseInt(s.get('divide'), 10);
+        if (s.touched.repeatHeader) tv.repeatHeader = !!s.get('repeatHeader');
+        if (s.touched.omL || s.touched.omR || s.touched.omT || s.touched.omB) {
+          tv.omL = Math.round(Math.max(0, s.get('omL') || 0) * cMm);
+          tv.omR = Math.round(Math.max(0, s.get('omR') || 0) * cMm);
+          tv.omT = Math.round(Math.max(0, s.get('omT') || 0) * cMm);
+          tv.omB = Math.round(Math.max(0, s.get('omB') || 0) * cMm);
+        }
+        if (any(tv)) hwTable.setTableFmt(tv);
+
+        if (s.touched.valign && s.get('valign') !== null) cv.valign = parseInt(s.get('valign'), 10);
+        if (s.touched.head) cv.head = !!s.get('head');
+        if (s.touched.cmL || s.touched.cmR || s.touched.cmT || s.touched.cmB) {
+          cv.cmL = Math.round(Math.max(0, s.get('cmL') || 0) * cMm);
+          cv.cmR = Math.round(Math.max(0, s.get('cmR') || 0) * cMm);
+          cv.cmT = Math.round(Math.max(0, s.get('cmT') || 0) * cMm);
+          cv.cmB = Math.round(Math.max(0, s.get('cmB') || 0) * cMm);
+        }
+        if (any(cv)) hwTable.setCellFmt(cv);
       }
     });
   }
@@ -612,6 +819,8 @@ var hwDialog = (function () {
     current: function () { return cOpen; },
     charShape: charShape,
     paraShape: paraShape,
+    cellBorder: cellBorder,
+    tableProps: tableProps,
     charMap: charMap,
     tableLines: tableLines,
     tableInsert: tableInsert,

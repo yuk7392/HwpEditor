@@ -453,6 +453,9 @@ var hwInput = (function () {
     on(['AS+j'], function () { hwFormat.stepRatio(-1); });
     on(['AS+w'], function () { hwFormat.stepSpacing(+1); });
     on(['AS+n'], function () { hwFormat.stepSpacing(-1); });
+    on(['AS+s', 'CS+='], function () { hwFormat.toggleScript('sub'); });
+    on(['AS+o'], function () { hwFormat.toggleScript('sup'); });
+    on(['CA+a'], function () { hwFormat.toggleScript('swap'); });
     on(['CS+l', 'CA+l'], align('left'));
     on(['CS+c', 'CA+c'], align('center'));
     on(['CS+r', 'CA+r'], align('right'));
@@ -515,6 +518,8 @@ var hwInput = (function () {
     if ((m = /^Digit([0-9])$/.exec(c))) return m[1];
     if (c === 'BracketLeft') return '[';
     if (c === 'BracketRight') return ']';
+    /* Shift 를 같이 누르면 key 가 '+' 로 바뀐다 — code 로 잡아야 Ctrl+Shift+= 가 한 이름으로 온다. */
+    if (c === 'Equal') return '=';
     /* 숫자판 +/− 는 본 자판 +/− 와 key 가 같다 — 확대/축소는 숫자판에만 건다. */
     if (c === 'NumpadAdd') return 'NumAdd';
     if (c === 'NumpadSubtract') return 'NumSub';

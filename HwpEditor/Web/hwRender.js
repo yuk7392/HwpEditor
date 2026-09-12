@@ -72,7 +72,65 @@ var hwRenderer = (function () {
     /* ★ 표 테두리를 <b>줄보다 먼저</b> 깔아 둔다. 뒤에 그리면 칸 배경이 글자를 덮는다. */
     for (var t = 0; t < (pg.tables || []).length; t++) tableEl(body, pg.tables[t]);
 
+    paraBoxes(body, pg);
+
     for (var i = 0; i < pg.lines.length; i++) body.appendChild(lineEl(pg.lines[i]));
+  }
+
+  /* 테두리 한 변 → CSS. 굵기는 mm 문자열이라 HWPUNIT 으로 바꿔 재고, 0px 로 접히면 안 보이므로 1px 을 바닥으로 둔다. */
+  var cMmHu = 283.465;
+
+  function borderCss(line) {
+    if (!line || !line.type || line.type === 'none') return '0';
+    var style = cUlStyle[line.type] || 'solid';
+    var w = Math.max(1, Math.round(hwHu2Px(parseFloat(line.w || '0.12') * cMmHu)));
+    return w + 'px ' + style + ' ' + (line.color || '#000000');
+  }
+
+  function visible(bf) {
+    if (!bf) return false;
+    if (bf.fill) return true;
+    var sides = [bf.l, bf.r, bf.t, bf.b];
+    for (var i = 0; i < sides.length; i++) if (sides[i] && sides[i].type && sides[i].type !== 'none') return true;
+    return false;
+  }
+
+  /* 문단 테두리·음영. ★ <b>한 쪽 안에서 이어진 줄 묶음마다</b> 상자 하나다 — 쪽이 갈리면 조각마다 그린다.
+     줄보다 먼저 그려야 음영이 글자를 안 덮는다(표 격자와 같은 이유). */
+  function paraBoxes(body, pg) {
+    var i = 0;
+    while (i < pg.lines.length) {
+      var para = pg.lines[i].para;
+      var bf = hwModel.borderFill(hwModel.paraShape(para.ps).bf);
+      var j = i;
+      while (j < pg.lines.length && pg.lines[j].para === para) j++;
+
+      if (visible(bf)) body.appendChild(paraBoxEl(pg.lines, i, j, hwModel.paraShape(para.ps), bf));
+      i = j;
+    }
+  }
+
+  function paraBoxEl(lines, from, to, ps, bf) {
+    var x0 = lines[from].xHu, x1 = x0, y0 = lines[from].yHu, y1 = y0;
+    for (var k = from; k < to; k++) {
+      var it = lines[k];
+      if (it.xHu < x0) x0 = it.xHu;
+      if (it.xHu + it.line.availHu > x1) x1 = it.xHu + it.line.availHu;
+      if (it.yHu < y0) y0 = it.yHu;
+      if (it.yHu + it.line.hHu > y1) y1 = it.yHu + it.line.hHu;
+    }
+
+    var d = el('div', 'hw-parabox');
+    d.style.left = hwHu2Px(x0 - (ps.bsL || 0)) + 'px';
+    d.style.top = hwHu2Px(y0 - (ps.bsT || 0)) + 'px';
+    d.style.width = hwHu2Px((x1 - x0) + (ps.bsL || 0) + (ps.bsR || 0)) + 'px';
+    d.style.height = hwHu2Px((y1 - y0) + (ps.bsT || 0) + (ps.bsB || 0)) + 'px';
+    d.style.borderLeft = borderCss(bf.l);
+    d.style.borderRight = borderCss(bf.r);
+    d.style.borderTop = borderCss(bf.t);
+    d.style.borderBottom = borderCss(bf.b);
+    if (bf.fill) d.style.background = bf.fill;
+    return d;
   }
 
   function tableEl(body, obj) {
@@ -96,6 +154,17 @@ var hwRenderer = (function () {
       c.style.top = hwHu2Px(r.yHu) + 'px';
       c.style.width = hwHu2Px(r.wHu) + 'px';
       c.style.height = hwHu2Px(r.hHu) + 'px';
+
+      /* 칸이 테두리/배경 표를 가리키면 그 값으로 그린다. 안 가리키면 CSS 의 회색 한 줄 그대로다.
+         ★ 이웃과 맞닿은 변은 두 번 그려진다 — 1차에서는 그대로 둔다. */
+      var bf = hwModel.borderFill(r.cell.bf);
+      if (bf) {
+        c.style.borderLeft = borderCss(bf.l);
+        c.style.borderRight = borderCss(bf.r);
+        c.style.borderTop = borderCss(bf.t);
+        c.style.borderBottom = borderCss(bf.b);
+        c.style.background = bf.fill || 'transparent';
+      }
       box.appendChild(c);
     }
 
@@ -215,15 +284,50 @@ var hwRenderer = (function () {
     return s;
   }
 
+  /* 밑줄 모양 이름(cBorderMap 의 이름표) → CSS. 우리가 그릴 수 있는 네 가지로 접는다. */
+  var cUlStyle = {
+    dash: 'dashed', longDash: 'dashed', dashDot: 'dashed', dashDotDot: 'dashed',
+    dot: 'dotted', circleDot: 'dotted',
+    double: 'double', thinThick: 'double', thickThin: 'double', thinThickThin: 'double',
+    wave: 'wavy', doubleWave: 'wavy'
+  };
+
+  /* 강조점 hwp EmphasisSort 번호 → CSS text-emphasis. 0 은 없음. */
+  var cEmphMark = ['', 'dot', 'circle', 'triangle', 'triangle', 'sesame', 'dot',
+                   'dot', 'dot', 'dot', 'dot', 'dot', 'dot'];
+
   function applyCs(span, cs) {
     var face = hwModel.faceName(cs.face);
     span.style.fontFamily = '"' + ((face && face.sub) || 'NanumGothicHW') + '"';
-    span.style.fontSize = hwHu2Px(cs.sizeHu) + 'px';
+    span.style.fontSize = hwHu2Px(hwMeasure.drawSizeHu(cs)) + 'px';
     if (cs.bold) span.style.fontWeight = '700';
     if (cs.italic) span.style.fontStyle = 'italic';
     if (cs.color) span.style.color = cs.color;
     if (cs.underline) span.style.textDecoration = 'underline';
     if (cs.strike) span.style.textDecoration = (cs.underline ? 'underline ' : '') + 'line-through';
+    if (cs.underline) {
+      span.style.textDecorationStyle = cUlStyle[cs.ulShape] || 'solid';
+      if (cs.ulColor) span.style.textDecorationColor = cs.ulColor;
+    }
+
+    /* 형광펜. ★ null 이 "없음" 이다 — 흰색이 아니다(hwp 는 0xFFFFFFFF, hwpx 는 "none"). */
+    if (cs.shade) span.style.backgroundColor = cs.shade;
+
+    /* 첨자는 크기를 hwMeasure.drawSizeHu 가 이미 줄였다. 여기서는 자리만 올리고 내린다. */
+    if (cs.sup) span.style.verticalAlign = 'super';
+    else if (cs.sub) span.style.verticalAlign = 'sub';
+
+    if (cs.emph && cEmphMark[cs.emph]) {
+      span.style.textEmphasis = cEmphMark[cs.emph] + ' ' + (cs.color || '#000000');
+      span.style.textEmphasisPosition = 'over';
+    }
+
+    if (cs.outline) span.style.webkitTextStroke = '0.4px ' + (cs.color || '#000000');
+
+    /* 그림자·양각·음각은 한 속성(text-shadow)을 나눠 쓴다 — 같이 켜면 뒤엣것이 이긴다. */
+    if (cs.emboss) span.style.textShadow = '-1px -1px 0 #ffffff, 1px 1px 0 #808080';
+    else if (cs.engrave) span.style.textShadow = '1px 1px 0 #ffffff, -1px -1px 0 #808080';
+    else if (cs.shadow) span.style.textShadow = '1px 1px 0 #b2b2b2';
     if (cs.ratio && cs.ratio !== 100) {
       span.style.display = 'inline-block';
       span.style.transform = 'scaleX(' + (cs.ratio / 100) + ')';

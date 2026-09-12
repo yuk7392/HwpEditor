@@ -744,14 +744,16 @@ var hwDialog = (function () {
           value: String(num && num.numShape ? num.numShape : 0), options: cNumShape },
         { type: 'check', key: 'numDash', label: '줄표 넣기', value: !!(num && num.numBefore === '-') },
         num ? { type: 'note', text: '' }
-            : { type: 'note', text: '이 문서에는 쪽 번호 컨트롤이 없습니다 — 위치를 바꿀 수 없습니다.' }
+            : { type: 'note', text: '이 문서에는 쪽 번호가 없습니다 — 넣기를 누르면 새로 만듭니다.' }
       ],
       onOk: function (st) {
         var v = {};
         if (st.touched.numPos && st.get('numPos') !== null) v.numPos = parseInt(st.get('numPos'), 10);
         if (st.touched.numShape && st.get('numShape') !== null) v.numShape = parseInt(st.get('numShape'), 10);
         if (st.touched.numDash) v.numDash = !!st.get('numDash');
-        if (any(v)) hwPage.setPageNum(si, v);
+        /* ★ 없는 문서에서는 아무것도 안 건드려도 만들어야 한다 — any(v) 로 걸러 버리면
+           "넣기" 를 눌러도 조용히 아무 일이 안 일어난다. */
+        if (any(v) || !num) hwPage.setPageNum(si, v);
       }
     });
   }
@@ -949,6 +951,46 @@ var hwDialog = (function () {
     });
   }
 
+  /* 스타일 만들기·고치기. 모양은 언제나 <b>지금 캐럿이 선 자리</b>에서 떠 온다 —
+     스타일 안에서 글꼴·정렬을 또 고르게 하면 글자 모양·문단 모양 대화상자를 한 벌 더 두는 셈이다. */
+  function styleEdit() {
+    if (!hwDoc) return null;
+
+    var list = hwFormat.styles();
+    var opts = [];
+    for (var i = 0; i < list.length; i++)
+      opts.push({ v: String(list[i].id), t: list[i].name || ('스타일 ' + list[i].id) });
+
+    var cur = hwCaret.para();
+    return open({
+      title: '스타일', width: 430,
+      rows: [
+        { type: 'select', key: 'pick', label: '고칠 스타일', width: 190,
+          value: String(cur ? (cur.sty || 0) : 0), options: opts },
+        { type: 'text', key: 'name', label: '이름', width: 190, value: '' },
+        { type: 'check', key: 'take', label: '지금 캐럿 자리의 글자·문단 모양으로 고치기', value: false },
+        { type: 'note', text: '이름만 넣고 "새로 만들기" 를 누르면 지금 모양으로 스타일을 만들어 바로 겁니다.' }
+      ],
+      buttons: [
+        { label: '새로 만들기', fn: function (st) {
+            var made = hwFormat.newStyle(String(st.get('name') || ''));
+            if (made < 0) return;
+            close();
+            hwFormat.applyStyle(made);
+          } },
+        { label: '고치기', ok: true },
+        { label: '닫기', cancel: true }
+      ],
+      onOk: function (st) {
+        var id = parseInt(st.get('pick'), 10);
+        var over = {};
+        if (String(st.get('name') || '').trim()) over.name = String(st.get('name')).trim();
+        if (st.get('take')) over.take = true;
+        hwFormat.editStyle(id, over);
+      }
+    });
+  }
+
   /* 책갈피 넣기. 이름 하나만 받는다 — 자리는 캐럿이다. */
   function bookmark() {
     if (!hwDoc) return null;
@@ -1000,6 +1042,7 @@ var hwDialog = (function () {
     tableSplit: tableSplit,
     hyperlink: hyperlink,
     bookmark: bookmark,
+    styleEdit: styleEdit,
     categories: function () { return cCats.map(function (c) { return c.t; }); }
   };
 })();

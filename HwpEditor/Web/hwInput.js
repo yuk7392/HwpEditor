@@ -55,8 +55,13 @@ var hwInput = (function () {
 
   /* ★ 되돌리기 기록 → 고치기 → 다시 배치 → 캐럿 을 <b>한 묶음</b>으로 돈다.
        중간에 배치를 빼먹으면 캐럿이 옛 좌표를 보고 엉뚱한 자리에 선다. */
+  /* 읽기 모드. ★ 막는 자리는 edit() <b>하나</b>다 — 단추만 감추면 키보드·붙여넣기·우클릭으로
+     그대로 고쳐진다. 모든 편집이 이 문을 지난다(hwFormat·hwTable·hwLink·hwObj 포함). */
+  var cReadOnly = false;
+
   function edit(fn, coalesceKey, pIds) {
     if (!hwDoc) return;
+    if (cReadOnly) { hwSetStatus({ text: '읽기 모드입니다 — 고칠 수 없습니다' }); return; }
     if (window.hwFind) hwFind.clearHits();
 
     /* ★ 여러 문단을 한꺼번에 고치는 동작(모두 바꾸기)은 <b>고칠 문단을 직접</b> 준다.
@@ -1228,7 +1233,9 @@ var hwInput = (function () {
     remapClip: remapClip,
     dropClip: function () { cClip = null; },
     status: status,
-    isComposing: function () { return cComposing; }
+    isComposing: function () { return cComposing; },
+    setReadOnly: function (on) { cReadOnly = !!on; },
+    readOnly: function () { return cReadOnly; }
   };
 })();
 

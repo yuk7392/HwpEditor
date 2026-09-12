@@ -33,6 +33,12 @@
     <button class="hw-rb-tab" data-rb="insert">입력</button>
     <button class="hw-rb-tab" data-rb="format">서식</button>
     <button class="hw-rb-tab" data-rb="page">쪽</button>
+    <!-- 맥락 탭. ★ 안 보일 때도 DOM 에는 그대로 둔다(판과 같은 규칙) — hwUi.refresh 와 검사가
+         속성으로 단추를 찾는다. 보임/안 보임은 hw-rb-ctx 클래스가 정한다. -->
+    <button class="hw-rb-tab hw-rb-ctx" data-rb="pic" data-ctx="image" hidden>그림 도구</button>
+    <button class="hw-rb-tab hw-rb-ctx" data-rb="draw" data-ctx="opaque" hidden>도형 도구</button>
+    <button class="hw-rb-tab hw-rb-ctx" data-rb="tblTool" data-ctx="table" hidden>표 도구</button>
+    <button class="hw-rb-tab hw-rb-ctx" data-rb="read" data-ctx="read" hidden>읽기 모드</button>
   </div>
 
   <div id="hwTools" class="hw-rb-panes">
@@ -97,6 +103,14 @@
         </div>
         <span class="hw-rb-label">맞춤</span>
       </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-tool" data-act="readOn" title="읽기 모드로 — 고칠 수 없고 읽기만 합니다">읽기 모드</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">모드</span>
+      </div>
     </div>
 
     <div class="hw-rb-pane" data-rb="insert">
@@ -149,6 +163,9 @@
         <div class="hw-rb-body">
           <div class="hw-rb-rows">
             <div class="hw-rb-row"><select id="hwStyle" class="hw-pick" title="스타일 (Ctrl+Alt+1~0)"></select></div>
+            <div class="hw-rb-row">
+              <button class="hw-menu-item" data-cmd="styleEdit" title="스타일 만들기·고치기">스타일 편집</button>
+            </div>
           </div>
         </div>
         <span class="hw-rb-label">스타일</span>
@@ -211,6 +228,133 @@
       </div>
     </div>
 
+    <div class="hw-rb-pane" data-rb="pic">
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row">
+              <button class="hw-tool" data-obj="inline" title="글자처럼 취급 / 어울림으로 바꾼다">글자처럼</button>
+              <button class="hw-tool" data-flow="takePlace" title="자리 차지">자리 차지</button>
+            </div>
+            <div class="hw-rb-row">
+              <button class="hw-tool" data-flow="behind" title="글 뒤로">글 뒤로</button>
+              <button class="hw-tool" data-flow="front" title="글 앞으로">글 앞으로</button>
+            </div>
+          </div>
+        </div>
+        <span class="hw-rb-label">배치</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-tool" data-z="front" title="맨 앞으로">맨 앞으로</button></div>
+            <div class="hw-rb-row"><button class="hw-tool" data-z="back" title="맨 뒤로">맨 뒤로</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">순서</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-tool" data-objdel="1" title="고른 개체 지우기 (Delete)">지우기</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">개체</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="draw">
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row">
+              <button class="hw-tool" data-flow="takePlace" title="자리 차지">자리 차지</button>
+              <button class="hw-tool" data-flow="behind" title="글 뒤로">글 뒤로</button>
+            </div>
+            <div class="hw-rb-row">
+              <button class="hw-tool" data-flow="front" title="글 앞으로">글 앞으로</button>
+              <button class="hw-tool" data-objdel="1" title="고른 개체 지우기 (Delete)">지우기</button>
+            </div>
+          </div>
+        </div>
+        <span class="hw-rb-label">배치</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-tool" data-z="front" title="맨 앞으로">맨 앞으로</button></div>
+            <div class="hw-rb-row"><button class="hw-tool" data-z="back" title="맨 뒤로">맨 뒤로</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">순서</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="tblTool">
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row">
+              <button class="hw-menu-item" data-cmd="tableProps" title="표 속성">표 속성</button>
+              <button class="hw-menu-item" data-cmd="cellBorder" title="셀 테두리·배경 (L)">셀 테두리</button>
+            </div>
+            <div class="hw-rb-row">
+              <button class="hw-menu-item" data-cmd="tableSplit" title="셀 나누기 (S)">셀 나누기</button>
+              <button class="hw-menu-item" data-cmd="cellMerge" title="셀 합치기 (M)">셀 합치기</button>
+            </div>
+          </div>
+        </div>
+        <span class="hw-rb-label">셀</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-menu-item" data-cmd="sameWidth" title="칸 너비를 같게">너비 같게</button></div>
+            <div class="hw-rb-row"><button class="hw-menu-item" data-cmd="sameHeight" title="줄 높이를 같게">높이 같게</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">크기</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row">
+              <button class="hw-menu-item" data-cmd="tableDivide" title="커서가 선 줄에서 표를 둘로 나눈다">표 나누기</button>
+              <button class="hw-menu-item" data-cmd="tableJoin" title="바로 뒤 표를 이 표에 붙인다">표 붙이기</button>
+            </div>
+            <div class="hw-rb-row">
+              <button class="hw-menu-item" data-cmd="tableToText" title="표를 지우고 내용을 글로 푼다">텍스트로 변환</button>
+            </div>
+          </div>
+        </div>
+        <span class="hw-rb-label">표</span>
+      </div>
+    </div>
+
+    <div class="hw-rb-pane" data-rb="read">
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <button class="hw-rb-big hw-tool" data-act="readOff" title="읽기 모드 끄기">
+            <span class="hw-rb-ico">✎</span><span>편집으로</span>
+          </button>
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-tool" data-zoom="width" title="폭 맞춤">폭 맞춤</button></div>
+            <div class="hw-rb-row"><button class="hw-tool" data-zoom="page" title="쪽 맞춤">쪽 맞춤</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">읽기</span>
+      </div>
+      <div class="hw-rb-group">
+        <div class="hw-rb-body">
+          <div class="hw-rb-rows">
+            <div class="hw-rb-row"><button class="hw-menu-item" data-cmd="find" title="찾기 (Ctrl+F)">찾기</button></div>
+            <div class="hw-rb-row"><button class="hw-menu-item" data-cmd="pdf">PDF</button></div>
+          </div>
+        </div>
+        <span class="hw-rb-label">문서</span>
+      </div>
+    </div>
+
     <div class="hw-rb-pane" data-rb="page">
       <div class="hw-rb-group">
         <div class="hw-rb-body">
@@ -229,6 +373,9 @@
             </div>
             <div class="hw-rb-row">
               <button class="hw-menu-item" data-cmd="pageNumber" title="쪽 번호 매기기">쪽 번호</button>
+              <button class="hw-menu-item" data-cmd="headDelete" title="이 구역의 머리말 지우기">머리말×</button>
+              <button class="hw-menu-item" data-cmd="footDelete" title="이 구역의 꼬리말 지우기">꼬리말×</button>
+              <button class="hw-menu-item" data-cmd="pageNumDelete" title="이 구역의 쪽 번호 지우기">쪽 번호×</button>
             </div>
           </div>
         </div>

@@ -292,7 +292,34 @@ namespace HwpEditor.Files
         public void Apply(SaveRequest pReq, SaveResult pResult)
         {
             if (pReq == null) return;
-            cHwpxWriter.Apply(this, Index, pReq, pResult);
+
+            // ★ 되쓰기는 메모리 속 XmlDocument 를 <b>그 자리에서</b> 고친다 — 가운데서 넘어지면
+            //   절반만 고쳐진 문서가 남고, 다음 저장이 그 위에 또 쌓여 조용히 어긋난다.
+            //   그래서 먼저 XML 을 떠 두고, 넘어지면 통째로 되돌린 뒤 색인을 다시 세운다.
+            //   (문서 객체는 readonly 라 바꿔 끼울 수 없다 — LoadXml 로 <b>내용만</b> 되돌린다.)
+            string headBak = cHeader.OuterXml;
+            string[] secBak = new string[cSectionDocs.Count];
+            for (int i = 0; i < cSectionDocs.Count; i++) secBak[i] = cSectionDocs[i].OuterXml;
+
+            try
+            {
+                cHwpxWriter.Apply(this, Index, pReq, pResult);
+            }
+            catch
+            {
+                try
+                {
+                    cHeader.LoadXml(headBak);
+                    for (int i = 0; i < secBak.Length && i < cSectionDocs.Count; i++)
+                        cSectionDocs[i].LoadXml(secBak[i]);
+
+                    // 색인은 옛 요소를 가리키고 있다 — 되돌린 XML 위에 다시 세운다.
+                    cIndex.Clear();
+                    cModel = cHwpxReader.ReadOpened(cHeader, cSectionDocs, Path, cIndex);
+                }
+                catch (Exception ex2) { cLog.Write("hwpx 되돌리기 실패"); cLog.Write(ex2); }
+                throw;
+            }
 
             if (pResult != null)
             {

@@ -115,6 +115,15 @@ body {
   font-weight: 700;
 }
 
+/* 맥락 탭(그림·도형·표·읽기) — 엑셀의 초록 탭처럼 밑줄 하나로 갈라 보인다.
+   ★ 감출 때 [hidden] 을 쓴다 — DOM 에는 남아야 하고(판과 같은 규칙), display:none 은 그것으로 족하다. */
+.hw-rb-ctx {
+  color: #ffe9a8;
+  box-shadow: inset 0 -2px 0 #ffc83d;
+}
+
+.hw-rb-ctx.on { color: #9a6a00; box-shadow: inset 0 -2px 0 #ffc83d; }
+
 .hw-rb-dev { height: 22px; color: #ffffff; border-color: rgba(255, 255, 255, 0.45); }
 .hw-rb-dev:hover { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.7); }
 

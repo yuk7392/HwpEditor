@@ -156,7 +156,23 @@ namespace HwpEditor
             {
                 cLog.Write("메시지 처리 실패: " + pJson);
                 cLog.Write(ex);
+
+                // ★ 저장 요청이 파싱에서 넘어졌으면 화면에 <b>실패</b>를 돌려준다 — 안 돌려주면
+                //   "저장 중…" 에 멈춰 선 채로 사용자가 무엇이 잘못됐는지 알 길이 없다.
+                if (pJson != null && pJson.IndexOf("\"save\"", StringComparison.Ordinal) >= 0)
+                    SaveFailed(ex.Message);
             }
+        }
+
+        /// <summary>저장이 실패했음을 화면에 알린다(정상 경로의 응답과 같은 함수를 쓴다).</summary>
+        private void SaveFailed(string pMessage)
+        {
+            try
+            {
+                string msg = (pMessage ?? "").Replace("\\", "\\\\").Replace("'", "\\'").Replace("\r", " ").Replace("\n", " ");
+                cWeb.Invoke("hwSaved({ ok:false, msg:'" + msg + "' })");
+            }
+            catch (Exception ex2) { cLog.Write(ex2); }
         }
 
         /// <summary>

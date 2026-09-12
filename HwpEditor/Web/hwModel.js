@@ -100,16 +100,21 @@ var hwModel = (function () {
     return out;
   }
 
+  /* ★ 차례는 색인(indexCells)과 <b>글자 그대로 같아야</b> 한다 — 개체마다 띠 → 표 칸 순이다.
+     띠를 전부 돌고 나서 표를 도는 식으로 갈리면, 한 문단에 띠와 표가 같이 달렸을 때
+     orderOf 와 이 목록의 자리가 어긋나 선택 범위의 앞뒤가 뒤집힌다. */
   function withCells(p, out) {
     out.push(p);
-    for (var b = 0; b < (p.objs || []).length; b++) {
-      var bp = p.objs[b].paras || [];
+    var objs = p.objs || [];
+    for (var i = 0; i < objs.length; i++) {
+      var bp = objs[i].paras || [];
       for (var k2 = 0; k2 < bp.length; k2++) withCells(bp[k2], out);
-    }
-    eachTableOf(p, function (t) {
+
+      var t = objs[i].table;
+      if (!t || !t.cells) continue;
       for (var c = 0; c < t.cells.length; c++)
         for (var k = 0; k < t.cells[c].paras.length; k++) withCells(t.cells[c].paras[k], out);
-    });
+    }
   }
 
   function eachTableOf(p, fn) {
@@ -598,6 +603,7 @@ var hwModel = (function () {
     if (result && result.bullets) hwDoc.bullets = result.bullets;
     if (result && result.styles) hwDoc.styles = result.styles;
     if (result && result.bulMap && window.hwFormat) hwFormat.remapHeads(result.bulMap, result.numMap);
+    if (result && result.styMap && window.hwFormat) hwFormat.remapStyles(result.styMap);
 
     var all = allParas();
     for (var i = 0; i < all.length; i++) {
@@ -676,6 +682,11 @@ var hwModel = (function () {
     gen: function () { return cGen; },
     pushTableOp: function (op) { cTableOps.push(op); },
     pushSecOp: function (op) { cSecOps.push(op); },
+
+    /* 이번 저장 전에 넣었다가 도로 뺀 띠의 요청을 걷는다 — 안 걷으면 화면에 없는 띠가 저장본에 생긴다. */
+    dropSecOp: function (tmpId) {
+      for (var i = cSecOps.length - 1; i >= 0; i--) if (cSecOps[i].tmpId === tmpId) cSecOps.splice(i, 1);
+    },
     isFresh: function (id) { return !!cFresh[id]; },
     allParas: allParas,
     allCells: allCells,

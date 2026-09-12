@@ -838,7 +838,7 @@ function hwUiTest() {
       t: 'uitest', steps: steps, ops: hwBuildOps(), drift: hwCaretDriftMax(),
       charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
       borderFills: hwDoc.borderFills,
-      numberings: hwDoc.numberings, bullets: hwDoc.bullets
+      numberings: hwDoc.numberings, bullets: hwDoc.bullets, styles: hwDoc.styles
     });
   });
 }
@@ -2925,9 +2925,12 @@ function hwUiTestS6(t) {
   var shown180 = 0;
   for (var v180 = 0; v180 < panes180.length; v180++)
     if (getComputedStyle(panes180[v180]).display !== 'none') shown180++;
-  ok('180 리본이 탭 5개로 서고 판은 하나만 보인다',
-     tabs180.length === 5 && panes180.length === 5 && shown180 === 1,
-     '탭 ' + tabs180.length + '개, 판 ' + panes180.length + '개, 보이는 판 ' + shown180 + '개');
+  /* ★ 본 탭 5개 + 맥락 탭 4개(그림·도형·표·읽기)다. 맥락 탭은 DOM 에 늘 있고 hidden 으로만 갈린다. */
+  var ctx180 = document.querySelectorAll('.hw-rb-tab.hw-rb-ctx');
+  ok('180 리본이 본 탭 5개·맥락 탭 4개로 서고 판은 하나만 보인다',
+     tabs180.length === 9 && ctx180.length === 4 && panes180.length === 9 && shown180 === 1,
+     '탭 ' + tabs180.length + '개(맥락 ' + ctx180.length + '), 판 ' + panes180.length
+       + '개, 보이는 판 ' + shown180 + '개');
 
   /* 181 탭을 누르면 그 판으로 바뀐다 — 실제 click 이벤트로 태운다. */
   var fmt181 = null;
@@ -2952,6 +2955,61 @@ function hwUiTestS6(t) {
      !!hidden182 && !vis182 && !!head182,
      '표+ ' + (hidden182 ? '있음' : '없음') + '(보임 ' + vis182 + '), 글머리표 단추 ' + (head182 ? '있음' : '없음'));
 
+  if (window.hwUi && hwUi.showTab) hwUi.showTab('edit');
+
+  /* ── 개체 도구 탭·읽기 모드 198~201 ─────────────────────────────────── */
+
+  /* 198 아무것도 안 골랐으면 맥락 탭은 표 탭(캐럿이 표 안일 때)을 빼고 다 감춰져 있다. */
+  if (window.hwObj) hwObj.clear();
+  hwCaret.set(hwDoc.sections[0].paras[0].id, 0, false);
+  hwUi.refresh();
+  var pic198 = document.querySelector('.hw-rb-tab[data-rb="pic"]');
+  var draw198 = document.querySelector('.hw-rb-tab[data-rb="draw"]');
+  var read198 = document.querySelector('.hw-rb-tab[data-rb="read"]');
+  ok('198 아무것도 안 고르면 그림·도형·읽기 탭이 감춰진다',
+     !!pic198 && pic198.hidden && !!draw198 && draw198.hidden && !!read198 && read198.hidden,
+     '그림 ' + (pic198 ? pic198.hidden : '없음') + ' · 도형 ' + (draw198 ? draw198.hidden : '없음')
+       + ' · 읽기 ' + (read198 ? read198.hidden : '없음'));
+
+  /* 199 그림을 고르면 그림 탭이 나타난다. */
+  var shot199 = null, all199 = hwModel.allParas();
+  for (var i199 = 0; i199 < all199.length && !shot199; i199++)
+    for (var j199 = 0; j199 < (all199[i199].objs || []).length; j199++) {
+      var o199 = all199[i199].objs[j199];
+      if (o199.kind === 'image' || o199.kind === 'opaque') { shot199 = { p: all199[i199], o: o199 }; break; }
+    }
+  if (shot199) {
+    hwObj.select(shot199.p.id, shot199.o.pos);
+    hwUi.refresh();
+    var want199 = shot199.o.kind === 'image' ? pic198 : draw198;
+    ok('199 개체를 고르면 그 개체 탭이 나타난다', !!want199 && !want199.hidden,
+       shot199.o.kind + ' 탭 hidden=' + (want199 ? want199.hidden : '없음'));
+    hwObj.clear();
+    hwUi.refresh();
+  } else ok('199 개체를 고르면 그 개체 탭이 나타난다', true, '이 문서에는 개체가 없다 — 건너뜀');
+
+  /* 200 읽기 모드를 켜면 본 탭이 감춰지고 읽기 탭만 남는다. */
+  hwUi.setRead(true);
+  var main200 = document.querySelector('.hw-rb-tab[data-rb="edit"]');
+  ok('200 읽기 모드는 본 탭을 감추고 읽기 탭을 보인다',
+     hwUi.isRead() && !!read198 && !read198.hidden && !!main200 && main200.hidden,
+     '읽기 탭 hidden=' + read198.hidden + ' · 편집 탭 hidden=' + main200.hidden);
+
+  /* 201 읽기 모드에서는 글이 안 고쳐진다 — 막는 자리가 hwInput.edit 하나여야 키보드도 같이 막힌다. */
+  var body201 = hwDoc.sections[0].paras[0];
+  for (var b201 = 0; b201 < hwDoc.sections[0].paras.length; b201++)
+    if (hwDoc.sections[0].paras[b201].len > 0) { body201 = hwDoc.sections[0].paras[b201]; break; }
+  hwCaret.set(body201.id, 0, false);
+  var len201 = body201.len;
+  typeIn('막힘');
+  var blocked201 = body201.len === len201;
+  hwUi.setRead(false);
+  hwCaret.set(body201.id, 0, false);
+  typeIn('풀림');
+  ok('201 읽기 모드에서는 글이 안 고쳐지고, 끄면 다시 고쳐진다',
+     blocked201 && body201.len === len201 + 2,
+     '읽기 중 ' + len201 + '→' + (blocked201 ? len201 : '바뀜') + ' · 끈 뒤 ' + body201.len);
+  key('z', { ctrl: true });
   if (window.hwUi && hwUi.showTab) hwUi.showTab('edit');
 
   /* ── 책갈피 넣기 187~188 ─────────────────────────────────────────────
@@ -3007,6 +3065,182 @@ function hwUiTestS6(t) {
          'cellText "' + got189 + '"');
     } else ok('189 새 칸에 친 글이 저장 요청에 남는다', false, '새 칸을 못 찾았다');
   } else ok('189 새 칸에 친 글이 저장 요청에 남는다', true, '문서에 원래 있던 표가 없다 — 건너뜀');
+
+  /* ── 머리말 지우기·쪽 번호 만들기 190~193 ──────────────────────────── */
+  var si190 = 0;
+  var secOpCount = function (name) {
+    var n = 0, list = hwBuildOps();
+    for (var q = 0; q < list.length; q++) if (list[q].op === name) n++;
+    return n;
+  };
+
+  /* 190 없던 쪽 번호를 새로 만든다. */
+  var had190 = !!hwPage.bandOf(si190, 'pgnp');
+  if (!had190) hwPage.addPageNum(si190, { numPos: 5, numShape: 0, numDash: true });
+  var num190 = hwPage.bandOf(si190, 'pgnp');
+  ok('190 쪽 번호를 새로 만든다',
+     !!num190 && (had190 || secOpCount('addPageNum') === 1),
+     (had190 ? '원래 있던 문서 — 만들기는 건너뜀' : 'addPageNum op ' + secOpCount('addPageNum'))
+       + ' · 자리 ' + (num190 ? num190.numPos : '없음'));
+
+  /* 191 쪽 번호를 지우면 모델에서도 요청에서도 사라진다. */
+  hwPage.delBand(si190, 'pgnp');
+  ok('191 쪽 번호를 지운다',
+     !hwPage.bandOf(si190, 'pgnp') && secOpCount('addPageNum') === 0,
+     '남은 컨트롤 ' + (hwPage.bandOf(si190, 'pgnp') ? '있음' : '없음')
+       + ' · addPageNum op ' + secOpCount('addPageNum'));
+
+  /* 192 넣었던 머리말을 지우면 addHeader 요청도 같이 걷힌다 — 안 걷으면 저장본에 되살아난다.
+     원래 머리말이 있던 문서는 그 문단 요청의 objs 에서 빠지는 것으로 같은 것을 본다. */
+  if (!hwPage.bandOf(si190, 'head')) {
+    hwPage.addBand(si190, 'head', 'both', '검사머리말');
+    var mid192 = secOpCount('addHeader');
+    hwPage.delBand(si190, 'head');
+    ok('192 넣었던 머리말을 지우면 요청도 걷힌다',
+       !hwPage.bandOf(si190, 'head') && secOpCount('addHeader') === 0,
+       'addHeader op ' + mid192 + '→' + secOpCount('addHeader'));
+  } else {
+    var hostId192 = null, hp192 = hwDoc.sections[si190].paras;
+    for (var h192 = 0; h192 < hp192.length && !hostId192; h192++)
+      for (var k192 = 0; k192 < (hp192[h192].objs || []).length; k192++)
+        if (hp192[h192].objs[k192].ctrl === 'head') hostId192 = hp192[h192].id;
+    hwPage.delBand(si190, 'head');
+    var op192 = null, all192 = hwBuildOps();
+    for (var m192 = 0; m192 < all192.length; m192++) if (all192[m192].id === hostId192) op192 = all192[m192];
+    var still192 = false;
+    if (op192) for (var n192 = 0; n192 < (op192.objs || []).length; n192++)
+      if (op192.objs[n192].ctrl === 'head') still192 = true;
+    ok('192 원래 있던 머리말을 지우면 그 문단 요청의 objs 에서 빠진다',
+       !hwPage.bandOf(si190, 'head') && !!op192 && !still192,
+       '문단 요청 ' + (op192 ? op192.op : '없음') + ' · objs 에 머리말 ' + still192);
+  }
+
+  /* 193 지울 것이 없으면 거짓을 돌려준다 — 조용히 성공하면 안 된다. */
+  var foot193 = !!hwPage.bandOf(si190, 'foot');
+  ok('193 지울 것이 없으면 안 지운다', hwPage.delBand(si190, 'foot') === foot193,
+     '꼬리말 ' + (foot193 ? '있음(지움)' : '없음(안 지움)'));
+
+  /* 194 ★ 맨 끝에 하나를 남긴다 — 191 이 지워 버려서 ops.json 에 addPageNum 이 안 남으면
+     --apply 가 이 길을 한 번도 안 지난다(187 을 끝에 둔 것과 같은 이유). */
+  hwPage.addPageNum(si190, { numPos: 6, numShape: 0, numDash: true });
+  var left194 = hwPage.bandOf(si190, 'pgnp');
+  ok('194 만든 쪽 번호가 저장 요청에 남는다',
+     !!left194 && left194.numPos === 6 && secOpCount('addPageNum') === 1,
+     '자리 ' + (left194 ? left194.numPos : '없음') + ' · op ' + secOpCount('addPageNum'));
+
+  /* ── 표 나누기·붙이기·텍스트로 변환 202~205 ───────────────────────── */
+  var tObj202 = null, tAll202 = hwModel.allTableObjs();
+  for (var z202 = 0; z202 < tAll202.length; z202++)
+    if (tAll202[z202].table && hwTable.rowsOf(tAll202[z202].table) >= 2) { tObj202 = tAll202[z202]; break; }
+
+  if (tObj202) {
+    var t202 = tObj202.table;
+    var tmpCount = function () {
+      var n = 0, objs = hwModel.allTableObjs();
+      for (var d = 0; d < objs.length; d++) if (objs[d].tmpId) n++;
+      return n;
+    };
+    var rows202 = hwTable.rowsOf(t202), n202 = hwModel.allTableObjs().length, tmp202 = tmpCount();
+
+    /* 202 둘째 줄에서 나누면 표가 둘이 되고 줄 수가 갈린다. */
+    var seed202 = null;
+    for (var s202 = 0; s202 < t202.cells.length; s202++)
+      if (t202.cells[s202].r === 1 && t202.cells[s202].paras.length) { seed202 = t202.cells[s202]; break; }
+    if (seed202) {
+      hwCaret.set(seed202.paras[0].id, 0, false);
+      /* ★ 나눌 수 없는 자리(문단 목록에 없는 데 매달린 표)면 거절해야 하고, 거절했으면 줄이
+         하나도 안 떨어져 있어야 한다 — 반만 한 채로 두면 그 줄들이 통째로 사라진다
+         (실측 basicsReport.hwp). 두 갈래를 다 여기서 잰다. */
+      var did202 = hwTable.splitTable();
+      var after202 = hwModel.allTableObjs().length;
+      var split202 = did202 && after202 === n202 + 1 && hwTable.rowsOf(t202) === 1;
+      var kept202 = !did202 && after202 === n202 && hwTable.rowsOf(t202) === rows202;
+      ok('202 표를 둘로 나누거나, 못 나누면 아무것도 안 건드리고 거절한다',
+         split202 || kept202,
+         (did202 ? '나눴다 · ' : '거절했다 · ') + '표 ' + n202 + '→' + after202
+           + ' · 위 표 줄 ' + rows202 + '→' + hwTable.rowsOf(t202)
+           + ' · tmpId 표 ' + tmp202 + '→' + tmpCount());
+
+      /* 203 나눈 아래 표는 새 표(tmpId)라 저장 요청에 addTable 로 실린다. */
+      var add203 = 0, ops203 = hwBuildOps();
+      for (var q203 = 0; q203 < ops203.length; q203++) if (ops203[q203].op === 'addTable') add203++;
+      ok('203 나눈 아래 표가 addTable 로 실린다', add203 >= 1, 'addTable op ' + add203 + '개');
+
+      /* 204 다시 붙인다. ★ "바로 뒤 표" 는 <b>문서 차례</b>로 정해지므로, 떠 있는 표가 여럿 매달린
+         문단에서는 방금 나눈 표가 아니라 이웃 표가 먼저 온다. 칸 수가 다르면 붙이기는 <b>거절</b>해야
+         하고(격자가 어긋나면 저장본에서만 깨진다), 거절했으면 아무것도 안 바뀌어야 한다.
+         두 갈래를 다 여기서 잰다 — 문서에 따라 어느 쪽이 나오는지가 갈린다(실측 table-position.hwp). */
+      var rowsB204 = hwTable.rowsOf(t202), cntB204 = hwModel.allTableObjs().length;
+      hwCaret.set(t202.cells[0].paras[0].id, 0, false);
+      var did204 = hwTable.joinTable();
+      var joined204 = did204 && hwTable.rowsOf(t202) === rows202 && hwModel.allTableObjs().length === n202;
+      var refused204 = !did204 && hwTable.rowsOf(t202) === rowsB204
+                    && hwModel.allTableObjs().length === cntB204;
+      ok('204 표를 다시 붙이거나, 칸 수가 다르면 아무것도 안 건드리고 거절한다',
+         joined204 || refused204,
+         (did204 ? '붙였다 · ' : '거절했다 · ') + '줄 ' + rowsB204 + '→' + hwTable.rowsOf(t202)
+           + ' · 표 ' + cntB204 + '→' + hwModel.allTableObjs().length);
+    } else ok('202 표를 둘로 나눈다', false, '둘째 줄 칸을 못 찾았다');
+
+    /* 205 텍스트로 변환 — 표가 사라지고 그 글이 문단으로 남는다. */
+    var want205 = '';
+    for (var w205 = 0; w205 < t202.cells.length; w205++)
+      if (t202.cells[w205].paras.length) want205 += hwModel.text(t202.cells[w205].paras[0]);
+    var before205 = hwModel.allTableObjs().length;
+    hwCaret.set(t202.cells[0].paras[0].id, 0, false);
+    var did205 = hwTable.toText();
+    var text205 = '';
+    var body205b = hwDoc.sections[0].paras;
+    for (var y205 = 0; y205 < body205b.length; y205++) text205 += hwModel.text(body205b[y205]);
+    var kept205 = want205.length === 0 || text205.indexOf(want205.slice(0, 4)) >= 0;
+    /* ★ 칸에 개체가 있으면 거절해야 하고, 거절했으면 표가 그대로 있어야 한다(202 와 같은 안전 조건). */
+    var done205 = did205 && hwModel.allTableObjs().length === before205 - 1 && kept205;
+    var keptAll205 = !did205 && hwModel.allTableObjs().length === before205;
+    ok('205 표를 글로 바꾸거나, 칸에 개체가 있으면 거절한다', done205 || keptAll205,
+       (did205 ? '바꿨다 · ' : '거절했다 · ') + '표 ' + before205 + '→'
+         + hwModel.allTableObjs().length + ' · 글 남음 ' + kept205);
+  } else {
+    ok('202 표를 둘로 나눈다', true, '두 줄 이상인 표가 없다 — 건너뜀');
+    ok('203 나눈 아래 표가 addTable 로 실린다', true, '건너뜀');
+    ok('204 표를 다시 붙인다', true, '건너뜀');
+    ok('205 표를 글로 바꾼다', true, '건너뜀');
+  }
+
+  /* ── 스타일 만들기·고치기 195~197 ──────────────────────────────────── */
+  var body195 = hwDoc.sections[0].paras[0];
+  for (var b195 = 0; b195 < hwDoc.sections[0].paras.length; b195++)
+    if (hwDoc.sections[0].paras[b195].len > 0) { body195 = hwDoc.sections[0].paras[b195]; break; }
+  hwCaret.set(body195.id, 0, false);
+
+  /* ★ newStyle 은 만들기만 한다 — 거는 것은 applyStyle 이다(대화상자가 둘을 잇는다). */
+  var n195 = (hwDoc.styles || []).length;
+  var made195 = hwFormat.newStyle('검사스타일195');
+  var st195 = (hwDoc.styles || [])[made195];
+  hwFormat.applyStyle(made195);
+  ok('195 스타일을 새로 만들어 건다',
+     made195 === n195 && !!st195 && st195.name === '검사스타일195'
+       && st195.ps === body195.ps && body195.sty === made195,
+     '스타일 ' + n195 + '→' + (hwDoc.styles || []).length
+       + ' · ps ' + (st195 ? st195.ps : '-') + ' · 문단 sty ' + body195.sty);
+
+  /* 196 같은 이름은 막는다 — 목록에서 어느 것인지 못 가른다. */
+  ok('196 같은 이름의 스타일은 막는다', hwFormat.newStyle('검사스타일195') === -1,
+     '스타일 수 ' + (hwDoc.styles || []).length);
+
+  /* 197 이름 바꾸기와 "지금 모양으로 고치기" 가 목록에 반영된다. */
+  var other197 = body195.ps;
+  for (var q197 = 0; q197 < hwDoc.sections[0].paras.length; q197++)
+    if (hwDoc.sections[0].paras[q197].ps !== body195.ps) { other197 = hwDoc.sections[0].paras[q197].ps; break; }
+  var src197 = null;
+  for (var r197 = 0; r197 < hwDoc.sections[0].paras.length; r197++)
+    if (hwDoc.sections[0].paras[r197].ps === other197) { src197 = hwDoc.sections[0].paras[r197]; break; }
+  if (src197) hwCaret.set(src197.id, 0, false);
+  hwFormat.editStyle(made195, { name: '검사스타일197', take: true });
+  var st197 = (hwDoc.styles || [])[made195];
+  ok('197 스타일 이름과 모양을 고친다',
+     !!st197 && st197.name === '검사스타일197' && st197.ps === other197,
+     '이름 ' + (st197 ? st197.name : '-') + ' · ps ' + (st197 ? st197.ps : '-')
+       + '(기대 ' + other197 + ')');
 }
 
 function firstCellPara() {
@@ -3261,7 +3495,7 @@ function hwSave(saveAs) {
        문서 쪽은 그중 이미 있는 것은 다시 쓰고 없는 것만 등록한다. */
     charShapes: hwDoc.charShapes, paraShapes: hwDoc.paraShapes,
     borderFills: hwDoc.borderFills,
-    numberings: hwDoc.numberings, bullets: hwDoc.bullets,
+    numberings: hwDoc.numberings, bullets: hwDoc.bullets, styles: hwDoc.styles,
     ops: ops
   });
   /* ★ 표에 넣은 새 칸에 친 글자는 이번 저장에 안 실린다 — 문서 쪽이 그 칸을 새로 만들기 때문이다.
@@ -3353,7 +3587,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (cmd === 'saveAs') { hwSave(true); return; }
       if (cmd === 'find') { hwFind.open(true); return; }
       if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap' || cmd === 'pageSetup'
-       || cmd === 'pageNumber' || cmd === 'hyperlink' || cmd === 'bookmark') {
+       || cmd === 'pageNumber' || cmd === 'hyperlink' || cmd === 'bookmark'
+       || cmd === 'styleEdit') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         hwDialog[cmd]();
         return;
@@ -3361,6 +3596,29 @@ document.addEventListener('DOMContentLoaded', function () {
       if (cmd === 'headInsert' || cmd === 'footInsert') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         hwDialog.bandInsert(cmd === 'headInsert' ? 'head' : 'foot');
+        return;
+      }
+      /* 표 도구 탭. ★ 표 밖에서 누르면 알리고 만다 — 조용히 아무 일도 안 하면 고장으로 보인다. */
+      if (cmd === 'tableProps' || cmd === 'cellBorder' || cmd === 'tableSplit'
+       || cmd === 'cellMerge' || cmd === 'sameWidth' || cmd === 'sameHeight'
+       || cmd === 'tableDivide' || cmd === 'tableJoin' || cmd === 'tableToText') {
+        if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
+        if (!hwTable.here() && !hwTable.block()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return; }
+        if (cmd === 'tableProps') hwDialog.tableProps();
+        else if (cmd === 'cellBorder') hwDialog.cellBorder();
+        else if (cmd === 'tableSplit') hwDialog.tableSplit();
+        else if (cmd === 'cellMerge') hwTable.mergeBlock();
+        else if (cmd === 'sameWidth') hwTable.sameSize(true);
+        else if (cmd === 'sameHeight') hwTable.sameSize(false);
+        else if (cmd === 'tableDivide') hwTable.splitTable();
+        else if (cmd === 'tableJoin') hwTable.joinTable();
+        else hwTable.toText();
+        return;
+      }
+      if (cmd === 'headDelete' || cmd === 'footDelete' || cmd === 'pageNumDelete') {
+        if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
+        hwPage.delBand(hwPage.caretSection(),
+                       cmd === 'headDelete' ? 'head' : cmd === 'footDelete' ? 'foot' : 'pgnp');
         return;
       }
       if (cmd) hwPost({ t: 'menu', cmd: cmd });

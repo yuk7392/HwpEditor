@@ -176,6 +176,25 @@ namespace HwpEditor.Files
             return a == null ? null : a.Value;
         }
 
+        /// <summary>
+        /// 표 번호의 상한. ★ 손상되거나 손댄 문서의 <c>id="999999999"</c> 를 그대로 믿으면
+        /// 아래 <c>while</c> 이 그 수만큼 빈 칸을 채워 메모리를 다 먹는다. 넘으면 제자리(<paramref name="pFallback"/>)로 떨어뜨린다.
+        /// 한계는 넉넉히 잡았다 — 정상 문서의 표는 수백 개다.
+        /// </summary>
+        private const int cMaxShapeId = 20000;
+
+        private static int SaneId(int pId, int pFallback)
+        {
+            if (pId < 0 || pId > cMaxShapeId) return pFallback;
+            return pId;
+        }
+
+        /// <summary>속성이 실제로 적혀 있는가. 값 0 과 "안 적힘" 을 갈라야 하는 자리에서 쓴다.</summary>
+        private static bool Has(XmlElement pEl, string pName)
+        {
+            return pEl != null && pEl.Attributes[pName] != null;
+        }
+
         private static long Num(XmlElement pEl, string pName, long pDefault)
         {
             string s = Attr(pEl, pName);
@@ -223,7 +242,7 @@ namespace HwpEditor.Files
             for (int i = 0; i < fonts.Count; i++)
             {
                 FaceNameModel m = new FaceNameModel();
-                m.Id = NumI(fonts[i], "id", i);
+                m.Id = SaneId(NumI(fonts[i], "id", i), i);
                 m.Name = Attr(fonts[i], "face");
                 m.Sub = cFontMap.Substitute(m.Name);
                 while (pDoc.FaceNames.Count <= m.Id) pDoc.FaceNames.Add(new FaceNameModel { Id = pDoc.FaceNames.Count, Name = "", Sub = cFontMap.cGothic });
@@ -283,7 +302,7 @@ namespace HwpEditor.Files
             {
                 XmlElement b = list[i];
                 BorderFillModel m = new BorderFillModel();
-                m.Id = NumI(b, "id", i + 1);
+                m.Id = SaneId(NumI(b, "id", i + 1), i + 1);
                 m.L = ReadBorderLine(Child(b, "leftBorder"));
                 m.R = ReadBorderLine(Child(b, "rightBorder"));
                 m.T = ReadBorderLine(Child(b, "topBorder"));
@@ -374,6 +393,7 @@ namespace HwpEditor.Files
                 m.Engrave = Child(c, "engrave") != null;
                 m.Bf = NumI(c, "borderFillIDRef", 0);
 
+                m.Id = SaneId(m.Id, pDoc.CharShapes.Count);
                 while (pDoc.CharShapes.Count <= m.Id) pDoc.CharShapes.Add(new CharShapeModel { Id = pDoc.CharShapes.Count, SizeHu = 1000, Color = "#000000" });
                 pDoc.CharShapes[m.Id] = m;
             }
@@ -399,6 +419,7 @@ namespace HwpEditor.Files
                     if (lvl >= 0) m.Levels[lvl] = ReadHead(h);
                 }
 
+                m.Id = SaneId(m.Id, pDoc.Numberings.Count);
                 while (pDoc.Numberings.Count <= m.Id) pDoc.Numberings.Add(new NumberingModel { Id = pDoc.Numberings.Count });
                 pDoc.Numberings[m.Id] = m;
             }
@@ -411,6 +432,7 @@ namespace HwpEditor.Files
                 m.Ch = Attr(b, "char") ?? "";
                 m.Head = ReadHead(Child(b, "paraHead"));
 
+                m.Id = SaneId(m.Id, pDoc.Bullets.Count);
                 while (pDoc.Bullets.Count <= m.Id) pDoc.Bullets.Add(new BulletModel { Id = pDoc.Bullets.Count });
                 pDoc.Bullets[m.Id] = m;
             }
@@ -452,6 +474,7 @@ namespace HwpEditor.Files
                 m.Ps = NumI(s, "paraPrIDRef", 0);
                 m.Cs = NumI(s, "charPrIDRef", 0);
 
+                m.Id = SaneId(m.Id, pDoc.Styles.Count);
                 while (pDoc.Styles.Count <= m.Id) pDoc.Styles.Add(new StyleModel { Id = pDoc.Styles.Count });
                 pDoc.Styles[m.Id] = m;
             }
@@ -509,6 +532,7 @@ namespace HwpEditor.Files
                     m.BsB = NumI(bd, "offsetBottom", 0);
                 }
 
+                m.Id = SaneId(m.Id, pDoc.ParaShapes.Count);
                 while (pDoc.ParaShapes.Count <= m.Id) pDoc.ParaShapes.Add(new ParaShapeModel { Id = pDoc.ParaShapes.Count });
                 pDoc.ParaShapes[m.Id] = m;
             }
@@ -588,8 +612,10 @@ namespace HwpEditor.Files
             if (colPr != null)
             {
                 sec.Cols.Count = Math.Max(1, NumI(colPr, "colCount", 1));
-                sec.Cols.GapHu = Num(colPr, "spaceColumns", 0);
-                if (sec.Cols.GapHu == 0 && secPr != null) sec.Cols.GapHu = Num(secPr, "spaceColumns", 0);
+                // ★ 값이 0 인 것과 속성이 <b>없는</b> 것을 가른다 — 0 으로 뭉뚱그리면 "간격 0" 으로
+                //   적힌 단이 바깥(secPr)의 값으로 덮인다.
+                sec.Cols.GapHu = Has(colPr, "spaceColumns") ? Num(colPr, "spaceColumns", 0)
+                               : (secPr != null && Has(secPr, "spaceColumns") ? Num(secPr, "spaceColumns", 0) : 0);
             }
 
             // 문단은 문서 루트의 직계 hp:p 만 센다 — 표 셀 안의 hp:p 는 개체 안에서 따로 읽는다.

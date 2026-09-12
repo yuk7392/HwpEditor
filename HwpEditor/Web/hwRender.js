@@ -43,20 +43,38 @@ var hwRenderer = (function () {
     if (window.hwCaret) hwCaret.paint();
   }
 
+  /* 보이는 쪽 둘레만 채운다.
+     ★ 여백을 <b>쪽 높이</b>로 잡는다 — 뷰포트 배수로 잡으면 크게 확대했을 때(쪽 하나가 화면보다 큼)
+       위아래 한 쪽도 못 담아 스크롤할 때마다 빈 화면이 스친다.
+     ★ WebView2 가 자리를 잡기 <b>전</b>에는 clientHeight 가 0 이다 — 그때 한 번 다 채워 두지 않으면
+       사용자가 스크롤하기 전까지 화면이 통째로 비어 있다(실측). */
   function fillVisible() {
     if (!cCanvas) return;
     var top = cCanvas.scrollTop, h = cCanvas.clientHeight;
+    var pageH = cPageEls.length ? cPageEls[0].offsetHeight : 0;
+    var pad = Math.max(h, pageH) * 2;
+    var all = cFillAll || h <= 0;
 
     for (var i = 0; i < cPageEls.length; i++) {
       var box = cPageEls[i];
       var y0 = box.offsetTop - cCanvas.offsetTop, y1 = y0 + box.offsetHeight;
-      var near = cFillAll || (y1 > top - h * 2 && y0 < top + h * 3);
+      var near = all || (y1 > top - pad && y0 < top + h + pad);
 
       if (near && !box._hwFilled) { fillPage(i); box._hwFilled = true; }
       else if (!near && box._hwFilled) { box.innerHTML = ''; box._hwFilled = false; }
     }
+
+    /* 자리가 아직 안 잡혔으면 잡힌 뒤 한 번 더 — 위에서 다 채웠으니 화면은 비지 않고,
+       이 호출이 버리는 쪽을 비워 가상 스크롤을 제자리로 돌린다. */
+    if (h <= 0 && !cRetry) {
+      cRetry = true;
+      requestAnimationFrame(function () { cRetry = false; fillVisible(); });
+    }
+
     if (window.hwCaret) hwCaret.paint();
   }
+
+  var cRetry = false;
 
   function fillPage(idx) {
     var pg = hwPages[idx], box = cPageEls[idx];

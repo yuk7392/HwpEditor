@@ -385,6 +385,248 @@ var hwTable = (function () {
     return true;
   }
 
+  /* 표를 담고 있는 문단과 그 목록에서의 자리. 나누기·붙이기·텍스트로 변환이 다 이것으로 움직인다. */
+  function hostOfTable(obj) {
+    var all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++)
+      if ((all[i].objs || []).indexOf(obj) >= 0) return all[i];
+    return null;
+  }
+
+  /* 칸 하나의 글 — 문단 사이는 줄바꿈으로 잇는다. */
+  function cellText(cell) {
+    var out = [];
+    for (var i = 0; i < cell.paras.length; i++) out.push(hwModel.text(cell.paras[i]));
+    return out.join('\n');
+  }
+
+  /* 표를 캐럿이 선 줄에서 <b>둘로</b> 나눈다. 아래쪽이 새 표가 된다.
+     ★ 새 op 를 안 만든다 — 아래 줄들을 delRow 로 떼고 같은 내용을 addTable 꾸러미로 새로 넣는다.
+       (새 표의 칸 내용은 addTable 이 통째로 들고 간다 — hwModel.imageOps.)
+     ★ 병합이 나누는 줄을 가로지르면 거절한다. 쪼개면 격자가 깨지는데, 화면에서는 저장 전까지 안 보인다. */
+  function splitTable() {
+    var at = here();
+    if (!at) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return false; }
+
+    var obj = at.obj, t = obj.table, cut = at.cell.r;
+    if (cut <= 0) { hwSetStatus({ text: '첫 줄에서는 나눌 수 없습니다' }); return false; }
+
+    var i;
+    for (i = 0; i < t.cells.length; i++)
+      if (t.cells[i].r < cut && t.cells[i].r + t.cells[i].rs > cut) {
+        hwSetStatus({ text: '나눌 자리를 가로지르는 병합 칸이 있어 나눌 수 없습니다' });
+        return false;
+      }
+
+    /* ★ 떼어 낼 줄의 칸에 <b>개체</b>(그림·중첩 표)가 있으면 거절한다 — 새 표 꾸러미(addTable)는
+       칸의 글자만 싣는다. 그냥 나누면 그 개체가 조용히 사라진다(실측 basicsReport.hwp 는
+       표 개수가 16 그대로인데 줄만 떨어졌다 — 칸 안 표가 통째로 없어진 것이었다). */
+    for (i = 0; i < t.cells.length; i++) {
+      if (t.cells[i].r < cut) continue;
+      for (var q = 0; q < t.cells[i].paras.length; q++)
+        if ((t.cells[i].paras[q].objs || []).length) {
+          hwSetStatus({ text: '나눌 줄의 칸에 그림·표가 있어 나눌 수 없습니다' });
+          return false;
+        }
+    }
+
+    var host = hostOfTable(obj);
+    if (!host) return false;
+
+    var rows = rowsOf(t), below = [], wide = 0;
+    for (i = 0; i < t.cells.length; i++) {
+      var c = t.cells[i];
+      if (c.r < cut) continue;
+      if (c.r === cut) wide += c.wHu || 0;
+      below.push({
+        r: c.r - cut, c: c.c, rs: c.rs, cs: c.cs, wHu: c.wHu, hHu: c.hHu,
+        mlHu: c.mlHu, mrHu: c.mrHu, mtHu: c.mtHu, mbHu: c.mbHu,
+        bf: c.bf || 0, valign: c.valign || 0, head: !!c.head,
+        paras: clonePlain(c.paras, host.ps)
+      });
+    }
+    if (!below.length) { hwSetStatus({ text: '나눌 줄이 없습니다' }); return false; }
+
+    var tall = 0;
+    for (i = 0; i < below.length; i++) if (below[i].c === 0) tall += below[i].hHu || 0;
+
+    var made = {
+      tmpId: 't' + hwModel.newId(), kind: 'table', label: '표', inline: true, pos: 0,
+      wHu: wide || obj.wHu, hHu: tall,
+      table: { rows: rows - cut, cols: colsOf(t), cells: below }
+    };
+
+    /* ★ 새 표를 <b>먼저</b> 넣는다. 줄을 먼저 떼고 나서 넣기가 실패하면 그 줄들이 통째로 사라진다
+       (실측 basicsReport.hwp — 표가 문단 목록에 없는 자리에 매달려 있어 넣기가 안 됐는데
+        줄은 이미 떨어져 있었다). */
+    var list = hwModel.listOf(host);
+    if (!list || list.indexOf(host) < 0) {
+      hwSetStatus({ text: '이 표는 나눌 수 없는 자리에 있습니다' });
+      return false;
+    }
+
+    beginStruct();
+
+    /* ★ 새 문단의 items 를 <b>덮지 말고 덧붙인다</b> — 덮으면 나뉘며 넘어온 꼬리(글자·다른 개체)가
+       통째로 사라진다. host.len 과 실제 item 수가 갈릴 수 있는 자리라 그 차이를 안 믿는다. */
+    var np = null;
+    hwInput.run(function () {
+      np = hwModel.splitPara(host, host.len);
+      var arr = hwModel.items(np);
+      arr.push({ obj: made });
+      hwModel.setItems(np, arr);
+      hwModel.reindex();
+      return [np.id];
+    }, null, [host.id]);
+
+    if (!np) { hwSetStatus({ text: '이 표는 나눌 수 없는 자리에 있습니다' }); return false; }
+
+    for (i = rows - 1; i >= cut; i--) delRowOnce(t, obj, i);
+    resize(obj);
+
+    finish(obj, null);
+    hwSetStatus({ text: '표를 둘로 나눴습니다 — 저장하면 문서에 반영됩니다' });
+    return true;
+  }
+
+  /* 새 표 꾸러미에 실을 칸 문단 — 화면 id 를 새로 매기고 _tblNew·_tblOwner 를 단다. */
+  function clonePlain(paras, ps) {
+    var out = [];
+    for (var i = 0; i < paras.length; i++) {
+      var runs = [];
+      for (var k = 0; k < paras[i].runs.length; k++)
+        runs.push({ cs: paras[i].runs[k].cs, text: paras[i].runs[k].text });
+      var n = 0;
+      for (var q = 0; q < runs.length; q++) n += runs[q].text.length;
+      out.push({ id: hwModel.newId(), ps: paras[i].ps !== undefined ? paras[i].ps : ps,
+                 runs: runs, objs: [], len: n, seg: null,
+                 _tblNew: true, _tblOwner: true });
+    }
+    if (!out.length)
+      out.push({ id: hwModel.newId(), ps: ps, runs: [], objs: [], len: 0, seg: null,
+                 _tblNew: true, _tblOwner: true });
+    return out;
+  }
+
+  /* 바로 다음 문단에 있는 표를 이 표 뒤에 <b>붙인다</b>.
+     ★ 칸 수가 다르면 거절한다 — 격자가 어긋나면 저장본에서만 깨진다. */
+  function joinTable() {
+    var at = here();
+    if (!at) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return false; }
+
+    var obj = at.obj, t = obj.table;
+    var host = hostOfTable(obj);
+    if (!host) return false;
+
+    /* ★ 한 문단에 표가 여럿 매달릴 수 있다(떠 있는 표) — 문단 차례만 보면 같은 문단의 다음 표를
+       못 찾는다(실측 table-position.hwp 는 표 13개가 문단 몇 개에 몰려 있다).
+       그래서 <b>문단 안 objs 차례 → 다음 문단</b> 순으로 문서 차례를 따라 찾는다. */
+    var list = hwModel.listOf(host);
+    if (!list) return false;
+
+    var next = null, nextHost = null;
+    var mine = host.objs || [];
+    for (var o = mine.indexOf(obj) + 1; o < mine.length && !next; o++)
+      if (mine[o].table) { next = mine[o]; nextHost = host; }
+
+    for (var s = list.indexOf(host) + 1; s < list.length && !next; s++) {
+      var objs = list[s].objs || [];
+      for (var k = 0; k < objs.length; k++)
+        if (objs[k].table) { next = objs[k]; nextHost = list[s]; break; }
+    }
+    if (!next) { hwSetStatus({ text: '뒤에 붙일 표가 없습니다' }); return false; }
+    if (colsOf(next.table) !== colsOf(t)) {
+      hwSetStatus({ text: '칸 수가 달라 붙일 수 없습니다 (' + colsOf(t) + ' · ' + colsOf(next.table) + ')' });
+      return false;
+    }
+
+    beginStruct();
+    var base = rowsOf(t), i;
+    for (i = 0; i < next.table.cells.length; i++) {
+      var c = next.table.cells[i];
+      c.r += base;
+      t.cells.push(c);
+    }
+    t.cells.sort(function (a, b) { return a.r - b.r || a.c - b.c; });
+    resize(obj);
+
+    /* 붙인 쪽 표는 화면에서 뺀다 — 그 문단의 replace 요청에 개체가 안 실리면 저장본에서도 사라진다. */
+    hwInput.run(function () {
+      var arr = hwModel.items(nextHost);
+      for (var k = 0; k < arr.length; k++) if (arr[k].obj === next) { arr.splice(k, 1); break; }
+      hwModel.setItems(nextHost, arr);
+      hwModel.reindex();
+      return [nextHost.id];
+    }, null, [nextHost.id]);
+
+    /* ★ 붙인 줄들은 문서 쪽에 아직 없다 — addRow + cellText 로 실어 보낸다.
+       (저 표의 칸 문단 id 는 이 표의 것이 아니라 replace 로는 못 간다.) */
+    for (i = 0; i < rowsOf(next.table); i++) pushOp(obj, { op: 'addRow', pos: base + i, from: base - 1 });
+    for (i = 0; i < t.cells.length; i++)
+      if (t.cells[i].r >= base)
+        for (var q = 0; q < t.cells[i].paras.length; q++) t.cells[i].paras[q]._tblNew = true;
+
+    finish(obj, null);
+    hwSetStatus({ text: '표를 붙였습니다 — 저장하면 문서에 반영됩니다' });
+    return true;
+  }
+
+  /* 표를 지우고 그 내용을 문단으로 푼다. 한 줄이 한 문단이고 칸 사이는 탭이다(한글과 같다). */
+  function toText() {
+    var at = here();
+    if (!at) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return false; }
+
+    var obj = at.obj, t = obj.table;
+    var host = hostOfTable(obj);
+    if (!host) return false;
+
+    /* ★ 칸에 개체(그림·중첩 표)가 있으면 거절한다 — 글만 뽑는 변환이라 그 개체는 되돌릴 길 없이
+       사라진다(나누기와 같은 근거). */
+    for (var g = 0; g < t.cells.length; g++)
+      for (var h = 0; h < t.cells[g].paras.length; h++)
+        if ((t.cells[g].paras[h].objs || []).length) {
+          hwSetStatus({ text: '칸에 그림·표가 있어 글로 바꿀 수 없습니다' });
+          return false;
+        }
+
+    var rows = rowsOf(t), cols = colsOf(t), lines = [], r, c;
+    for (r = 0; r < rows; r++) {
+      var parts = [];
+      for (c = 0; c < cols; c++) {
+        for (var i = 0; i < t.cells.length; i++) {
+          var k = t.cells[i];
+          if (k.r === r && k.c === c) { parts.push(cellText(k)); break; }
+        }
+      }
+      lines.push(parts.join('\t'));
+    }
+
+    var cs = hwModel.shapeAt(host, 0);
+    hwInput.run(function () {
+      var arr = hwModel.items(host);
+      for (var k = 0; k < arr.length; k++) if (arr[k].obj === obj) { arr.splice(k, 1); break; }
+      hwModel.setItems(host, arr);
+
+      var anchor = host;
+      for (var q = 0; q < lines.length; q++) {
+        var np = hwModel.splitPara(anchor, anchor.len);
+        hwModel.insertText(np, 0, lines[q], cs);
+        anchor = np;
+      }
+      hwModel.reindex();
+      return [host.id];
+    }, null, [host.id]);
+
+    /* 이력은 안 끊는다 — 고침이 통째로 hwInput.run 안에서 났으므로 Ctrl+Z 로 표가 돌아온다. */
+    cBlock = null;
+    hwRelayout();
+    hwCaret.set(host.id, host.len, false);
+    hwCaret.paint();
+    if (window.hwPostDirty) hwPostDirty();
+    hwSetStatus({ text: '표를 글로 바꿨습니다 — 저장하면 문서에 반영됩니다' });
+    return true;
+  }
+
   /* ─ 셀 블록 ─
      ★ 사각형은 <b>붙박이 모서리(r0,c0)와 움직이는 모서리(r1,c1)</b>로 들고, 쓸 때마다 min/max 로 편다.
        칠할 때마다 정렬해 담으면 방향키로 되짚어 올 때 붙박이 모서리가 같이 끌려온다.
@@ -1136,6 +1378,7 @@ var hwTable = (function () {
     clearBlock: clearBlock, cycleBlock: cycleBlock, dragBlock: dragBlock, paintBlock: paintBlock,
     selectRange: selectRange, onKey: onKey,
     mergeBlock: mergeBlock, splitCell: splitCell, sameSize: sameSize,
-    setCellFmt: setCellFmt, setTableFmt: setTableFmt
+    setCellFmt: setCellFmt, setTableFmt: setTableFmt,
+    splitTable: splitTable, joinTable: joinTable, toText: toText
   };
 })();

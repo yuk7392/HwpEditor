@@ -58,6 +58,31 @@ namespace HwpEditor.Files
             return map;
         }
 
+        /// <summary>
+        /// 스타일 표(<c>hh:styles/hh:style</c>). ★ 번호가 <b>0부터</b>다(테두리·번호 표와 다르다).
+        /// ★ 문단모양·글자모양 등록 <b>뒤</b>에 불러야 한다 — 스타일이 그 번호를 가리킨다.
+        /// </summary>
+        public static int[] RegisterStyles(XmlDocument pHeader, IList<StyleModel> pList,
+                                           int[] pPsMap, int[] pCsMap)
+        {
+            return Register(pHeader, "styles", "style", pList == null ? 0 : pList.Count, 0,
+                delegate (XmlElement el, int i) { ApplyStyle(el, pList[i], pPsMap, pCsMap); },
+                delegate (int i) { return pList[i].Id; });
+        }
+
+        private static void ApplyStyle(XmlElement pEl, StyleModel pFrom, int[] pPsMap, int[] pCsMap)
+        {
+            if (pEl == null || pFrom == null) return;
+            if (!string.IsNullOrEmpty(pFrom.Name))
+            {
+                pEl.SetAttribute("name", pFrom.Name);
+                if (string.IsNullOrEmpty(pEl.GetAttribute("engName"))) pEl.SetAttribute("engName", pFrom.Name);
+            }
+            pEl.SetAttribute("type", pFrom.Sort == "char" ? "CHAR" : "PARA");
+            pEl.SetAttribute("paraPrIDRef", Str(cShapeWriter.Map(pPsMap, pFrom.Ps)));
+            pEl.SetAttribute("charPrIDRef", Str(cShapeWriter.Map(pCsMap, pFrom.Cs)));
+        }
+
         private static int BulletCount(XmlDocument pHeader)
         {
             return ChildrenNamed(Find(pHeader, "bullets"), "bullet").Count;

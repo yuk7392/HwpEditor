@@ -55,6 +55,8 @@ namespace HwpEditor.Files
             cShapes.Num = cShapeWriter.RegisterNumberings(pFile, pReq.Numberings);
             cShapes.Cs = cShapeWriter.RegisterCharShapes(pFile, pReq.CharShapes, cShapes.Bf);
             cShapes.Ps = cShapeWriter.RegisterParaShapes(pFile, pReq.ParaShapes, cShapes.Bf, cShapes.Num, cShapes.Bul);
+            // ★ 스타일이 <b>맨 끝</b>이다 — 문단모양·글자모양 번호를 가리키므로 그 표가 먼저 나와야 한다.
+            cShapes.Sty = cShapeWriter.RegisterStyles(pFile, pReq.Styles, cShapes.Ps, cShapes.Cs);
 
             IList<EditOp> pOps = pReq.Ops;
 
@@ -62,7 +64,8 @@ namespace HwpEditor.Files
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
                 if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
-                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark")
+                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark"
+                     || op.Op == "addPageNum")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             // ★ 순서가 뜻을 갖는다: 내용 먼저(replace) → 지우기 → 넣기.
@@ -92,6 +95,7 @@ namespace HwpEditor.Files
                 pResult.BfMap = cShapes.Bf;
                 pResult.BulMap = cShapes.Bul;
                 pResult.NumMap = cShapes.Num;
+                pResult.StyMap = cShapes.Sty;
             }
             cShapes = null;
         }
@@ -243,6 +247,7 @@ namespace HwpEditor.Files
             public int[] Bf;
             public int[] Bul;
             public int[] Num;
+            public int[] Sty;
         }
 
         [ThreadStatic]
@@ -383,7 +388,9 @@ namespace HwpEditor.Files
             pPara.Header.ParaShapeId = cShapes == null ? pOp.Ps : cShapeWriter.Map(cShapes.Ps, pOp.Ps);
 
             // ★ null 은 "안 바꿨다" 다 — 늘 쓰면 스타일이 글자 하나 칠 때마다 0(바탕글)으로 밀린다.
-            if (pOp.Sty.HasValue) pPara.Header.StyleId = (short)pOp.Sty.Value;
+            if (pOp.Sty.HasValue)
+                pPara.Header.StyleId = (short)(cShapes == null ? pOp.Sty.Value
+                                                              : cShapeWriter.Map(cShapes.Sty, pOp.Sty.Value));
             SetDivide(pPara.Header.DivideSort, pOp.Brk);
 
             List<cFlatChar> flat = Flatten(pOp.Runs);
@@ -514,6 +521,10 @@ namespace HwpEditor.Files
                 else if (img.Op == "addMark")
                 {
                     ctl = AddMark(pPara, pText, img);
+                }
+                else if (img.Op == "addPageNum")
+                {
+                    ctl = AddPageNum(pPara, pText, img);
                 }
                 else if (img.Op == "addLinkEnd")
                 {
@@ -751,6 +762,37 @@ namespace HwpEditor.Files
             Array.Copy(id, 0, add, 0, 4);
             ch.SetAddition(add);
             return bm;
+        }
+
+        /// <summary>
+        /// 쪽 번호 컨트롤 하나. 이미 있는 것을 고치는 길은 <see cref="ApplyPageNumOps"/> 다.
+        /// ★ 확장 제어문자는 <b>code 21 + ctrlId 'pgnp'</b> 이다 — hwplib 에 전용 Add 메서드가 없어
+        ///   손으로 세웠고, 그 두 값이어야 <c>IsPageNumberPosition</c> 이 참이 된다(실측 — 1~31 중 21 뿐).
+        /// </summary>
+        private static Control AddPageNum(Paragraph pPara, ParaText pText, EditOp pOp)
+        {
+            ControlPageNumberPosition pn =
+                pPara.AddNewControl(ControlType.PageNumberPosition) as ControlPageNumberPosition;
+            if (pn == null) throw new InvalidOperationException("쪽 번호 컨트롤을 만들지 못했다");
+
+            CtrlHeaderPageNumberPosition h = pn.GetHeader();
+            if (h != null && h.Property != null)
+            {
+                h.Property.NumberPosition = (NumberPosition)(pOp.NumPos.HasValue ? pOp.NumPos.Value : 5);
+                h.Property.NumberShape = (NumberShape)(pOp.NumShape.HasValue ? pOp.NumShape.Value : 0);
+                // 줄표는 앞뒤 두 글자가 한 벌이다(ApplyPageNumOps 와 같은 규칙).
+                string dash = pOp.NumDash.HasValue && pOp.NumDash.Value ? "-" : "\0";
+                if (h.BeforeDecorationLetter != null) h.BeforeDecorationLetter.FromUTF16LEString(dash);
+                if (h.AfterDecorationLetter != null) h.AfterDecorationLetter.FromUTF16LEString(dash);
+            }
+
+            HWPCharControlExtend ch = pText.AddNewExtendControlChar();
+            ch.Code = 21;
+            byte[] add = new byte[12];
+            byte[] id = BitConverter.GetBytes(ControlTypeExtensions.GetCtrlId(ControlType.PageNumberPosition));
+            Array.Copy(id, 0, add, 0, 4);
+            ch.SetAddition(add);
+            return pn;
         }
 
         private static Control AddLink(Paragraph pPara, ParaText pText, EditOp pOp)

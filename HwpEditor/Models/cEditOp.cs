@@ -33,6 +33,9 @@ namespace HwpEditor.Models
         /// 가리킨다(테두리와 같은 규칙).
         /// </summary>
         [JsonProperty("numberings")] public List<NumberingModel> Numberings;
+
+        /// <summary>화면이 들고 있는 스타일 목록 전부. 뒤에 붙은 것이 새로 만든 스타일이다.</summary>
+        [JsonProperty("styles")] public List<StyleModel> Styles;
         [JsonProperty("bullets")] public List<BulletModel> Bullets;
 
         [JsonProperty("ops")] public List<EditOp> Ops = new List<EditOp>();
@@ -286,6 +289,9 @@ namespace HwpEditor.Models
         [JsonProperty("bfMap", NullValueHandling = NullValueHandling.Ignore)] public int[] BfMap;
         [JsonProperty("bulMap", NullValueHandling = NullValueHandling.Ignore)] public int[] BulMap;
         [JsonProperty("numMap", NullValueHandling = NullValueHandling.Ignore)] public int[] NumMap;
+
+        /// <summary>화면 스타일 번호 → 문서 스타일 번호.</summary>
+        [JsonProperty("styMap", NullValueHandling = NullValueHandling.Ignore)] public int[] StyMap;
 
         /// <summary>저장 뒤 문서가 실제로 들고 있는 목록. 화면은 자기 목록을 이것으로 갈아 끼운다.</summary>
         [JsonProperty("charShapes", NullValueHandling = NullValueHandling.Ignore)] public List<CharShapeModel> CharShapes;

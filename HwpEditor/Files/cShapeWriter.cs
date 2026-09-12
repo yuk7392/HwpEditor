@@ -9,6 +9,7 @@ using HwpLib.Object.DocInfo.BorderFill.FillInfo;
 using HwpLib.Object.DocInfo.CharShape;
 using HwpLib.Object.DocInfo.Numbering;
 using HwpLib.Object.DocInfo.ParaShape;
+using HwpLib.Object.DocInfo.Style;
 
 namespace HwpEditor.Files
 {
@@ -212,6 +213,42 @@ namespace HwpEditor.Files
 
             int[] map = new int[pList.Count];
             for (int i = 0; i < map.Length; i++) map[i] = i < baseCount ? i : 1;
+            return map;
+        }
+
+        /// <summary>
+        /// 스타일 표. ★ 반드시 <see cref="RegisterParaShapes"/>·<see cref="RegisterCharShapes"/> <b>뒤</b>다 —
+        /// 스타일이 문단모양·글자모양 번호를 가리키므로 앞에 두면 옛 번호가 박힌다.
+        /// ★ 있던 번호는 <b>덮어쓴다</b> — 그것이 "스타일 고치기" 이고, 그 스타일을 쓰는 문단이 같이 바뀐다.
+        /// </summary>
+        public static int[] RegisterStyles(HWPFile pFile, IList<StyleModel> pList, int[] pPsMap, int[] pCsMap)
+        {
+            int have = pFile.DocInfo.StyleList.Count;
+            if (pList == null || pList.Count == 0) return Identity(have);
+
+            int[] map = new int[pList.Count];
+            for (int i = 0; i < pList.Count; i++)
+            {
+                StyleModel m = pList[i];
+                StyleInfo to = i < pFile.DocInfo.StyleList.Count
+                             ? pFile.DocInfo.StyleList[i] : pFile.DocInfo.AddNewStyle();
+                if (to == null) { map[i] = i < have ? i : 0; continue; }
+
+                if (!string.IsNullOrEmpty(m.Name)) to.HangulName = m.Name;
+                if (i >= have)
+                {
+                    // 새 스타일은 영문 이름·다음 스타일·언어를 채워 둔다 — 비우면 한글 목록에 빈 줄로 뜬다.
+                    to.EnglishName = m.Name;
+                    to.NextStyleId = (short)i;
+                    to.LanguageId = 1042;
+                }
+                if (to.Property != null)
+                    to.Property.StyleSort = m.Sort == "char" ? StyleSort.CharStyle : StyleSort.ParaStyle;
+
+                to.ParaShapeId = Map(pPsMap, m.Ps);
+                to.CharShapeId = Map(pCsMap, m.Cs);
+                map[i] = i;
+            }
             return map;
         }
 

@@ -341,6 +341,13 @@ var hwCaret = (function () {
     if (top < canvas.scrollTop) canvas.scrollTop = Math.max(0, top - 40);
     else if (top + h > canvas.scrollTop + canvas.clientHeight)
       canvas.scrollTop = top + h - canvas.clientHeight + 40;
+
+    /* ★ 가로도 따라간다 — 확대했거나 쪽이 창보다 넓으면 캐럿이 오른쪽 화면 밖으로 나가는데,
+       세로만 맞추면 글을 치는 동안 캐럿이 안 보인다. */
+    var left = pageEl.offsetLeft - canvas.offsetLeft + (body ? body.offsetLeft : 0) + hwHu2Px(c.xHu);
+    if (left < canvas.scrollLeft) canvas.scrollLeft = Math.max(0, left - 40);
+    else if (left > canvas.scrollLeft + canvas.clientWidth - 8)
+      canvas.scrollLeft = left - canvas.clientWidth + 40;
   }
 
   return {

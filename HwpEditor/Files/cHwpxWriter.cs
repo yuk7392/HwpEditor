@@ -38,13 +38,16 @@ namespace HwpEditor.Files
             cShapes.Cs = cHwpxShapeWriter.RegisterCharShapes(pDoc.Header, pReq.CharShapes, cShapes.Bf);
             cShapes.Ps = cHwpxShapeWriter.RegisterParaShapes(pDoc.Header, pReq.ParaShapes, cShapes.Bf,
                                                              cShapes.Num, cShapes.Bul);
+            // ★ 스타일이 맨 끝이다 — 문단모양·글자모양 번호를 가리키므로 그 표가 먼저 나와야 한다.
+            cShapes.Sty = cHwpxShapeWriter.RegisterStyles(pDoc.Header, pReq.Styles, cShapes.Ps, cShapes.Cs);
 
             IList<EditOp> pOps = pReq.Ops;
 
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
                 if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
-                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark")
+                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark"
+                     || op.Op == "addPageNum")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             foreach (EditOp op in pOps) if (op.Op == "replace") ApplyReplace(pDoc, pIndex, op, images, pResult);
@@ -69,6 +72,7 @@ namespace HwpEditor.Files
                 pResult.BfMap = cShapes.Bf;
                 pResult.BulMap = cShapes.Bul;
                 pResult.NumMap = cShapes.Num;
+                pResult.StyMap = cShapes.Sty;
                 if (rebuilt) pResult.Reload = true;
             }
             cShapes = null;
@@ -248,6 +252,7 @@ namespace HwpEditor.Files
             public int[] Bf;
             public int[] Bul;
             public int[] Num;
+            public int[] Sty;
         }
 
         [ThreadStatic]
@@ -421,7 +426,10 @@ namespace HwpEditor.Files
             pP.SetAttribute("paraPrIDRef", ps.ToString(CultureInfo.InvariantCulture));
 
             // ★ null 은 "안 바꿨다" 다(hwp 쪽 StyleId 와 같은 규칙).
-            if (pOp.Sty.HasValue) pP.SetAttribute("styleIDRef", pOp.Sty.Value.ToString(CultureInfo.InvariantCulture));
+            if (pOp.Sty.HasValue)
+                pP.SetAttribute("styleIDRef",
+                    cShapeWriter.Map(cShapes == null ? null : cShapes.Sty, pOp.Sty.Value)
+                        .ToString(CultureInfo.InvariantCulture));
             pP.SetAttribute("pageBreak", pOp.Brk == "page" || pOp.Brk == "section" ? "1" : "0");
             pP.SetAttribute("columnBreak", pOp.Brk == "column" || pOp.Brk == "multicolumn" ? "1" : "0");
 
@@ -515,6 +523,23 @@ namespace HwpEditor.Files
             return e;
         }
 
+        /// <summary>
+        /// 쪽 번호 컨트롤 하나(<c>hp:ctrl/hp:pageNum</c>). 이름은 <see cref="ApplyPageNumOps"/> 와 같은 표를 쓴다.
+        /// </summary>
+        private static XmlElement MakePageNum(XmlElement pP, EditOp pOp)
+        {
+            XmlDocument xd = pP.OwnerDocument;
+            string px = pP.Prefix, ns = pP.NamespaceURI;
+
+            XmlElement ctrl = xd.CreateElement(px, "ctrl", ns);
+            XmlElement pn = xd.CreateElement(px, "pageNum", ns);
+            pn.SetAttribute("pos", NumPosName(pOp.NumPos.HasValue ? pOp.NumPos.Value : 5));
+            pn.SetAttribute("formatType", NumShapeName(pOp.NumShape.HasValue ? pOp.NumShape.Value : 0));
+            pn.SetAttribute("sideChar", pOp.NumDash.HasValue && pOp.NumDash.Value ? "-" : "NONE");
+            ctrl.AppendChild(pn);
+            return ctrl;
+        }
+
         /// <summary>시작·끝이 같은 번호를 써야 짝이 된다 — 화면이 준 임시 id 에서 숫자만 뽑는다.</summary>
         private static string FieldId(string pTmpId)
         {
@@ -538,10 +563,11 @@ namespace HwpEditor.Files
             {
                 bool isTable = img.Op == "addTable", isBand = img.Op == "addHeader";
                 bool isLink = img.Op == "addLink" || img.Op == "addLinkEnd";
-                bool isMark = img.Op == "addMark";
+                bool isMark = img.Op == "addMark", isPgn = img.Op == "addPageNum";
                 XmlElement made = isBand ? MakeBand(pDoc, pIndex, pP, img, pImages, pResult)
                                 : isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
                                 : isMark ? MakeMark(pP, img)
+                                : isPgn ? MakePageNum(pP, img)
                                 : isLink ? MakeField(pP, img)
                                           : MakePicture(pDoc, pP, img);
                 // ★ 새 표·새 머리말도 문서를 다시 읽어야 한다 — 안 문단을 여기서 만들었으므로 화면이
@@ -549,7 +575,7 @@ namespace HwpEditor.Files
                 if ((isTable || isBand) && pResult != null) pResult.Reload = true;
                 // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다).
                 // ★ 표는 뺀다 — 표의 바깥 크기는 칸 격자에서 나오므로 여기서 덮으면 칸 폭 합과 갈라진다.
-                if (!isTable && !isBand && !isLink && !isMark) ApplyGeom(made, pObj);
+                if (!isTable && !isBand && !isLink && !isMark && !isPgn) ApplyGeom(made, pObj);
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
                 pIndex.Objs[oid] = made;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;

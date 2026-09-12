@@ -184,7 +184,12 @@ var hwUi = (function () {
     if (!btn) return;
 
     var act = btn.getAttribute('data-act');
-    if (act) { if (act === 'undo') hwInput.undo(); else hwInput.redo(); hwInput.focus(); return; }
+    if (act === 'undo' || act === 'redo') {
+      if (act === 'undo') hwInput.undo(); else hwInput.redo();
+      hwInput.focus();
+      return;
+    }
+    if (act === 'readOn' || act === 'readOff') { setRead(act === 'readOn'); hwInput.focus(); return; }
 
     var fmt = btn.getAttribute('data-fmt');
     if (fmt === 'sup' || fmt === 'sub') { hwFormat.toggleScript(fmt); hwInput.focus(); return; }
@@ -216,6 +221,19 @@ var hwUi = (function () {
     if (obj === 'inline') {
       if (!hwObj.current()) { hwSetStatus({ text: '그림을 먼저 고르세요' }); hwInput.focus(); return; }
       hwObj.toggleInline();
+      hwInput.focus();
+      return;
+    }
+
+    var flow = btn.getAttribute('data-flow');
+    if (flow) { hwObj.setFlow(flow); hwInput.focus(); return; }
+
+    var z = btn.getAttribute('data-z');
+    if (z) { hwObj.setZ(z === 'front' ? 1 : -1); hwInput.focus(); return; }
+
+    if (btn.getAttribute('data-objdel')) {
+      if (!hwObj.current()) { hwSetStatus({ text: '개체를 먼저 고르세요' }); hwInput.focus(); return; }
+      hwObj.remove();
       hwInput.focus();
       return;
     }
@@ -502,6 +520,50 @@ var hwUi = (function () {
     });
   }
 
+  /* 읽기 모드. ★ 고치는 길을 <b>한 곳</b>에서 막는다(hwInput.readOnly) — 단추만 감추면
+     키보드·붙여넣기로 그대로 고쳐진다. 맥락 탭은 이 값이 켜져야 보인다. */
+  var cRead = false;
+
+  function setRead(on) {
+    cRead = !!on;
+    if (window.hwInput && hwInput.setReadOnly) hwInput.setReadOnly(cRead);
+    refreshTabs();
+    showTab(cRead ? 'read' : 'edit');
+    hwSetStatus({ text: cRead ? '읽기 모드입니다 — 고칠 수 없습니다' : '편집 모드로 돌아왔습니다' });
+  }
+
+  /* 맥락 탭(그림·도형·표·읽기)은 그때만 보인다. ★ 감출 때도 DOM 에서 빼지 않는다 —
+     hwUi.refresh 와 --ui-test 가 안 보이는 탭의 단추도 속성으로 찾아 쓴다(판과 같은 규칙). */
+  function refreshTabs() {
+    var tabs = el('hwRibbonTabs');
+    if (!tabs) return;
+
+    var sel = window.hwObj ? hwObj.current() : null;
+    var kind = sel ? (sel.obj.table ? 'table' : sel.obj.kind) : null;
+    var inTable = !!(window.hwTable && hwTable.here());
+
+    var list = tabs.querySelectorAll('.hw-rb-ctx');
+    var anyOn = false;
+    for (var i = 0; i < list.length; i++) {
+      var ctx = list[i].getAttribute('data-ctx');
+      var on = ctx === 'read' ? cRead
+             : cRead ? false
+             : ctx === 'table' ? (inTable || kind === 'table')
+             : kind === ctx;
+      list[i].hidden = !on;
+      if (on) anyOn = true;
+    }
+
+    /* 본 탭은 읽기 모드에서 감춘다 — 눌러 봐야 아무것도 못 고친다. */
+    var main = tabs.querySelectorAll('.hw-rb-tab:not(.hw-rb-ctx)');
+    for (var m = 0; m < main.length; m++) main[m].hidden = cRead;
+
+    /* 보이던 탭이 사라졌으면 편집 탭으로 되돌린다 — 안 그러면 판만 남고 탭이 안 눌린 꼴이 된다. */
+    var cur = tabs.querySelector('.hw-rb-tab.on');
+    if (cur && cur.hidden) showTab(cRead ? 'read' : 'edit');
+    return anyOn;
+  }
+
   function showTab(name) {
     var tabs = el('hwRibbonTabs'), panes = el('hwTools');
     if (!tabs || !panes) return;
@@ -600,6 +662,12 @@ var hwUi = (function () {
     if (ub) ub.disabled = !hwUndo.canUndo();
     if (rb) rb.disabled = !hwUndo.canRedo();
 
+    refreshTabs();
+
+    /* 개체 단추는 고른 개체가 있을 때만 — 없을 때 누르면 아무 일도 안 일어나는 단추가 된다. */
+    var flows = bar.querySelectorAll('[data-flow], [data-z], [data-objdel]');
+    for (var fl = 0; fl < flows.length; fl++) flows[fl].disabled = !objSel;
+
     var pn = el('hwPageNo');
     if (pn) pn.textContent = curPage() + ' / ' + hwPageCount() + '쪽';
   }
@@ -628,6 +696,9 @@ var hwUi = (function () {
   return {
     init: init, refresh: refresh, loadFonts: loadFonts, loadStyles: loadStyles, showTab: showTab,
     setTitle: setTitle,
+    setRead: setRead,
+    isRead: function () { return cRead; },
+    refreshTabs: refreshTabs,
     setZoom: setZoom, stepZoom: stepZoom, fitZoom: fitZoom, zoom: zoomPct, curPage: curPage,
     showMenu: showMenu, closeMenu: closeMenu, menuKey: menuKey, contextItems: contextItems,
     menuEl: function () { return cMenu ? cMenu.root : null; },

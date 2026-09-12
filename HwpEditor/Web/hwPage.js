@@ -70,6 +70,19 @@ var hwPage = (function () {
 
       var paraTop = y;
 
+      /* ★ 개체가 쪽 <b>아래로 통째로 밀려나</b> 한 점도 안 보이게 될 때만 다음 쪽으로 넘긴다.
+         .hw-page 가 넘치는 것을 자르므로, 그대로 두면 그 개체는 화면·PDF 양쪽에서 사라진다.
+         ★ "쪽에 다 안 들어가면 넘긴다" 로 넓게 잡으면 안 된다 — 한글은 걸친 채로 두고,
+           그렇게 잡으면 오라클 y오차가 오히려 는다(실측 basicsReport.hwp 50552 → 60827).
+         ★ 줄을 놓기 <b>전</b>에 정한다. 놓고 나서 넘기면 그 문단의 글만 앞 쪽에 남는다. */
+      var top0 = floatTop(para);
+      if (top0 >= 0 && paraTop + top0 >= textH) {
+        col++;
+        if (col >= cols) { cur = newPage(sec, si); col = 0; }
+        y = 0;
+        paraTop = 0;
+      }
+
       for (var li = 0; li < lines.length; li++) {
         var ln = lines[li];
 
@@ -171,6 +184,22 @@ var hwPage = (function () {
     for (var i = 0; i < (para.objs || []).length; i++)
       if (para.objs[i].table) out.push(para.objs[i]);
     return out;
+  }
+
+  /* 자리를 차지하는 개체들의 <b>가장 위</b> 가장자리(문단 머리 기준). 없으면 -1.
+     이 값이 본문 높이를 넘으면 그 개체는 한 점도 안 그려진다. */
+  function floatTop(para) {
+    if (!para.objs) return -1;
+    var best = -1;
+    for (var i = 0; i < para.objs.length; i++) {
+      var o = para.objs[i];
+      if (o.table || o.inline) continue;
+      if (o.relV !== 'para') continue;
+      if (o.flow === 'behind' || o.flow === 'front') continue;
+      var top = (o.yOffHu > 0 ? o.yOffHu : 0) + (o.omTHu || 0);
+      if (best < 0 || top < best) best = top;
+    }
+    return best;
   }
 
   function floatReserve(para) {
@@ -419,10 +448,86 @@ var hwPage = (function () {
     return true;
   }
 
-  /* 쪽 번호 위치·모양. ★ 이미 있는 컨트롤만 고친다 — 없는 문서에 새로 만드는 길은 아직 없다. */
+  /* 머리말·꼬리말·쪽 번호를 없앤다.
+     ★ C# 쪽에 지우는 op 가 <b>따로 없다</b> — 되쓰기(Rewrite)가 문단의 글자와 컨트롤을 통째로 비우고
+       요청에 실린 objs 만 다시 단다. 그러니 화면에서 빼고 그 문단을 dirty 로 만들면 그것으로 끝난다.
+     ★ 이번 저장 전에 넣은 띠(oid 가 없고 tmpId 만 있는 것)는 그 addHeader 요청도 같이 걷어야 한다 —
+       안 걷으면 화면에는 없는 띠가 저장본에 생긴다. */
+  function delBand(si, kind) {
+    var sec = hwDoc && hwDoc.sections[si];
+    if (!sec) return false;
+
+    for (var pi = 0; pi < sec.paras.length; pi++) {
+      var host = sec.paras[pi], objs = host.objs || [];
+      for (var oi = 0; oi < objs.length; oi++) {
+        if (objs[oi].ctrl !== kind) continue;
+
+        var gone = objs[oi];
+        hwInput.run(function () {
+          var arr = hwModel.items(host);
+          for (var k = 0; k < arr.length; k++)
+            if (arr[k].obj === gone) { arr.splice(k, 1); break; }
+          hwModel.setItems(host, arr);
+          if (gone.tmpId) hwModel.dropSecOp(gone.tmpId);
+          hwModel.reindex();
+          return [host.id];
+        }, null, [host.id]);
+
+        hwRelayout();
+        if (window.hwPostDirty) hwPostDirty();
+        hwSetStatus({ text: (kind === 'foot' ? '꼬리말' : kind === 'head' ? '머리말' : '쪽 번호')
+                          + '을 지웠습니다 — 저장하면 문서에 반영됩니다' });
+        return true;
+      }
+    }
+    hwSetStatus({ text: '이 구역에는 지울 것이 없습니다' });
+    return false;
+  }
+
+  /* 쪽 번호 컨트롤을 새로 만든다. 자리는 머리말과 같은 규칙(숨은 컨트롤이 없는 첫 문단)이다 —
+     거기서 갈리면 왕복은 통과하고 한글에서만 깨진다(addBand 의 주석과 같은 근거). */
+  function addPageNum(si, over) {
+    var sec = hwDoc && hwDoc.sections[si];
+    if (!sec || !sec.paras.length) return false;
+
+    var host = sec.paras[0];
+    for (var hi = 0; hi < sec.paras.length; hi++) {
+      var cand = sec.paras[hi];
+      if (!hasHidden(cand) && cand.id.charAt(0) !== 'n') { host = cand; break; }
+    }
+
+    var pos = over && over.numPos !== undefined ? over.numPos : 5;
+    var shape = over && over.numShape !== undefined ? over.numShape : 0;
+    var dash = !!(over && over.numDash);
+
+    var obj = {
+      tmpId: 'n' + hwModel.newId(), kind: 'ctrl', ctrl: 'pgnp', hidden: true, inline: true, pos: 0,
+      label: '쪽 번호', wHu: 0, hHu: 0,
+      numPos: pos, numShape: shape, numBefore: dash ? '-' : '', numAfter: dash ? '-' : ''
+    };
+
+    hwInput.run(function () {
+      var arr = hwModel.items(host);
+      var at = 0;
+      while (at < arr.length && arr[at].obj && arr[at].obj.hidden) at++;
+      arr.splice(at, 0, { obj: obj });
+      hwModel.setItems(host, arr);
+      hwModel.pushSecOp({ op: 'addPageNum', tmpId: obj.tmpId,
+                          numPos: pos, numShape: shape, numDash: dash });
+      hwModel.reindex();
+      return [host.id];
+    }, null, [host.id]);
+
+    hwRelayout();
+    if (window.hwPostDirty) hwPostDirty();
+    hwSetStatus({ text: '쪽 번호를 넣었습니다 — 저장하면 문서에 반영됩니다' });
+    return true;
+  }
+
+  /* 쪽 번호 위치·모양. 컨트롤이 없으면 새로 만든다. */
   function setPageNum(si, over) {
     var num = bandOf(si, 'pgnp');
-    if (!num) { hwSetStatus({ text: '이 문서에는 쪽 번호 컨트롤이 없습니다 — 위치만 바꿀 수 있습니다' }); return false; }
+    if (!num) return addPageNum(si, over);
 
     var op = { op: 'pageNum', oid: num.oid };
     if (over.numPos !== undefined) { num.numPos = over.numPos; op.numPos = over.numPos; }
@@ -450,7 +555,8 @@ var hwPage = (function () {
   }
 
   return { layout: layout, buildIndex: buildIndex, setSection: setSection, caretSection: caretSection,
-           bandOf: bandOf, addBand: addBand, setPageNum: setPageNum };
+           bandOf: bandOf, addBand: addBand, delBand: delBand,
+           addPageNum: addPageNum, setPageNum: setPageNum };
 })();
 
 var hwLineIndex = {};

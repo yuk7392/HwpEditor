@@ -109,9 +109,8 @@ namespace HwpEditor.Files
                 Directory.CreateDirectory(pDir);
                 string file = Path.Combine(pDir, pBinItemId.ToString(CultureInfo.InvariantCulture) + "." + ext);
 
-                // 같은 크기면 다시 안 쓴다 — 문서를 열 때마다 파일 시각이 바뀌면 브라우저 캐시가 헛돈다.
-                if (!File.Exists(file) || new FileInfo(file).Length != data.Length)
-                    File.WriteAllBytes(file, data);
+                // 같은 내용이면 다시 안 쓴다 — 문서를 열 때마다 파일 시각이 바뀌면 브라우저 캐시가 헛돈다.
+                if (!Same(file, data)) File.WriteAllBytes(file, data);
 
                 return "bin/" + pDocKey + "/" + Path.GetFileName(file);
             }
@@ -121,6 +120,26 @@ namespace HwpEditor.Files
                 cLog.Write(ex);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 이미 풀어 둔 파일이 <b>같은 내용</b>인가. ★ 길이만 견주면 안 된다 — 그림을 길이가 같은 다른
+        /// 그림으로 바꿨을 때 옛 그림이 그대로 남는다(화면에는 캐시된 옛 그림이 뜬다).
+        /// 길이가 다르면 바로 거짓이라, 바이트 비교는 길이가 같을 때만 돈다.
+        /// </summary>
+        private static bool Same(string pFile, byte[] pData)
+        {
+            try
+            {
+                if (!File.Exists(pFile)) return false;
+                if (new FileInfo(pFile).Length != pData.Length) return false;
+
+                byte[] had = File.ReadAllBytes(pFile);
+                if (had.Length != pData.Length) return false;
+                for (int i = 0; i < had.Length; i++) if (had[i] != pData[i]) return false;
+                return true;
+            }
+            catch { return false; }
         }
 
         public static string DumpBytes(byte[] pData, string pExtension, string pName, string pDocKey)
@@ -135,8 +154,7 @@ namespace HwpEditor.Files
                 Directory.CreateDirectory(dir);
                 string file = Path.Combine(dir, pName + "." + ext);
 
-                if (!File.Exists(file) || new FileInfo(file).Length != pData.Length)
-                    File.WriteAllBytes(file, pData);
+                if (!Same(file, pData)) File.WriteAllBytes(file, pData);
 
                 return "bin/" + pDocKey + "/" + Path.GetFileName(file);
             }

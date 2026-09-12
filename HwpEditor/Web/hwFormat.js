@@ -112,6 +112,14 @@ var hwFormat = (function () {
       return;
     }
 
+    /* ★ 한 문단 안 선택은 문서를 안 훑는다 — 굵게·색 같은 흔한 동작이 3,000문단 문서에서
+       매번 전체 순회를 돌던 자리다. 여러 문단에 걸친 선택만 아래 전체 순회로 간다. */
+    if (sel.fromId === sel.toId) {
+      var one = hwModel.byId(sel.fromId);
+      if (one) fn(one, sel.fromPos, sel.toPos);
+      return;
+    }
+
     var from = hwModel.orderOf(sel.fromId), to = hwModel.orderOf(sel.toId);
     var all = hwModel.allParas();
     for (var i = 0; i < all.length; i++) {
@@ -331,6 +339,67 @@ var hwFormat = (function () {
     return out;
   }
 
+  /* 지금 캐럿이 선 문단·글자의 모양으로 스타일 하나를 새로 만든다. 번호는 목록 끝이다 —
+     문서 쪽이 그 자리에 그대로 만들고(RegisterStyles), 바뀌면 styMap 이 알려 준다. */
+  function newStyle(name) {
+    if (!hwDoc) return -1;
+    name = (name || '').trim();
+    if (!name) { hwSetStatus({ text: '스타일 이름을 넣으세요' }); return -1; }
+
+    var list = hwDoc.styles || (hwDoc.styles = []);
+    for (var i = 0; i < list.length; i++)
+      if (list[i].name === name) { hwSetStatus({ text: '같은 이름의 스타일이 이미 있습니다' }); return -1; }
+
+    var p = hwCaret.para();
+    if (!p) return -1;
+
+    var st = { id: list.length, name: name, sort: 'para',
+               ps: p.ps, cs: hwModel.shapeAt(p, hwCaret.at().pos) };
+    list.push(st);
+    if (window.hwUi) hwUi.loadStyles();
+    hwSetStatus({ text: '스타일 "' + name + '" 을 만들었습니다 — 저장하면 문서에 반영됩니다' });
+    if (window.hwPostDirty) hwPostDirty();
+    return st.id;
+  }
+
+  /* 있는 스타일을 지금 캐럿 자리의 모양으로 고친다(이름만 바꿀 수도 있다).
+     ★ 그 스타일을 쓰는 문단이 <b>같이 바뀐다</b> — 그것이 스타일을 고친다는 뜻이다. */
+  function editStyle(id, over) {
+    var list = (hwDoc && hwDoc.styles) || [];
+    var st = list[id];
+    if (!st) { hwSetStatus({ text: '고칠 스타일이 없습니다' }); return false; }
+
+    if (over && over.name) {
+      for (var i = 0; i < list.length; i++)
+        if (i !== id && list[i].name === over.name) {
+          hwSetStatus({ text: '같은 이름의 스타일이 이미 있습니다' }); return false;
+        }
+      st.name = over.name;
+    }
+    if (over && over.take) {
+      var p = hwCaret.para();
+      if (!p) return false;
+      st.ps = p.ps;
+      st.cs = hwModel.shapeAt(p, hwCaret.at().pos);
+    }
+
+    if (window.hwUi) hwUi.loadStyles();
+    hwRelayout();
+    if (window.hwPostDirty) hwPostDirty();
+    hwSetStatus({ text: '스타일 "' + st.name + '" 을 고쳤습니다 — 저장하면 문서에 반영됩니다' });
+    return true;
+  }
+
+  /* 저장 뒤 문서가 스타일 번호를 다시 매겼으면 문단이 가리키는 번호를 옮긴다(remapHeads 와 같은 규칙). */
+  function remapStyles(map) {
+    if (!map) return;
+    var all = hwModel.allParas();
+    for (var i = 0; i < all.length; i++) {
+      var v = all[i].sty || 0;
+      if (v >= 0 && v < map.length) all[i].sty = map[v];
+    }
+  }
+
   /* 스타일 적용 — 문단모양과 <b>모든 글자모양</b>을 한 동작으로 바꾼다(되돌리기 한 번에 풀린다). */
   function applyStyle(id) {
     var st = (hwDoc && hwDoc.styles) ? hwDoc.styles[id] : null;
@@ -525,6 +594,9 @@ var hwFormat = (function () {
     },
     styles: styles,
     applyStyle: applyStyle,
+    newStyle: newStyle,
+    editStyle: editStyle,
+    remapStyles: remapStyles,
     toggleHead: toggleHead,
     stepLevel: stepLevel,
     setAlign: setAlign,

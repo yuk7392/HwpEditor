@@ -45,93 +45,154 @@ body {
   flex-direction: column;
 }
 
-/* 리본. 탭 줄 + 고른 탭의 내용 한 줄이다. ★ 높이를 못 박는다 — 탭을 바꿀 때 캔버스가 오르내리면
-   가상 스크롤 창(hwRender.fillVisible)이 흔들려 쪽이 빈 채로 남는다. */
+/* 리본(엑셀 배치). 제목줄 + 탭줄 + 고른 탭의 판 한 장이다. ★ 판 높이를 못 박는다 —
+   탭을 바꿀 때 캔버스가 오르내리면 가상 스크롤 창(hwRender.fillVisible)이 흔들려 쪽이 빈 채로 남는다. */
 .hw-ribbon {
   flex: 0 0 auto;
-  background: #fafafa;
-  border-bottom: 1px solid #d0d0d0;
+  background: #ffffff;
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.hw-rb-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  background: #1c6ea8;
+  color: #ffffff;
+}
+
+.hw-qat { display: flex; align-items: center; gap: 1px; }
+
+.hw-qat-btn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.hw-qat-btn:hover { background: rgba(255, 255, 255, 0.22); border-color: transparent; }
+.hw-qat-btn:disabled { color: rgba(255, 255, 255, 0.45); background: transparent; }
+
+.hw-rb-title {
+  flex: 0 1 auto;
+  margin-left: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hw-rb-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 1px;
-  height: 28px;
+  gap: 0;
+  height: 26px;
   padding: 0 6px;
-  background: #f0f2f5;
-  border-bottom: 1px solid #d0d0d0;
+  background: #1c6ea8;
 }
 
 .hw-rb-tab {
-  height: 24px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 4px 4px 0 0;
+  height: 26px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 3px 3px 0 0;
   background: transparent;
   font: inherit;
-  color: #404040;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
   cursor: default;
 }
 
-.hw-rb-tab:hover { background: #e4e8ee; }
+.hw-rb-tab:hover { background: rgba(255, 255, 255, 0.18); }
 
 .hw-rb-tab.on {
   background: #ffffff;
-  border-color: #d0d0d0;
-  color: #1a4a8a;
+  color: #1c6ea8;
   font-weight: 700;
-  /* 탭과 아래 판을 잇는다 — 테두리 한 줄을 덮어 한 장처럼 보이게 한다. */
-  margin-bottom: -1px;
-  padding-bottom: 1px;
 }
 
-.hw-rb-dev { margin-left: 4px; height: 22px; }
+.hw-rb-dev { height: 22px; color: #ffffff; border-color: rgba(255, 255, 255, 0.45); }
+.hw-rb-dev:hover { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.7); }
 
 .hw-rb-panes {
   position: relative;
-  height: 48px;
+  height: 78px;
   background: #ffffff;
 }
 
-/* ★ 고른 판만 보인다. display:none 으로 숨겨도 <b>DOM 에는 그대로 있다</b> —
+/* ★ 고른 판만 보인다. display:none 으로 숨겨도 DOM 에는 그대로 있다 —
    hwUi.refresh 와 검사가 안 보이는 탭의 단추도 속성으로 찾아 쓴다. */
 .hw-rb-pane {
   display: none;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
+  gap: 0;
   height: 100%;
-  padding: 0 8px;
+  padding: 0 4px;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
 .hw-rb-pane.on { display: flex; }
 
-/* 묶음 — 아래에 이름표를 단 세로 칸 하나. */
+/* 묶음 — 내용 위, 이름표 아래. 엑셀과 같은 세로 두 칸이다. */
 .hw-rb-group {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  align-content: center;
-  gap: 2px;
-  height: 40px;
-  padding: 0 8px;
-  border-right: 1px solid #e4e4e4;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 4px 9px 2px;
+  border-right: 1px solid #e6e6e6;
 }
 
 .hw-rb-group:last-child { border-right: 0; }
 
+.hw-rb-body {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.hw-rb-rows { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.hw-rb-row { display: flex; align-items: center; gap: 2px; }
+
 .hw-rb-label {
-  flex: 0 0 100%;
-  margin-top: -2px;
-  font-size: 10px;
-  color: #909090;
+  padding-top: 2px;
+  font-size: 11px;
+  color: #767676;
   text-align: center;
   white-space: nowrap;
 }
+
+/* 큰 단추 — 그림 위, 이름 아래. 묶음에서 가장 자주 쓰는 하나만 이 꼴이다. */
+.hw-rb-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 52px;
+  height: 54px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.15;
+  color: inherit;
+  cursor: default;
+}
+
+.hw-rb-big .hw-rb-ico { font-size: 20px; line-height: 1; }
+.hw-rb-big:hover { background: #eaf1fa; border-color: #c3d8ee; }
+.hw-rb-big:active { background: #d8e6f6; }
+.hw-rb-big:disabled { color: #a8a8a8; background: transparent; border-color: transparent; }
 
 .hw-menu {
   flex: 0 0 auto;

@@ -722,6 +722,14 @@ var hwTable = (function () {
 
   /* ★ 아직 문서에 없는 표(새로 넣은 표)의 구조 요청은 안 싣는다 — 그 표는 <c>addTable</c> 이 <b>이미
        고쳐진 격자</b>를 통째로 들고 가므로, 같은 고침을 또 보내면 C# 이 짝 없는 oid 로 버릴 뿐이다. */
+  /* 구조를 바꾸기 <b>전</b> 상태를 되돌리기에 담는다. 표 격자·칸 문단 목록·표 구조 op 까지
+     한 벌이라, 이것과 finish 의 commit 이 짝이 맞아야 Ctrl+Z 가 화면과 저장 요청을 같이 되돌린다. */
+  function beginStruct() {
+    if (!window.hwUndo) return;
+    var a = hwCaret.at();
+    hwUndo.begin(a && a.id ? [a.id] : []);
+  }
+
   function pushOp(obj, op) {
     if (!obj.oid) return;
     op.oid = obj.oid;
@@ -775,6 +783,7 @@ var hwTable = (function () {
     var at = here();
     if (!at) return;
     var obj = at.obj, keep = keepId(at);
+    beginStruct();
 
     for (var s = 0; s < times(n); s++) {
       at = here();
@@ -812,6 +821,7 @@ var hwTable = (function () {
     if (!at) return;
     var t = at.obj.table, obj = at.obj, pos = at.cell.r, did = false;
 
+    beginStruct();
     for (var s = 0; s < times(n); s++) {
       if (!delRowOnce(t, obj, pos)) break;
       resize(obj);
@@ -856,6 +866,7 @@ var hwTable = (function () {
     var at = here();
     if (!at) return;
     var obj = at.obj, keep = keepId(at);
+    beginStruct();
 
     for (var s = 0; s < times(n); s++) {
       at = here();
@@ -890,6 +901,7 @@ var hwTable = (function () {
     if (!at) return;
     var t = at.obj.table, obj = at.obj, pos = at.cell.c, did = false;
 
+    beginStruct();
     for (var s = 0; s < times(n); s++) {
       if (!delColOnce(t, obj, pos)) break;
       resize(obj);
@@ -906,6 +918,7 @@ var hwTable = (function () {
     if (!b) return false;
     if (b.cells.length < 2) { hwSetStatus({ text: '두 칸 이상 고른 뒤 합칠 수 있습니다' }); return false; }
 
+    beginStruct();
     var t = b.obj.table, rect = b.rect, i, keeper = null, w = 0, h = 0;
     for (i = 0; i < b.cells.length; i++) {
       var c = b.cells[i];
@@ -953,6 +966,7 @@ var hwTable = (function () {
     nCols = Math.max(1, Math.min(64, Math.floor(nCols) || 1));
     if (nRows === 1 && nCols === 1) return false;
 
+    beginStruct();
     var t = obj.table, i, origR = cell.r, origC = cell.c;
 
     if (nCols > 1 && cell.cs % nCols !== 0)
@@ -1011,6 +1025,7 @@ var hwTable = (function () {
     var a0 = isWidth ? b.rect.c0 : b.rect.r0, a1 = isWidth ? b.rect.c1 : b.rect.r1;
     if (a1 <= a0) { hwSetStatus({ text: (isWidth ? '두 칸' : '두 줄') + ' 이상을 고르세요' }); return false; }
 
+    beginStruct();
     applySame(b.obj.table, isWidth, a0, a1);
     resize(b.obj);
     pushOp(b.obj, isWidth ? { op: 'sameWidth', c0: a0, c1: a1 } : { op: 'sameHeight', r0: a0, r1: a1 });
@@ -1099,16 +1114,16 @@ var hwTable = (function () {
     if (!to && obj.table.cells.length) to = obj.table.cells[0].paras[0].id;
     if (to) hwCaret.set(to, 0, false);
 
-    /* ★ 되돌리기 이력을 비운다. 표 구조는 되돌릴 수 있는 것이 아닌데(칸 자체가 바뀐다) 이력을 두면
-       Ctrl+Z 가 <b>글자만</b> 되돌려, 화면에는 넣은 행이 그대로 있는데 저장 요청은 그 전 상태가 된다. */
-    if (window.hwUndo) hwUndo.clear();
+    /* ★ 이력을 끊지 않는다 — hwUndo 스냅샷이 표 격자(칸 목록·번호·크기)와 표 구조 op 까지
+       담으므로 구조 편집도 Ctrl+Z 한 번으로 화면과 저장 요청이 같이 되돌아간다(hwUndo.tableSnap). */
+    if (window.hwUndo) hwUndo.commit([]);
 
     /* ★ 표 편집은 hwInput.status() 를 안 지난다 — 알림을 거기에만 걸면 행을 넣고 그냥 닫아도
        "저장할까요" 가 안 뜬다. */
     if (window.hwPostDirty) hwPostDirty();
 
     hwCaret.paint();
-    hwSetStatus({ text: '표를 고쳤습니다(되돌리기는 여기서 끊깁니다) — 저장하면 문서에 반영됩니다' });
+    hwSetStatus({ text: '표를 고쳤습니다(Ctrl+Z 로 되돌릴 수 있습니다) — 저장하면 문서에 반영됩니다' });
   }
 
   return {

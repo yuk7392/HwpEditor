@@ -431,6 +431,7 @@ var hwFind = (function () {
     openGoto: openGoto,
     closeGoto: closeGoto,
     gotoPage: gotoPage,
+    fillMarks: fillMarks,
     markCount: function () { return cGotoMark ? cGotoMark.options.length - 1 : 0; },
     isOpen: isOpen,
     isGotoOpen: function () { return !!cGoto && !cGoto.hidden; },

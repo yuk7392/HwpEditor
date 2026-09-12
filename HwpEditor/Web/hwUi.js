@@ -25,6 +25,14 @@ var hwUi = (function () {
 
     bar.addEventListener('mousedown', onMouseDown);
     bar.addEventListener('click', onClick);
+
+    /* 빠른 실행 도구 모음도 같은 위임을 받는다 — 되돌리기·다시 실행이 hwTools 밖에 있어서,
+       여기에 안 걸면 단추가 눌려도 아무 일이 안 일어난다. */
+    var qat = el('hwQat');
+    if (qat) {
+      qat.addEventListener('mousedown', onMouseDown);
+      qat.addEventListener('click', onClick);
+    }
     initTabs();
 
     bind(el('hwStyle'), function (v) { hwFormat.applyStyle(parseInt(v, 10)); });
@@ -505,6 +513,15 @@ var hwUi = (function () {
     for (var k = 0; k < q.length; k++) q[k].classList.toggle('on', q[k].getAttribute('data-rb') === name);
   }
 
+  /* 제목줄에 문서 이름을 건다 — 엑셀 제목줄과 같은 자리다. */
+  function setTitle(path) {
+    var t = el('hwDocTitle');
+    if (!t) return;
+    var name = (path || '').replace(new RegExp('\\\\', 'g'), '/');
+    name = name.slice(name.lastIndexOf('/') + 1);
+    t.textContent = name ? (name + ' - HwpEditor') : 'HwpEditor';
+  }
+
   function loadStyles() {
     var sel = el('hwStyle');
     if (!sel || !hwDoc) return;
@@ -578,7 +595,8 @@ var hwUi = (function () {
     if (st.cs.shade) set(el('hwShade'), st.cs.shade);
     if (st.ps.lsType === 'percent') set(el('hwLine'), String(st.ps.ls));
 
-    var ub = bar.querySelector('[data-act="undo"]'), rb = bar.querySelector('[data-act="redo"]');
+    /* ★ document 에서 찾는다 — 이 둘은 hwTools 가 아니라 빠른 실행 도구 모음에 있다. */
+    var ub = document.querySelector('[data-act="undo"]'), rb = document.querySelector('[data-act="redo"]');
     if (ub) ub.disabled = !hwUndo.canUndo();
     if (rb) rb.disabled = !hwUndo.canRedo();
 
@@ -609,6 +627,7 @@ var hwUi = (function () {
 
   return {
     init: init, refresh: refresh, loadFonts: loadFonts, loadStyles: loadStyles, showTab: showTab,
+    setTitle: setTitle,
     setZoom: setZoom, stepZoom: stepZoom, fitZoom: fitZoom, zoom: zoomPct, curPage: curPage,
     showMenu: showMenu, closeMenu: closeMenu, menuKey: menuKey, contextItems: contextItems,
     menuEl: function () { return cMenu ? cMenu.root : null; },

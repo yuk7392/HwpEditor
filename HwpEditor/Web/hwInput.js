@@ -507,7 +507,8 @@ var hwInput = (function () {
 
     cChords = {
       'C+k': {
-        h: function () { if (window.hwDialog) hwDialog.hyperlink(); }
+        h: function () { if (window.hwDialog) hwDialog.hyperlink(); },
+        b: function () { if (window.hwDialog) hwDialog.bookmark(); }
       },
       'C+q': {
         l: function () { if (window.hwFind) hwFind.repeat(); },

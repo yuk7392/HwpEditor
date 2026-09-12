@@ -125,6 +125,9 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("link")] public string Link;
 
+        /// <summary>addMark 가 넣을 책갈피 이름.</summary>
+        [JsonProperty("name")] public string Name;
+
         [JsonProperty("wHu")] public long WHu;
         [JsonProperty("hHu")] public long HHu;
 

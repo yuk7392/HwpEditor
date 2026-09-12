@@ -7,6 +7,7 @@ using HwpEditor.Models;
 using HwpLib.Object;
 using HwpLib.Object.BodyText;
 using HwpLib.Object.BodyText.Control;
+using HwpLib.Object.BodyText.Control.Bookmark;
 using HwpLib.Object.BodyText.Control.CtrlHeader;
 using HwpLib.Object.BodyText.Control.CtrlHeader.ColumnDefine;
 using HwpLib.Object.BodyText.Control.CtrlHeader.Gso;
@@ -61,7 +62,7 @@ namespace HwpEditor.Files
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
                 if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
-                     || op.Op == "addLink" || op.Op == "addLinkEnd")
+                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             // ★ 순서가 뜻을 갖는다: 내용 먼저(replace) → 지우기 → 넣기.
@@ -74,6 +75,10 @@ namespace HwpEditor.Files
             //   그 앞에 오는 셀 문단 요청들이 사라진 객체를 가리키게 된다.
             bool rebuilt = cTableWriter.Apply(pIndex, pOps);
             if (pResult != null && rebuilt) pResult.Reload = true;
+
+            // ★ 행·열을 넣어 생긴 칸의 글은 표를 다시 세운 <b>뒤</b>에 붓는다 — 그 전에 부으면
+            //   다시 세우기가 그 칸을 새로 만들면서 통째로 지운다.
+            ApplyCellText(pIndex, pOps);
 
             // ★ 서식은 구조 <b>뒤</b>다 — 표를 다시 세우면 칸 객체가 새것이라 앞서 건 서식이 사라진다.
             ApplyFormatOps(pIndex, pOps);
@@ -506,6 +511,10 @@ namespace HwpEditor.Files
                 {
                     ctl = AddLink(pPara, pText, img);
                 }
+                else if (img.Op == "addMark")
+                {
+                    ctl = AddMark(pPara, pText, img);
+                }
                 else if (img.Op == "addLinkEnd")
                 {
                     // 필드 끝은 컨트롤이 없는 <b>인라인 제어문자 하나</b>다(실측 issue144 — 8글자).
@@ -717,6 +726,33 @@ namespace HwpEditor.Files
         /// <c>\</c> 로 막는다(실측 issue144 — <c>http\://google.com;1;0;0;</c>).
         /// 끝 표식은 부르는 쪽이 <c>addLinkEnd</c> 로 따로 넣는다.
         /// </summary>
+        /// <summary>
+        /// 책갈피 하나. 이름은 컨트롤 데이터의 <c>ParameterSet</c> 문자열 항목이다
+        /// (<see cref="cHwpReader"/> 의 BookmarkName 과 짝이다).
+        /// ★ 확장 제어문자는 <b>code 22 + ctrlId 'bokm'</b> 이다 — hwplib 에 전용 Add 메서드가 없어
+        ///   손으로 세웠고, 그 두 값이어야 <c>HWPCharControlExtend.IsBookmark</c> 가 참이 된다(실측).
+        /// </summary>
+        private static Control AddMark(Paragraph pPara, ParaText pText, EditOp pOp)
+        {
+            string name = pOp.Name == null ? "" : pOp.Name;
+
+            ControlBookmark bm = pPara.AddNewControl(ControlType.Bookmark) as ControlBookmark;
+            if (bm == null) throw new InvalidOperationException("책갈피 컨트롤을 만들지 못했다");
+
+            bm.CreateCtrlData();
+            // ★ ParameterSet 은 읽기 전용 속성이다 — 새로 만든 것을 Copy 로 부어 넣는다.
+            CtrlData d = bm.GetCtrlData();
+            if (d != null && d.ParameterSet != null) d.ParameterSet.Copy(ParameterSet.CreateForFieldName(name));
+
+            HWPCharControlExtend ch = pText.AddNewExtendControlChar();
+            ch.Code = 22;
+            byte[] add = new byte[12];
+            byte[] id = BitConverter.GetBytes(ControlTypeExtensions.GetCtrlId(ControlType.Bookmark));
+            Array.Copy(id, 0, add, 0, 4);
+            ch.SetAddition(add);
+            return bm;
+        }
+
         private static Control AddLink(Paragraph pPara, ParaText pText, EditOp pOp)
         {
             Control ctl = pPara.AddNewControl(ControlType.FIELD_HYPERLINK);
@@ -776,6 +812,48 @@ namespace HwpEditor.Files
 
             if (head) pText.AddExtendCharForHeader(); else pText.AddExtendCharForFooter();
             return ctl;
+        }
+
+        /// <summary>
+        /// 행·열을 넣어 생긴 칸에 화면이 친 글을 붓는다. 그 칸의 문단 id 는 문서 쪽 표에 없어
+        /// <c>replace</c> 로 못 간다 — 칸 자리(행·열 번호)로 찾는다.
+        /// </summary>
+        private static void ApplyCellText(cHwpIndex pIndex, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "cellText" || op.Cells == null) continue;
+
+                cObjRef r;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out r)) continue;
+                ControlTable tbl = r.Control as ControlTable;
+                if (tbl == null) continue;
+
+                foreach (CellModel cm in op.Cells)
+                {
+                    Cell cell = FindCell(tbl, cm.R, cm.C);
+                    if (cell == null || cell.ParagraphList == null) continue;
+
+                    ListHeaderForCell lh = cell.ListHeader;
+                    long inner = Math.Max(200, lh.Width - lh.LeftMargin - lh.RightMargin);
+
+                    cell.ParagraphList.DeleteAllParagraphs();
+                    if (cm.Paras == null || cm.Paras.Count == 0) NewCellParagraph(cell, null, inner);
+                    else foreach (ParagraphModel pm in cm.Paras) NewCellParagraph(cell, pm, inner);
+
+                    Paragraph[] all = cell.ParagraphList.GetParagraphs();
+                    for (int q = 0; q < all.Length; q++) all[q].Header.LastInList = q == all.Length - 1;
+                    lh.ParaCount = Math.Max(1, all.Length);
+                }
+            }
+        }
+
+        private static Cell FindCell(ControlTable pTable, int pRow, int pCol)
+        {
+            foreach (Row row in pTable.RowList)
+                foreach (Cell cell in row.CellList)
+                    if (cell.ListHeader.RowIndex == pRow && cell.ListHeader.ColIndex == pCol) return cell;
+            return null;
         }
 
         private static void NewCell(Row pRow, CellModel pModel, int pBorderFill)

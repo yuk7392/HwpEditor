@@ -949,6 +949,22 @@ var hwDialog = (function () {
     });
   }
 
+  /* 책갈피 넣기. 이름 하나만 받는다 — 자리는 캐럿이다. */
+  function bookmark() {
+    if (!hwDoc) return null;
+    return open({
+      title: '책갈피', width: 380,
+      rows: [{ type: 'text', key: 'name', label: '책갈피 이름', value: '', width: 240 }],
+      buttons: [{ label: '넣기', ok: true }, { label: '취소', cancel: true }],
+      onOk: function (s) {
+        var name = String(s.get('name') || '').trim();
+        if (!name) { hwSetStatus({ text: '책갈피 이름을 넣으세요' }); return; }
+        close();
+        if (hwLink.addMark(name) && window.hwFind) hwFind.fillMarks();
+      }
+    });
+  }
+
   function tableSplit() {
     if (!hwTable.here() && !hwTable.block()) { hwSetStatus({ text: '표 안에 커서를 두세요' }); return null; }
     return open({
@@ -983,6 +999,7 @@ var hwDialog = (function () {
     tableInsert: tableInsert,
     tableSplit: tableSplit,
     hyperlink: hyperlink,
+    bookmark: bookmark,
     categories: function () { return cCats.map(function (c) { return c.t; }); }
   };
 })();

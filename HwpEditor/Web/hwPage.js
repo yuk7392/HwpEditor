@@ -95,7 +95,9 @@ var hwPage = (function () {
         var to = tbl[ti];
         var grid = hwTable.measure(to);
         var tx = col * (colW + gap) + (to.inline ? 0 : (to.xOffHu || 0));
-        var ty = paraTop + (to.yOffHu || 0);
+        /* 바깥 여백은 자리를 먹는다 — 빼면 그 아래 문단이 통째로 올라온다(실측: borderfill.hwp 는
+           표 3846 + 위아래 283 = 4412 가 다음 문단의 lineseg y 와 정확히 같다). */
+        var ty = paraTop + (to.yOffHu || 0) + (to.omTHu || 0);
 
         /* 쪽 경계에서 0=나누지 않음 1=셀 단위로 나눔 2=나눔. 1·2 는 <b>줄 경계</b>로 같게 다룬다 —
            2 의 "칸 안 글까지 쪼갬" 은 한 칸 문단이 두 쪽에 걸려 칸 기준 lineseg 가 깨진다. */
@@ -132,7 +134,7 @@ var hwPage = (function () {
 
           hwTable.placeRange(to, tx, ty, cur.lines, hwPages.length - 1, cur, r0, end, rep);
 
-          used = ty + headH + (grid.rowY[end] - grid.rowY[r0]);
+          used = ty + headH + (grid.rowY[end] - grid.rowY[r0]) + (to.omBHu || 0);
           if (used > y) y = used;
           r0 = end;
           first = false;
@@ -181,7 +183,7 @@ var hwPage = (function () {
       if (o.inline) continue;
       if (o.relV !== 'para') continue;
       if (o.flow === 'behind' || o.flow === 'front') continue;
-      var bottom = (o.yOffHu > 0 ? o.yOffHu : 0) + (o.hHu || 0);
+      var bottom = (o.yOffHu > 0 ? o.yOffHu : 0) + (o.omTHu || 0) + (o.hHu || 0) + (o.omBHu || 0);
       if (bottom > max) max = bottom;
     }
     return max;

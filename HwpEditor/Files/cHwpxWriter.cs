@@ -44,7 +44,7 @@ namespace HwpEditor.Files
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
                 if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader"
-                     || op.Op == "addLink" || op.Op == "addLinkEnd")
+                     || op.Op == "addLink" || op.Op == "addLinkEnd" || op.Op == "addMark")
                     && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             foreach (EditOp op in pOps) if (op.Op == "replace") ApplyReplace(pDoc, pIndex, op, images, pResult);
@@ -53,6 +53,9 @@ namespace HwpEditor.Files
 
             // ★ 표 구조는 맨 마지막에 — 앞의 셀 문단 요청이 아직 옛 구조를 가리키고 있다.
             bool rebuilt = ApplyTableOps(pIndex, pOps);
+
+            // ★ 행·열을 넣어 생긴 칸의 글은 표를 다시 세운 뒤에 붓는다(cHwpWriter 와 같은 규칙).
+            ApplyCellText(pDoc, pIndex, pOps, images, pResult);
 
             // ★ 서식은 구조 뒤다 — 표를 다시 세우면 칸 요소가 새것이라 앞서 건 서식이 사라진다.
             ApplyFormatOps(pIndex, pOps);
@@ -501,6 +504,17 @@ namespace HwpEditor.Files
             return b;
         }
 
+        /// <summary>
+        /// 책갈피 하나(<c>hp:bookmark</c>). ★ hwpx 표본에 이 요소가 하나도 없다 —
+        /// OWPML 을 보고 세운 것이고 우리 왕복으로만 봤다(<see cref="cHwpxReader"/> 가 같은 이름을 읽는다).
+        /// </summary>
+        private static XmlElement MakeMark(XmlElement pP, EditOp pOp)
+        {
+            XmlElement e = pP.OwnerDocument.CreateElement(pP.Prefix, "bookmark", pP.NamespaceURI);
+            e.SetAttribute("name", pOp.Name == null ? "" : pOp.Name);
+            return e;
+        }
+
         /// <summary>시작·끝이 같은 번호를 써야 짝이 된다 — 화면이 준 임시 id 에서 숫자만 뽑는다.</summary>
         private static string FieldId(string pTmpId)
         {
@@ -524,8 +538,10 @@ namespace HwpEditor.Files
             {
                 bool isTable = img.Op == "addTable", isBand = img.Op == "addHeader";
                 bool isLink = img.Op == "addLink" || img.Op == "addLinkEnd";
+                bool isMark = img.Op == "addMark";
                 XmlElement made = isBand ? MakeBand(pDoc, pIndex, pP, img, pImages, pResult)
                                 : isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
+                                : isMark ? MakeMark(pP, img)
                                 : isLink ? MakeField(pP, img)
                                           : MakePicture(pDoc, pP, img);
                 // ★ 새 표·새 머리말도 문서를 다시 읽어야 한다 — 안 문단을 여기서 만들었으므로 화면이
@@ -533,7 +549,7 @@ namespace HwpEditor.Files
                 if ((isTable || isBand) && pResult != null) pResult.Reload = true;
                 // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다).
                 // ★ 표는 뺀다 — 표의 바깥 크기는 칸 격자에서 나오므로 여기서 덮으면 칸 폭 합과 갈라진다.
-                if (!isTable && !isBand && !isLink) ApplyGeom(made, pObj);
+                if (!isTable && !isBand && !isLink && !isMark) ApplyGeom(made, pObj);
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
                 pIndex.Objs[oid] = made;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;
@@ -712,6 +728,74 @@ namespace HwpEditor.Files
         /// ★ 넣거나 뺀 뒤 <c>cellAddr</c>·<c>cellSpan</c>·<c>cellSz</c> 와 <c>rowCnt</c>·<c>colCnt</c>·<c>hp:sz</c>
         ///   를 전부 다시 쓴다. 하나라도 빠지면 여는 쪽이 칸을 엉뚱한 자리에 그린다.
         /// </summary>
+        /// <summary>
+        /// 행·열을 넣어 생긴 칸에 화면이 친 글을 붓는다 — 칸 자리(<c>hp:cellAddr</c>)로 찾는다.
+        /// ★ 문단 틀은 그 칸이 이미 들고 있는 <c>hp:p</c> 를 복제해 쓴다. 바깥 문단을 복제하면
+        ///   칸 안에 안 쓰는 속성이 딸려 들어온다.
+        /// </summary>
+        private static void ApplyCellText(cHwpxDocument pDoc, cHwpxIndex pIndex, IList<EditOp> pOps,
+                                          Dictionary<string, EditOp> pImages, SaveResult pResult)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "cellText" || op.Cells == null) continue;
+
+                XmlElement tbl;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out tbl)) continue;
+
+                XmlDocument xd = tbl.OwnerDocument;
+                long nextId = NextParagraphIdDeep(xd);
+
+                foreach (CellModel cm in op.Cells)
+                {
+                    XmlElement tc = FindCell(tbl, cm.R, cm.C);
+                    if (tc == null) continue;
+                    XmlElement sub2 = Kid(tc, "subList");
+                    if (sub2 == null) continue;
+
+                    List<XmlElement> old = ChildElements(sub2, "p");
+                    if (old.Count == 0) continue;
+                    XmlElement seed = (XmlElement)old[0].CloneNode(true);
+                    foreach (XmlElement o in old) sub2.RemoveChild(o);
+
+                    XmlElement szEl = Kid(tc, "cellSz");
+                    XmlElement mgEl = Kid(tc, "cellMargin");
+                    long inner = NumI(szEl, "width", 0) - NumI(mgEl, "left", 0) - NumI(mgEl, "right", 0);
+                    if (inner < 200) inner = 200;
+
+                    List<ParagraphModel> list = cm.Paras;
+                    if (list == null || list.Count == 0) { list = new List<ParagraphModel>(); list.Add(new ParagraphModel()); }
+
+                    foreach (ParagraphModel pm in list)
+                    {
+                        XmlElement np = (XmlElement)seed.CloneNode(true);
+                        StripCarried(np);
+                        np.SetAttribute("id", Str(nextId++));
+                        sub2.AppendChild(np);
+
+                        EditOp one = new EditOp { Op = "replace", Id = np.GetAttribute("id"), Ps = pm.Ps, Runs = pm.Runs };
+                        Rewrite(pDoc, pIndex, np, one, pImages, pResult);
+
+                        foreach (XmlElement arr in ChildElements(np, "linesegarray"))
+                            foreach (XmlElement seg in ChildElements(arr, "lineseg"))
+                                seg.SetAttribute("horzsize", Str(inner));
+                    }
+                }
+            }
+        }
+
+        private static XmlElement FindCell(XmlElement pTable, int pRow, int pCol)
+        {
+            foreach (XmlElement tr in ChildElements(pTable, "tr"))
+                foreach (XmlElement tc in ChildElements(tr, "tc"))
+                {
+                    XmlElement ad = Kid(tc, "cellAddr");
+                    if (ad == null) continue;
+                    if (NumI(ad, "rowAddr", -1) == pRow && NumI(ad, "colAddr", -1) == pCol) return tc;
+                }
+            return null;
+        }
+
         private static bool ApplyTableOps(cHwpxIndex pIndex, IList<EditOp> pOps)
         {
             bool any = false;

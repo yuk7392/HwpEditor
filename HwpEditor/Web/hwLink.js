@@ -126,6 +126,33 @@ var hwLink = (function () {
       return true;
     },
 
+    /* 책갈피 하나를 캐럿 자리에 박는다. 링크와 같은 틀이지만 짝이 없는 표식 하나다.
+       ★ 저장 전 새 표의 칸은 막는다(insert 와 같은 이유 — 그 문단은 저장 요청에 안 실린다). */
+    addMark: function (name) {
+      if (!hwDoc) return false;
+      name = (name || '').trim();
+      if (!name) { hwSetStatus({ text: '책갈피 이름을 넣으세요' }); return false; }
+
+      var marks = this.marks();
+      for (var i = 0; i < marks.length; i++)
+        if (marks[i].name === name) { hwSetStatus({ text: '같은 이름의 책갈피가 이미 있습니다' }); return false; }
+
+      var at = hwCaret.at();
+      var p = hwModel.byId(at.id);
+      if (!p) return false;
+      if (p._tblNew) { hwSetStatus({ text: '새 표는 저장한 뒤에 책갈피를 넣을 수 있습니다' }); return false; }
+
+      var pos = at.pos;
+      hwInput.run(function () {
+        hwModel.insertObj(p, pos, { pos: pos, kind: 'ctrl', ctrl: 'bookm', label: '책갈피',
+                                    hidden: true, inline: true, wHu: 0, hHu: 0,
+                                    name: name, tmpId: 'bm' + (Date.now() % 100000) });
+        return { id: p.id, pos: pos + 1 };
+      });
+      hwSetStatus({ text: '책갈피 "' + name + '" 를 넣었습니다' });
+      return true;
+    },
+
     /* 검사 통로. ★ 화면 밖 검사에서 브라우저가 실제로 뜨면 안 되므로, 무엇을 열려 했는지만 남긴다. */
     lastOpen: function () { return cLastOpen; }
   };

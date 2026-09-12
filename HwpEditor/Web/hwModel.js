@@ -124,6 +124,15 @@ var hwModel = (function () {
     return null;
   }
 
+  /* 문서 안의 표 개체 전부. 되돌리기가 표 격자를 통째로 담을 때 쓴다. */
+  function allTableObjs() {
+    var out = [];
+    var ps = allParas();
+    for (var i = 0; i < ps.length; i++)
+      eachTableOf(ps[i], function (t, obj) { out.push(obj); });
+    return out;
+  }
+
   function allCells() {
     var out = [];
     var ps = allParas();
@@ -335,6 +344,12 @@ var hwModel = (function () {
     for (var d = 0; d < cDeleted.length; d++) ops.push({ op: 'delete', id: cDeleted[d] });
 
     cDropped = 0;
+
+    /* ★ 행·열을 넣어 생긴 칸의 글은 먼저 훑는다 — 여기서 단 `_carried` 를 pushOp 가 보고
+       "빠진 글자" 로 안 센다. 실어 보내는 것은 맨 뒤다(표 구조 op 뒤여야 한다). */
+    var cellOps = [];
+    for (var cs0 = 0; cs0 < hwDoc.sections.length; cs0++) cellTextOps(hwDoc.sections[cs0].paras, cellOps);
+
     for (var si = 0; si < hwDoc.sections.length; si++) {
       var paras = hwDoc.sections[si].paras;
       for (var pi = 0; pi < paras.length; pi++) opsForList(paras, pi, ops);
@@ -351,6 +366,10 @@ var hwModel = (function () {
     /* ★ 표 구조는 맨 뒤다. 표를 다시 세우면 셀 문단 객체가 전부 새것이 되므로,
        그 앞의 셀 문단 요청이 먼저 반영돼야 한다. */
     for (var tt = 0; tt < cTableOps.length; tt++) ops.push(cTableOps[tt]);
+
+    /* ★ 칸 내용은 표 구조 뒤다 — 표를 다시 세우기 전에 부으면 그 칸이 다시 만들어지며 지워진다. */
+    for (var co = 0; co < cellOps.length; co++) ops.push(cellOps[co]);
+    for (var cl = 0; cl < hwDoc.sections.length; cl++) clearCarried(hwDoc.sections[cl].paras);
 
     return ops;
   }
@@ -379,7 +398,7 @@ var hwModel = (function () {
     /* ★ 행·열을 넣어 <b>화면에만</b> 생긴 칸의 문단은 요청으로 안 보낸다. 문서 쪽 id 표에 없는
        id 라 replace 를 보내면 저장이 통째로 <b>예외로 끝나고</b> 다른 문단의 고침까지 다 날아간다.
        이 칸은 C# 이 표를 다시 세우면서 자기가 만든다. */
-    if (p._tblNew) { if (p.len > 0 && !p._tblOwner) cDropped += p.len; return; }
+    if (p._tblNew) { if (p.len > 0 && !p._tblOwner && !p._carried) cDropped += p.len; return; }
 
     /* 새 머리말·꼬리말의 안 문단도 같다 — 그 문단은 addHeader 꾸러미가 통째로 들고 간다. */
     if (p._bandNew) return;
@@ -412,6 +431,55 @@ var hwModel = (function () {
   }
 
   /* addTable 이 들고 갈 칸 목록. 칸 안의 개체는 안 싣는다 — 새 표 칸에 그림을 넣는 길이 아직 없다. */
+  /* 행·열을 넣어 화면에만 생긴 칸의 내용을 칸 자리(r·c)로 실어 보낸다. 그 칸의 문단 id 는 문서 쪽
+     표에 없어 replace 로 못 가고, C# 이 표를 다시 세운 뒤 자리로 찾아 부어 넣는다.
+     ★ 표에 oid 가 있을 때만이다 — 새 표(tmpId)의 칸은 addTable 꾸러미가 통째로 들고 간다. */
+  function cellTextOps(paras, ops) {
+    for (var i = 0; i < paras.length; i++) {
+      var objs = paras[i].objs || [];
+      for (var j = 0; j < objs.length; j++) {
+        cellTextOps(objs[j].paras || [], ops);
+
+        var t = objs[j].table;
+        if (!t) continue;
+
+        var made = [];
+        for (var c = 0; c < t.cells.length; c++) {
+          var cell = t.cells[c];
+          cellTextOps(cell.paras, ops);
+
+          var hit = false;
+          for (var q = 0; q < cell.paras.length; q++) {
+            var cp = cell.paras[q];
+            if (cp._tblNew && !cp._tblOwner && (cp.len > 0 || cell.paras.length > 1)) hit = true;
+          }
+          if (!hit || !objs[j].oid) continue;
+
+          var list = [];
+          for (var w = 0; w < cell.paras.length; w++) {
+            list.push({ ps: cell.paras[w].ps, runs: cell.paras[w].runs });
+            cell.paras[w]._carried = true;
+          }
+          made.push({ r: cell.r, c: cell.c, rs: cell.rs, cs: cell.cs, paras: list });
+        }
+        if (made.length) ops.push({ op: 'cellText', oid: objs[j].oid, cells: made });
+      }
+    }
+  }
+
+  function clearCarried(paras) {
+    for (var i = 0; i < paras.length; i++) {
+      delete paras[i]._carried;
+      var objs = paras[i].objs || [];
+      for (var j = 0; j < objs.length; j++) {
+        clearCarried(objs[j].paras || []);
+        var t = objs[j].table;
+        if (!t) continue;
+        for (var c = 0; c < t.cells.length; c++) clearCarried(t.cells[c].paras);
+      }
+    }
+  }
+
   function tableCells(t) {
     var out = [];
     for (var i = 0; i < t.cells.length; i++) {
@@ -443,6 +511,10 @@ var hwModel = (function () {
           op: objs[j].ctrl === 'fldb' ? 'addLink' : 'addLinkEnd',
           id: p.id, pos: objs[j].pos, tmpId: objs[j].tmpId, link: objs[j].link || ''
         });
+
+      /* 책갈피 표식. 짝이 없는 하나라 op 도 이름 하나만 들고 간다. */
+      if (objs[j].tmpId && objs[j].ctrl === 'bookm' && !p._tblNew)
+        ops.push({ op: 'addMark', id: p.id, pos: objs[j].pos, tmpId: objs[j].tmpId, name: objs[j].name || '' });
 
       /* ★ 새 표는 <b>칸 내용까지</b> 실어 보낸다 — 칸 문단은 문서 쪽 id 표에 없어서 replace 로는 못 간다.
          이것이 "새 표 칸에 친 글자가 저장 때 빠진다"(TODO 2)를 닫는 자리다. */
@@ -607,6 +679,7 @@ var hwModel = (function () {
     isFresh: function (id) { return !!cFresh[id]; },
     allParas: allParas,
     allCells: allCells,
+    allTableObjs: allTableObjs,
     hostOf: hostOf,
     listOf: listOf,
     droppedChars: function () { return cDropped; },
@@ -641,13 +714,16 @@ var hwModel = (function () {
     state: function () {
       var d = {};
       for (var k in cDirty) if (cDirty.hasOwnProperty(k)) d[k] = true;
-      return { dirty: d, deleted: cDeleted.slice() };
+      /* ★ 표 구조 op 도 같이 담는다 — 이것이 없으면 Ctrl+Z 가 화면의 행만 되돌리고
+         저장 요청에는 addRow 가 그대로 남아, 저장하면 지운 행이 되살아난다. */
+      return { dirty: d, deleted: cDeleted.slice(), tops: cTableOps.slice() };
     },
     restoreState: function (s) {
       if (!s) return;
       cDirty = {};
       for (var k in s.dirty) if (s.dirty.hasOwnProperty(k)) cDirty[k] = true;
       cDeleted = s.deleted.slice();
+      if (s.tops) cTableOps = s.tops.slice();
     },
     markDirty: markDirty,
     reindex: function () { index(hwDoc); },
@@ -683,7 +759,7 @@ function hwLoadDoc(doc) {
 
   hwMeasure.ready().then(function () {
     var t0 = (window.performance && performance.now) ? performance.now() : 0;
-    if (window.hwUi) { hwUi.loadFonts(); hwUi.loadStyles(); }
+    if (window.hwUi) { hwUi.loadFonts(); hwUi.loadStyles(); hwUi.setTitle(hwDoc && hwDoc.path); }
     hwLayout();
     hwRender();
     if (window.hwCaret) hwCaret.reset();

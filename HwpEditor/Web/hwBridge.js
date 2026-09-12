@@ -366,19 +366,65 @@ function hwUiTest() {
       if (newRow) {
         hwCaret.set(newRow.paras[0].id, 0, false);
 
-        /* ★ 새로 생긴 칸의 문단 id 는 문서 쪽 표에 없다 — 요청에 실려 나가면 저장이 통째로
-           예외로 끝나고 다른 문단의 고침까지 다 날아간다. 빠지는 글자 수만 알리고 op 는 안 만든다. */
+        /* ★ 새로 생긴 칸의 문단 id 는 문서 쪽 표에 없다 — 그 id 로 replace 를 보내면 저장이 통째로
+           예외로 끝난다. 대신 칸 자리(cellText)로 실어 보낸다. */
         typeIn('새칸');
-        var leak = null;
+        var leak = null, carry = null;
         var chk = hwBuildOps();
-        for (var w = 0; w < chk.length; w++) if (chk[w].id === newRow.paras[0].id) leak = chk[w];
+        for (var w = 0; w < chk.length; w++) {
+          if (chk[w].id === newRow.paras[0].id) leak = chk[w];
+          if (chk[w].op === 'cellText') carry = chk[w];
+        }
         ok('33-1 새 칸에 친 글이 저장 요청을 안 깨뜨린다', !leak,
            leak ? ('op ' + leak.op + ' 이 실렸다') : ('안 실림 · ' + hwModel.droppedChars() + '자 빠짐'));
+
+        var carried = '';
+        if (carry) for (var w2 = 0; w2 < carry.cells.length; w2++)
+          for (var w3 = 0; w3 < carry.cells[w2].paras.length; w3++) {
+            var rr = carry.cells[w2].paras[w3].runs || [];
+            for (var w4 = 0; w4 < rr.length; w4++) carried += rr[w4].text || '';
+          }
+        ok('183 새 칸에 친 글이 cellText 로 실린다',
+           !!carry && carried.indexOf('새칸') >= 0 && hwModel.droppedChars() === 0,
+           carry ? ('cellText 칸 ' + carry.cells.length + '개 · "' + carried + '" · 빠짐 '
+                    + hwModel.droppedChars()) : 'cellText 가 없다');
+
+        /* cellText 는 표 구조 op 뒤에 와야 한다 — 앞에 오면 표를 다시 세우며 통째로 지워진다. */
+        var iStruct = -1, iCell = -1;
+        for (var w5 = 0; w5 < chk.length; w5++) {
+          if (chk[w5].op === 'addRow' || chk[w5].op === 'addCol') iStruct = w5;
+          if (chk[w5].op === 'cellText') iCell = w5;
+        }
+        ok('184 cellText 가 표 구조 op 뒤에 있다', iStruct >= 0 && iCell > iStruct,
+           'addRow ' + iStruct + ' · cellText ' + iCell);
       }
 
       var rows1 = tobj.table.rows;
       hwTable.delRow();
       ok('34 행 빼기', tobj.table.rows === rows1 - 1, '행 ' + rows1 + '→' + tobj.table.rows);
+
+      /* ★ 표 구조도 Ctrl+Z 로 되돌아가야 한다 — 화면만 되돌리고 op 가 남으면 저장했을 때
+         지운 행이 되살아난다(hwUndo.tableSnap ↔ hwTable.finish). */
+      function countOp(name) {
+        var n = 0, list = hwBuildOps();
+        for (var q = 0; q < list.length; q++) if (list[q].op === name) n++;
+        return n;
+      }
+      var rowsU = tobj.table.rows, opsU = countOp('addRow');
+      hwCaret.set(cellPara.id, 0, false);
+      hwTable.addRow(1);
+      var rowsU2 = tobj.table.rows, opsU2 = countOp('addRow');
+      var didUndo = hwUndo.undo();
+      ok('185 표 구조를 Ctrl+Z 로 되돌린다',
+         didUndo && tobj.table.rows === rowsU && countOp('addRow') === opsU,
+         '행 ' + rowsU + '→' + rowsU2 + '→' + tobj.table.rows
+         + ' · addRow op ' + opsU + '→' + opsU2 + '→' + countOp('addRow'));
+
+      var didRedo = hwUndo.redo();
+      ok('186 되돌린 표 구조를 다시 할 수 있다',
+         didRedo && tobj.table.rows === rowsU2 && countOp('addRow') === opsU2,
+         '행 ' + tobj.table.rows + ' · addRow op ' + countOp('addRow'));
+      hwUndo.undo();
     } else {
       ok('33 열 넣기', false, '표 밖으로 캐럿이 나갔다');
     }
@@ -1155,12 +1201,22 @@ function hwUiTestS1(t) {
   ok('67-3 Ctrl+Z 로 그 문단이 돌아온다', hwDoc.sections[0].paras.length === n67 && !!hwModel.byId(one67.id)
      && hwModel.text(hwModel.byId(one67.id)) === '한줄', '문단 ' + hwDoc.sections[0].paras.length);
 
+  /* ★ "쪽이 <b>하나</b> 는다" 로 재면 안 된다 — 나누는 자리가 이미 쪽 첫 줄이면 그 뒤가 이미 새 쪽이라
+     쪽 수가 그대로다(실측 table-caption.hwp — 개체 바깥 여백을 배치에 넣은 뒤 그렇게 됐다).
+     뜻은 "새 문단이 쪽 <b>맨 위</b>에서 시작한다" 이므로 그것으로 잰다. */
   var pg68 = hwPageCount(), n68 = hwDoc.sections[0].paras.length;
+  var pgOf68 = function (p) { var l = linesOf(p); return l.length ? l[0].pageIdx : -1; };
+  var spPg68 = pgOf68(sp);
   hwCaret.set(sp.id, linesOf(sp)[1].line.s + 1, false);
   key('Enter', { ctrl: true });
   var np68 = hwCaret.para();
-  ok('68 Ctrl+Enter — 쪽이 하나 늘고 새 문단에 쪽 나눔', hwPageCount() === pg68 + 1 && np68 !== sp && np68.brk === 'page',
-     '쪽 ' + pg68 + '→' + hwPageCount() + ', brk ' + np68.brk);
+  var top68 = (linesOf(np68)[0] || {}).li === 0
+           && hwPages[pgOf68(np68)] && hwPages[pgOf68(np68)].lines.length
+           && hwPages[pgOf68(np68)].lines[0].para === np68;
+  ok('68 Ctrl+Enter — 새 문단이 쪽 맨 위에서 시작하고 쪽 나눔이 붙는다',
+     np68 !== sp && np68.brk === 'page' && pgOf68(np68) > spPg68 && !!top68 && hwPageCount() >= pg68,
+     '쪽 ' + pg68 + '→' + hwPageCount() + ', 문단 쪽 ' + spPg68 + '→' + pgOf68(np68)
+       + ', 맨 위 ' + !!top68 + ', brk ' + np68.brk);
   var ops68 = hwBuildOps(), sent68 = false;
   for (var o68 = 0; o68 < ops68.length; o68++) if (ops68[o68].id === np68.id && ops68[o68].brk === 'page') sent68 = true;
   key('z', { ctrl: true });
@@ -1168,7 +1224,7 @@ function hwUiTestS1(t) {
   key('z', { ctrl: true, shift: true });
   var re68 = hwModel.byId(np68.id);
   ok('68-1 저장 요청에 나눔이 실리고, 되돌리기·다시 하기가 나눔까지 맞춘다',
-     sent68 && undone68 && !!re68 && re68.brk === 'page' && hwPageCount() === pg68 + 1,
+     sent68 && undone68 && !!re68 && re68.brk === 'page' && hwPageCount() >= pg68,
      '요청 ' + (sent68 ? '실림' : '안 실림') + ', 되돌림 ' + (undone68 ? '맞음' : '틀림')
        + ', 다시 ' + (re68 ? re68.brk : '문단 없음') + ' ' + hwPageCount() + '쪽');
   key('z', { ctrl: true });
@@ -2897,6 +2953,60 @@ function hwUiTestS6(t) {
      '표+ ' + (hidden182 ? '있음' : '없음') + '(보임 ' + vis182 + '), 글머리표 단추 ' + (head182 ? '있음' : '없음'));
 
   if (window.hwUi && hwUi.showTab) hwUi.showTab('edit');
+
+  /* ── 책갈피 넣기 187~188 ─────────────────────────────────────────────
+     ★ 맨 끝에 둔다 — 앞자리에 두면 뒤 단계의 되돌리기가 걷어 가서 ops.json 에 안 남고,
+       그러면 저장 왕복(--apply)이 이 길을 한 번도 안 지난다. */
+  hwCaret.set(hwDoc.sections[0].paras[0].id, 0, false);
+  var mk0 = hwLink.marks().length;
+  var mkOk = hwLink.addMark('검사책갈피187');
+  var mkOps = hwBuildOps(), mkOp = null;
+  for (var mi = 0; mi < mkOps.length; mi++) if (mkOps[mi].op === 'addMark') mkOp = mkOps[mi];
+  var mkFound = false, mkList = hwLink.marks();
+  for (var mj = 0; mj < mkList.length; mj++) if (mkList[mj].name === '검사책갈피187') mkFound = true;
+  ok('187 책갈피를 넣는다', mkOk && mkFound && !!mkOp && mkOp.name === '검사책갈피187',
+     '책갈피 ' + mk0 + '→' + mkList.length + ' · op ' + (mkOp ? mkOp.name : '없음'));
+
+  /* 같은 이름을 또 넣으면 막아야 한다 — 찾아가기가 어느 쪽으로 갈지 못 정한다. */
+  ok('188 같은 이름의 책갈피는 막는다', hwLink.addMark('검사책갈피187') === false,
+     '두 번째도 들어갔다면 실패');
+
+  /* ── 새 칸에 친 글을 저장까지 189 ───────────────────────────────────
+     ★ 여기서도 맨 끝이다 — 앞 단계(34 행 빼기)가 그 행을 지워 버려 ops.json 에 안 남는다.
+       이 단계가 있어야 --apply 가 cellText 길을 실제로 지난다. */
+  /* ★ 문서에 이미 있던 표(oid 가 있는 것)여야 한다 — 화면이 만든 표(tmpId)의 칸은
+     addTable 꾸러미가 통째로 들고 가므로 cellText 길을 안 지난다. */
+  var obj189 = null, cp189 = null;
+  var objs189 = hwModel.allTableObjs();
+  for (var o189 = 0; o189 < objs189.length; o189++)
+    if (objs189[o189].oid && objs189[o189].table.cells.length) { obj189 = objs189[o189]; break; }
+  if (obj189) {
+    for (var c189 = 0; c189 < obj189.table.cells.length && !cp189; c189++)
+      if (obj189.table.cells[c189].paras.length && !obj189.table.cells[c189].paras[0]._tblNew)
+        cp189 = obj189.table.cells[c189].paras[0];
+  }
+  if (cp189) {
+    hwCaret.set(cp189.id, 0, false);
+    hwTable.addRow(1);
+    var t189 = obj189.table, new189 = null;
+    for (var q189 = 0; q189 < t189.cells.length; q189++)
+      if (t189.cells[q189].paras.length && t189.cells[q189].paras[0]._tblNew
+          && !t189.cells[q189].paras[0]._tblOwner) { new189 = t189.cells[q189]; break; }
+    if (new189) {
+      hwCaret.set(new189.paras[0].id, 0, false);
+      typeIn('남는칸');
+      var ops189 = hwBuildOps(), got189 = '';
+      for (var r189 = 0; r189 < ops189.length; r189++)
+        if (ops189[r189].op === 'cellText')
+          for (var s189 = 0; s189 < ops189[r189].cells.length; s189++)
+            for (var u189 = 0; u189 < ops189[r189].cells[s189].paras.length; u189++) {
+              var rr189 = ops189[r189].cells[s189].paras[u189].runs || [];
+              for (var v189 = 0; v189 < rr189.length; v189++) got189 += rr189[v189].text || '';
+            }
+      ok('189 새 칸에 친 글이 저장 요청에 남는다', got189.indexOf('남는칸') >= 0,
+         'cellText "' + got189 + '"');
+    } else ok('189 새 칸에 친 글이 저장 요청에 남는다', false, '새 칸을 못 찾았다');
+  } else ok('189 새 칸에 친 글이 저장 요청에 남는다', true, '문서에 원래 있던 표가 없다 — 건너뜀');
 }
 
 function firstCellPara() {
@@ -3243,7 +3353,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (cmd === 'saveAs') { hwSave(true); return; }
       if (cmd === 'find') { hwFind.open(true); return; }
       if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap' || cmd === 'pageSetup'
-       || cmd === 'pageNumber' || cmd === 'hyperlink') {
+       || cmd === 'pageNumber' || cmd === 'hyperlink' || cmd === 'bookmark') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         hwDialog[cmd]();
         return;

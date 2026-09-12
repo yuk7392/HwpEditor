@@ -59,7 +59,43 @@ var hwUndo = (function () {
 
     var cells = hwModel.allCells();
     for (var c = 0; c < cells.length; c++) s.lists.push({ on: cells[c], v: cells[c].paras.slice() });
+
+    s.tables = tableSnap();
     return s;
+  }
+
+  /* 표 격자 한 벌. ★ 칸 목록과 <b>칸마다의 번호·크기</b>를 둘 다 담는다 — 목록만 담으면 행을 끼우며
+     r 을 하나씩 민 옛 칸들이 민 채로 남아, 되돌린 표가 한 행 아래로 밀린 꼴이 된다.
+     이 값이 있어야 표 구조 편집도 Ctrl+Z 로 되돌아간다(hwTable.finish 가 이력을 안 끊는 근거). */
+  function tableSnap() {
+    var out = [], objs = hwModel.allTableObjs();
+    for (var i = 0; i < objs.length; i++) {
+      var t = objs[i].table, geom = [];
+      for (var c = 0; c < t.cells.length; c++) {
+        var k = t.cells[c];
+        geom.push({ on: k, r: k.r, c: k.c, rs: k.rs, cs: k.cs, wHu: k.wHu, hHu: k.hHu });
+      }
+      out.push({ obj: objs[i], t: t, cells: t.cells.slice(), rows: t.rows, cols: t.cols,
+                 wHu: objs[i].wHu, hHu: objs[i].hHu, geom: geom });
+    }
+    return out;
+  }
+
+  function tableRestore(list) {
+    for (var i = 0; i < (list || []).length; i++) {
+      var r = list[i];
+      r.t.cells = r.cells.slice();
+      r.t.rows = r.rows;
+      r.t.cols = r.cols;
+      r.obj.wHu = r.wHu;
+      r.obj.hHu = r.hHu;
+      r.obj._grid = null;
+      for (var g = 0; g < r.geom.length; g++) {
+        var q = r.geom[g];
+        q.on.r = q.r; q.on.c = q.c; q.on.rs = q.rs; q.on.cs = q.cs;
+        q.on.wHu = q.wHu; q.on.hHu = q.hHu;
+      }
+    }
   }
 
   function caretState() {
@@ -73,6 +109,10 @@ var hwUndo = (function () {
 
   function apply(s) {
     if (window.hwFind) hwFind.clearHits();
+
+    /* ★ 격자를 먼저 되돌린다 — 칸 목록이 옛 것으로 돌아온 뒤라야 아래 lists 가 그 칸들의
+       문단 목록을 제자리에 꽂는다. */
+    tableRestore(s.tables);
     if (s.lists) for (var i = 0; i < s.lists.length; i++) s.lists[i].on.paras = s.lists[i].v.slice();
     for (var j = 0; j < s.paras.length; j++) restorePara(s.paras[j]);
 

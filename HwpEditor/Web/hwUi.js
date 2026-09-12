@@ -359,9 +359,21 @@ var hwUi = (function () {
         { label: '지우기', key: 'Delete', fn: function () { hwObj.remove(); } },
         '-',
         { label: '글자처럼 취급', checked: !!(cur && cur.obj.inline), fn: function () { hwObj.toggleInline(); } },
+        { label: '배치', sub: [
+          { label: '어울림', checked: !!(cur && !cur.obj.inline && cur.obj.flow === 'fit'),
+            fn: function () { hwObj.setFlow('fit'); } },
+          { label: '자리 차지', checked: !!(cur && !cur.obj.inline && cur.obj.flow === 'takePlace'),
+            fn: function () { hwObj.setFlow('takePlace'); } },
+          { label: '글 뒤로', checked: !!(cur && cur.obj.flow === 'behind'),
+            fn: function () { hwObj.setFlow('behind'); } },
+          { label: '글 앞으로', checked: !!(cur && cur.obj.flow === 'front'),
+            fn: function () { hwObj.setFlow('front'); } }
+        ] },
         '-',
-        { label: '맨 앞으로', disabled: true },
-        { label: '맨 뒤로', disabled: true }
+        { label: '앞으로 가져오기', fn: function () { hwObj.setZ(+1); } },
+        { label: '뒤로 보내기', fn: function () { hwObj.setZ(-1); } },
+        { label: '맨 앞으로', fn: function () { hwObj.setZ(+2); } },
+        { label: '맨 뒤로', fn: function () { hwObj.setZ(-2); } }
       ];
     }
 
@@ -424,8 +436,29 @@ var hwUi = (function () {
       { label: '글자 모양…', key: 'Alt+L', fn: function () { hwDialog.charShape(); } },
       { label: '문단 모양…', key: 'Alt+T', fn: function () { hwDialog.paraShape(); } },
       '-',
-      { label: '문자표…', key: 'Ctrl+F10', fn: function () { hwDialog.charMap(); } });
+      { label: '문자표…', key: 'Ctrl+F10', fn: function () { hwDialog.charMap(); } },
+      '-',
+      { label: '페이지 설정…', key: 'F7', fn: function () { hwDialog.pageSetup(); } },
+      { label: '쪽 번호 매기기…', fn: function () { hwDialog.pageNumber(); } },
+      { label: '머리말', sub: [
+        { label: '머리말 넣기…', fn: function () { hwDialog.bandInsert('head'); } },
+        { label: '꼬리말 넣기…', fn: function () { hwDialog.bandInsert('foot'); } }
+      ] },
+      { label: '단', sub: [
+        { label: '하나', fn: setCols(1) },
+        { label: '둘', fn: setCols(2) },
+        { label: '셋', fn: setCols(3) }
+      ] });
     return items;
+  }
+
+  /* 쪽 ▸ 단 ▸ 하나·둘·셋(덤프 1). 단 사이는 한글 기본값 8mm 다 — 값이 이미 있으면 그대로 둔다. */
+  function setCols(n) {
+    return function () {
+      var si = hwPage.caretSection();
+      var gap = hwDoc.sections[si].cols.gapHu || 0;
+      hwPage.setSection(si, { colCount: n, colGap: n > 1 && gap <= 0 ? 2268 : gap });
+    };
   }
 
   function loadFonts() {

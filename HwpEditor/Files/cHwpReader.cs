@@ -7,6 +7,7 @@ using HwpLib.Object;
 using HwpLib.Object.BodyText;
 using HwpLib.Object.BodyText.Control;
 using HwpLib.Object.BodyText.Control.CtrlHeader;
+using HwpLib.Object.BodyText.Control.CtrlHeader.Header;
 using HwpLib.Object.BodyText.Control.Gso;
 using HwpLib.Object.BodyText.Control.SectionDefine;
 using HwpLib.Object.BodyText.Control.Table;
@@ -538,6 +539,7 @@ namespace HwpEditor.Files
                 //   크기(Width·Height)는 진짜 부호 없는 값이라 그대로 둔다.
                 o.XOffHu = unchecked((int)gso.XOffset);
                 o.YOffHu = unchecked((int)gso.YOffset);
+                o.Z = gso.ZOrder;
                 o.OmLHu = gso.OutterMarginLeft;
                 o.OmRHu = gso.OutterMarginRight;
                 o.OmTHu = gso.OutterMarginTop;
@@ -571,12 +573,69 @@ namespace HwpEditor.Files
                 return o;
             }
 
+            // 머리말·꼬리말은 <b>본문 자리를 안 차지한다</b> — 쪽마다 띠에 따로 그린다(hwPage).
+            // 회색 상자로 두면 본문 첫 줄에 안 보이는 개체 한 칸이 생긴다.
+            ControlHeader hd = pControl as ControlHeader;
+            ControlFooter ft = pControl as ControlFooter;
+            if (hd != null || ft != null)
+            {
+                o.Kind = "ctrl";
+                o.Ctrl = hd != null ? "head" : "foot";
+                o.Label = hd != null ? "머리말" : "꼬리말";
+                o.Hidden = true;
+                o.Inline = true;
+                o.Apply = ApplyName(hd != null ? hd.Header.ApplyPage : ft.Header.ApplyPage);
+                o.Paras = BandParas(hd != null ? hd.ParagraphList : ft.ParagraphList, o.Oid, pMap);
+                return o;
+            }
+
+            ControlPageNumberPosition pn = pControl as ControlPageNumberPosition;
+            if (pn != null)
+            {
+                CtrlHeaderPageNumberPosition h = pn.GetHeader();
+                o.Kind = "ctrl";
+                o.Ctrl = "pgnp";
+                o.Label = "쪽 번호";
+                o.Hidden = true;
+                o.Inline = true;
+                if (h != null && h.Property != null)
+                {
+                    o.NumPos = (int)h.Property.NumberPosition;
+                    o.NumShape = (int)h.Property.NumberShape;
+                    o.NumBefore = h.BeforeDecorationLetter != null ? h.BeforeDecorationLetter.ToUTF16LEString() : null;
+                    o.NumAfter = h.AfterDecorationLetter != null ? h.AfterDecorationLetter.ToUTF16LEString() : null;
+                }
+                return o;
+            }
+
             // ★ 나머지는 opaque — 크기와 라벨만 갖고 회색 상자로 그린다.
             //   원본 Control 은 HWPFile 안에 그대로 남아 있으므로 저장할 때 손대지 않는다.
             o.Kind = "opaque";
             o.Ctrl = pControl.Type.ToString();
             o.Label = OpaqueLabel(pControl.Type);
             return o;
+        }
+
+        /// <summary>머리말·꼬리말 안 문단. 표 칸과 같은 규칙 — id 를 매기고 인덱스에 넣어 replace 로 갈 수 있게 한다.</summary>
+        private static List<ParagraphModel> BandParas(ParagraphList pList, string pOid, cHwpIndex pMap)
+        {
+            List<ParagraphModel> outList = new List<ParagraphModel>();
+            if (pList == null) return outList;
+
+            Paragraph[] ps = pList.GetParagraphs();
+            for (int k = 0; k < ps.Length; k++)
+                outList.Add(ReadParagraph(ps[k], pOid + "h" + k, null, pList, pMap));
+            return outList;
+        }
+
+        private static string ApplyName(HeaderFooterApplyPage pApply)
+        {
+            switch (pApply)
+            {
+                case HeaderFooterApplyPage.OddPage: return "odd";
+                case HeaderFooterApplyPage.EvenPage: return "even";
+                default: return "both";
+            }
         }
 
         private static string FlowName(HwpLib.Object.BodyText.Control.CtrlHeader.Gso.TextFlowMethod pFlow)

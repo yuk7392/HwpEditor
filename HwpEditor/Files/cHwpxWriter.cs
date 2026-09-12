@@ -40,7 +40,8 @@ namespace HwpEditor.Files
 
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if ((op.Op == "addImage" || op.Op == "addTable") && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
+                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader")
+                    && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             foreach (EditOp op in pOps) if (op.Op == "replace") ApplyReplace(pDoc, pIndex, op, images, pResult);
             foreach (EditOp op in pOps) if (op.Op == "delete") ApplyDelete(pIndex, op);
@@ -51,6 +52,8 @@ namespace HwpEditor.Files
 
             // ★ 서식은 구조 뒤다 — 표를 다시 세우면 칸 요소가 새것이라 앞서 건 서식이 사라진다.
             ApplyFormatOps(pIndex, pOps);
+            ApplySecOps(pDoc, pOps);
+            ApplyPageNumOps(pIndex, pOps);
 
             if (pResult != null)
             {
@@ -60,6 +63,104 @@ namespace HwpEditor.Files
                 if (rebuilt) pResult.Reload = true;
             }
             cShapes = null;
+        }
+
+        /// <summary>
+        /// 구역 쪽 설정(<c>secFmt</c>). hwp 쪽 <see cref="cHwpWriter"/> 와 <b>같은 규칙</b>이다.
+        ///
+        /// ★ <c>secPr</c>·<c>colPr</c> 요소를 <b>그 자리에서</b> 고친다 — 문단 되쓰기(<c>Rewrite</c>)가
+        ///   이 요소들을 복제가 아니라 <b>참조로</b> 챙겨 되붙이므로, 같은 저장에서 그 문단이 dirty 여도 값이 남는다.
+        /// </summary>
+        private static void ApplySecOps(cHwpxDocument pDoc, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "secFmt" || !op.Sec.HasValue) continue;
+                int si = op.Sec.Value;
+                if (si < 0 || si >= pDoc.SectionDocs.Count) continue;
+                XmlDocument sec = pDoc.SectionDocs[si];
+
+                XmlElement secPr = Find(sec, "secPr");
+                XmlElement pagePr = secPr != null ? Find(secPr, "pagePr") : null;
+                if (pagePr != null)
+                {
+                    if (op.Pw.HasValue) pagePr.SetAttribute("width", Str(op.Pw.Value));
+                    if (op.Ph.HasValue) pagePr.SetAttribute("height", Str(op.Ph.Value));
+                    // ★ NARROWLY 가 가로다 — 세로 문서가 WIDELY 다(표본 둘 실측). 리더와 같은 대응이어야 한다.
+                    if (op.Landscape.HasValue)
+                        pagePr.SetAttribute("landscape", op.Landscape.Value ? "NARROWLY" : "WIDELY");
+
+                    XmlElement mg = Find(pagePr, "margin");
+                    if (mg != null)
+                    {
+                        if (op.Ml.HasValue) mg.SetAttribute("left", Str(op.Ml.Value));
+                        if (op.Mr.HasValue) mg.SetAttribute("right", Str(op.Mr.Value));
+                        if (op.Mt.HasValue) mg.SetAttribute("top", Str(op.Mt.Value));
+                        if (op.Mb.HasValue) mg.SetAttribute("bottom", Str(op.Mb.Value));
+                        if (op.Mh.HasValue) mg.SetAttribute("header", Str(op.Mh.Value));
+                        if (op.Mf.HasValue) mg.SetAttribute("footer", Str(op.Mf.Value));
+                        if (op.Gut.HasValue) mg.SetAttribute("gutter", Str(op.Gut.Value));
+                    }
+                }
+
+                XmlElement colPr = Find(sec, "colPr");
+                if (colPr != null)
+                {
+                    if (op.ColCount.HasValue) colPr.SetAttribute("colCount", Str(Math.Max(1, op.ColCount.Value)));
+                    if (op.ColGap.HasValue) colPr.SetAttribute("spaceColumns", Str(op.ColGap.Value));
+                }
+            }
+        }
+
+        /// <summary>쪽 번호 위치·모양(<c>pageNum</c>). hwp 쪽과 같은 규칙 — 이미 있는 컨트롤만 고친다.</summary>
+        private static void ApplyPageNumOps(cHwpxIndex pIndex, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "pageNum") continue;
+
+                XmlElement outer;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out outer)) continue;
+                XmlElement pn = outer.LocalName == "pageNum" ? outer : Kid(outer, "pageNum");
+                if (pn == null) continue;
+
+                if (op.NumPos.HasValue) pn.SetAttribute("pos", NumPosName(op.NumPos.Value));
+                if (op.NumShape.HasValue) pn.SetAttribute("formatType", NumShapeName(op.NumShape.Value));
+                if (op.NumDash.HasValue) pn.SetAttribute("sideChar", op.NumDash.Value ? "-" : "NONE");
+            }
+        }
+
+        /// <summary>모델 번호 → hwpx 이름. 리더의 <c>NumPosOf</c> 와 짝이어야 한다.</summary>
+        private static string NumPosName(int pPos)
+        {
+            switch (pPos)
+            {
+                case 1: return "TOP_LEFT";
+                case 2: return "TOP_CENTER";
+                case 3: return "TOP_RIGHT";
+                case 4: return "BOTTOM_LEFT";
+                case 5: return "BOTTOM_CENTER";
+                case 6: return "BOTTOM_RIGHT";
+                case 7: return "OUTSIDE_TOP";
+                case 8: return "OUTSIDE_BOTTOM";
+                case 9: return "INSIDE_TOP";
+                case 10: return "INSIDE_BOTTOM";
+                default: return "NONE";
+            }
+        }
+
+        private static string NumShapeName(int pShape)
+        {
+            switch (pShape)
+            {
+                case 1: return "CIRCLE_DIGIT";
+                case 2: return "ROMAN_CAPITAL";
+                case 3: return "ROMAN_SMALL";
+                case 4: return "LATIN_CAPITAL";
+                case 5: return "LATIN_SMALL";
+                case 8: return "HANGUL_SYLLABLE";
+                default: return "DIGIT";
+            }
         }
 
         /// <summary>
@@ -286,7 +387,11 @@ namespace HwpEditor.Files
                 {
                     XmlElement c = cn as XmlElement;
                     if (c == null) continue;
-                    if (c.LocalName == "secPr" || c.LocalName == "ctrl" || c.LocalName == "colPr") carry.Add(c);
+                    if (c.LocalName == "secPr" || c.LocalName == "colPr") { carry.Add(c); continue; }
+
+                    // ★ 머리말·꼬리말·쪽 번호가 든 ctrl 은 <b>챙기지 않는다</b> — 그것들은 화면이 개체로
+                    //   들고 있어(objs) 아래에서 제자리에 다시 들어간다. 여기서도 챙기면 문단에 두 번 들어간다.
+                    if (c.LocalName == "ctrl" && !HasBand(c)) carry.Add(c);
                 }
             }
 
@@ -338,6 +443,18 @@ namespace HwpEditor.Files
             WriteLineSeg(pP, pOp);
         }
 
+        /// <summary>머리말·꼬리말·쪽 번호를 담은 <c>hp:ctrl</c> 인가. 리더의 <c>ToBand</c> 와 같은 목록이어야 한다.</summary>
+        private static bool HasBand(XmlElement pCtrl)
+        {
+            foreach (XmlNode n in pCtrl.ChildNodes)
+            {
+                XmlElement e = n as XmlElement;
+                if (e == null) continue;
+                if (e.LocalName == "header" || e.LocalName == "footer" || e.LocalName == "pageNum") return true;
+            }
+            return false;
+        }
+
         private static XmlElement ObjectElement(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP,
                                                 EditObj pObj, Dictionary<string, EditOp> pImages, SaveResult pResult)
         {
@@ -351,15 +468,16 @@ namespace HwpEditor.Files
             EditOp img;
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
-                bool isTable = img.Op == "addTable";
-                XmlElement made = isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
+                bool isTable = img.Op == "addTable", isBand = img.Op == "addHeader";
+                XmlElement made = isBand ? MakeBand(pDoc, pIndex, pP, img, pImages, pResult)
+                                : isTable ? MakeTable(pDoc, pIndex, pP, img, pImages, pResult)
                                           : MakePicture(pDoc, pP, img);
-                // ★ 새 표도 문서를 다시 읽어야 한다 — 칸 문단을 여기서 만들었으므로 화면이 들고 있는
-                //    칸 문단 id 는 문서에 없는 가짜다(hwp 쪽 PutObject 와 같은 이유).
-                if (isTable && pResult != null) pResult.Reload = true;
+                // ★ 새 표·새 머리말도 문서를 다시 읽어야 한다 — 안 문단을 여기서 만들었으므로 화면이
+                //    들고 있는 그 문단 id 는 문서에 없는 가짜다(hwp 쪽 PutObject 와 같은 이유).
+                if ((isTable || isBand) && pResult != null) pResult.Reload = true;
                 // 넣자마자 옮겼으면 그 자리로 (MakePicture 는 오프셋을 0 으로 둔다).
                 // ★ 표는 뺀다 — 표의 바깥 크기는 칸 격자에서 나오므로 여기서 덮으면 칸 폭 합과 갈라진다.
-                if (!isTable) ApplyGeom(made, pObj);
+                if (!isTable && !isBand) ApplyGeom(made, pObj);
                 string oid = pObj.TmpId + "@" + pIndex.Objs.Count.ToString(CultureInfo.InvariantCulture);
                 pIndex.Objs[oid] = made;
                 if (pResult != null) pResult.NewOids[pObj.TmpId] = oid;
@@ -790,6 +908,18 @@ namespace HwpEditor.Files
         /// ★ 원본 그림의 사각형(<c>orgSz</c>·<c>imgRect</c>·<c>imgClip</c>·<c>imgDim</c>)은 그대로 둔다 —
         ///   같이 바꾸면 그림이 늘어난 게 아니라 잘린다.
         /// </summary>
+        /// <summary>모델 이름 → hwpx 값. 리더의 <c>cHwpxReader.FlowName</c> 과 짝이어야 한다.</summary>
+        private static string FlowName(string pFlow)
+        {
+            switch (pFlow)
+            {
+                case "takePlace": return "TOP_AND_BOTTOM";
+                case "behind": return "BEHIND_TEXT";
+                case "front": return "IN_FRONT_OF_TEXT";
+                default: return "SQUARE";
+            }
+        }
+
         private static void ApplyGeom(XmlElement pEl, EditObj pObj)
         {
             if (pEl == null || pObj == null || !pObj.HasGeom) return;
@@ -816,7 +946,16 @@ namespace HwpEditor.Files
                     pos.SetAttribute("horzRelTo", "COLUMN");
                     pos.SetAttribute("vertRelTo", "PARA");
                 }
+
+                // ★ 어울림 방식은 글자처럼 취급을 끈 다음에만 뜻이 있다(hwp 쪽과 같은 규칙).
+                if (pObj.Flow != null)
+                {
+                    pos.SetAttribute("treatAsChar", "0");
+                    pos.SetAttribute("textWrap", FlowName(pObj.Flow));
+                }
             }
+
+            if (pObj.Z.HasValue) pEl.SetAttribute("zOrder", Str(pObj.Z.Value));
 
             if (!pObj.WHu.HasValue && !pObj.HHu.HasValue) return;
 
@@ -940,6 +1079,55 @@ namespace HwpEditor.Files
                 tbl.AppendChild(tr);
             }
             return tbl;
+        }
+
+        /// <summary>
+        /// 새 머리말·꼬리말. <c>hp:ctrl</c> 로 감싼다 — 리더의 <c>ToBand</c> 가 그 껍데기를 인덱스에 담고,
+        /// <c>Rewrite</c> 의 carry 는 띠가 든 ctrl 을 일부러 건너뛴다(안 그러면 두 번 들어간다).
+        /// ★ hwpx 표본에 머리말이 하나도 없다 — 이 모양은 OWPML 을 보고 세웠고 우리 왕복으로만 검증했다.
+        /// </summary>
+        private static XmlElement MakeBand(cHwpxDocument pDoc, cHwpxIndex pIndex, XmlElement pP, EditOp pOp,
+                                           Dictionary<string, EditOp> pImages, SaveResult pResult)
+        {
+            XmlDocument xd = pP.OwnerDocument;
+            string px = pP.Prefix, ns = pP.NamespaceURI;
+            bool head = pOp.Kind != "foot";
+
+            XmlElement ctrl = xd.CreateElement(px, "ctrl", ns);
+            XmlElement band = xd.CreateElement(px, head ? "header" : "footer", ns);
+            band.SetAttribute("id", NewObjectId(xd));
+            band.SetAttribute("applyPageType",
+                pOp.Apply == "odd" ? "ODD" : pOp.Apply == "even" ? "EVEN" : "BOTH");
+            ctrl.AppendChild(band);
+
+            XmlElement sub = xd.CreateElement(px, "subList", ns);
+            sub.SetAttribute("id", "");
+            sub.SetAttribute("textDirection", "HORIZONTAL");
+            sub.SetAttribute("lineWrap", "BREAK");
+            sub.SetAttribute("vertAlign", "TOP");
+            sub.SetAttribute("linkListIDRef", "0");
+            sub.SetAttribute("linkListNextIDRef", "0");
+            sub.SetAttribute("textWidth", Str(Math.Max(0, pOp.WHu)));
+            sub.SetAttribute("textHeight", Str(Math.Max(0, pOp.HHu)));
+            sub.SetAttribute("hasTextRef", "0");
+            sub.SetAttribute("hasNumRef", "0");
+            band.AppendChild(sub);
+
+            // 칸 문단과 같은 규칙 — 바깥 문단을 복제해 styleIDRef 같은 속성을 지킨다.
+            XmlElement np = (XmlElement)pP.CloneNode(true);
+            StripCarried(np);
+            np.SetAttribute("id", Str(NextParagraphIdDeep(xd)));
+            sub.AppendChild(np);
+
+            EditOp one = new EditOp { Op = "replace", Id = np.GetAttribute("id"), Ps = pOp.Ps, Runs = pOp.Runs };
+            Rewrite(pDoc, pIndex, np, one, pImages, pResult);
+
+            long inner = Math.Max(200, pOp.WHu);
+            foreach (XmlElement arr in ChildElements(np, "linesegarray"))
+                foreach (XmlElement seg in ChildElements(arr, "lineseg"))
+                    seg.SetAttribute("horzsize", Str(inner));
+
+            return ctrl;
         }
 
         private static XmlElement Margin(XmlDocument pXml, string pPrefix, string pNs, string pLocal,

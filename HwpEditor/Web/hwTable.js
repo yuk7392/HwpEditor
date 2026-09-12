@@ -5,8 +5,8 @@
      한글이 잡아 둔 표 모양이 열기만 해도 달라진다.
    ★ 칸의 자리는 <b>칸이 들고 있는 행·열 번호</b>로 잡는다. 목록 차례로 잡으면 위에서 아래로 걸친
      칸(rowSpan)이 있는 행은 칸이 하나 적어서, 그 행부터 x 가 통째로 왼쪽으로 밀린다.
-   ★ 표가 남은 자리에 안 들어가면 <b>통째로</b> 다음 쪽으로 넘긴다. 행 단위로 쪼개 넘기는 것은
-     아직 안 한다. */
+   ★ 쪽 경계에서 나누는 것은 <b>행 경계</b>뿐이다(`placeRange`). 병합 칸이 걸친 자리에서는 못 나누고,
+     divide=0 인 표는 통째로 다음 쪽으로 넘긴다 — 판정은 `hwPage.layoutSection` 이 한다. */
 
 var hwTable = (function () {
   'use strict';
@@ -99,7 +99,11 @@ var hwTable = (function () {
       });
     }
 
-    var grid = { wHu: colX[cols] || obj.wHu || 0, hHu: rowY[rows] || obj.hHu || 0, cells: rects };
+    var grid = {
+      wHu: colX[cols] || obj.wHu || 0, hHu: rowY[rows] || obj.hHu || 0, cells: rects,
+      /* 쪽 넘김이 줄 경계를 찾을 때 쓴다 — rowY 는 누적이라 rowY[r1]-rowY[r0] 이 그 구간 높이다. */
+      rows: rows, cols: cols, rowY: rowY
+    };
     obj._grid = grid;
     return grid;
   }
@@ -124,16 +128,85 @@ var hwTable = (function () {
     return h;
   }
 
+  /* 쪽을 넘길 때 맨 위에 다시 놓을 제목 줄 수. ★ <b>맨 위부터 이어진</b> 줄만 센다 —
+     가운데 줄이 제목 칸이어도 그것만 떼어 올릴 수는 없다.
+     표본 전부가 repeatHeader=true 인데 제목 칸은 하나도 없다(실측) — 그래서 head 칸을 근거로 센다. */
+  function headRows(t) {
+    if (!t || !t.repeatHeader || !t.cells.length) return 0;
+    var rows = rowsOf(t), n = 0;
+    for (var r = 0; r < rows; r++) {
+      var any = false, all = true;
+      for (var i = 0; i < t.cells.length; i++) {
+        var c = t.cells[i];
+        if (c.r !== r) continue;
+        any = true;
+        if (!c.head) { all = false; break; }
+      }
+      if (!any || !all) break;
+      n++;
+    }
+    return n;
+  }
+
+  /* r 자리에서 가로로 자를 수 있는가 — 병합 칸이 걸쳐 있으면 못 자른다. */
+  function canBreak(t, r) {
+    if (r <= 0) return false;
+    for (var i = 0; i < t.cells.length; i++) {
+      var c = t.cells[i];
+      if (c.r < r && c.r + c.rs > r) return false;
+    }
+    return true;
+  }
+
+  /* [r0, ?) 가 availHu 에 들어가는 <b>가장 큰</b> 자를 자리. 한 줄도 안 들어가면 r0 을 돌려준다. */
+  function breakRow(grid, t, availHu, r0) {
+    for (var r = grid.rows; r > r0; r--) {
+      if (r !== grid.rows && !canBreak(t, r)) continue;
+      if (grid.rowY[r] - grid.rowY[r0] <= availHu) return r;
+    }
+    return r0;
+  }
+
+  /* r0 다음에 올 수 있는 <b>가장 작은</b> 자를 자리. 빈 쪽에도 안 들어가는 큰 줄에서 쓴다. */
+  function nextBreak(grid, t, r0) {
+    for (var r = r0 + 1; r < grid.rows; r++) if (canBreak(t, r)) return r;
+    return grid.rows;
+  }
+
   function place(obj, originX, originY, out, pageIdx, page) {
+    return placeRange(obj, originX, originY, out, pageIdx, page, 0, -1, 0);
+  }
+
+  /* [r0, r1) 줄만 놓는다. headN > 0 이면 그 앞에 0~headN 줄(제목 줄)을 <b>다시</b> 놓는다.
+     ★ 다시 놓은 줄은 ghost 로 들어간다 — 색인·hitTest 가 한 문단에 두 자리를 주면 캐럿이 튄다. */
+  function placeRange(obj, originX, originY, out, pageIdx, page, r0, r1, headN) {
     var grid = measure(obj);
-    if (page) { if (!page.tables) page.tables = []; page.tables.push(obj); }
+    if (r1 < 0) r1 = grid.rows;
+    /* 이 조각이 제목 줄을 <b>이미 담고 있으면</b> 다시 놓지 않는다. r0 == headN 은 제목 줄이 전부
+       앞 조각에 있다는 뜻이라 다시 놓아야 한다 — 여기를 <= 로 두면 그때 반복이 조용히 꺼진다. */
+    if (headN > 0 && r0 < headN) headN = 0;
+
+    var headH = headN > 0 ? grid.rowY[headN] : 0;
+    var shift = headH - grid.rowY[r0];
+
+    var frag = {
+      xHu: originX, yHu: originY, wHu: grid.wHu,
+      hHu: headH + (grid.rowY[r1] - grid.rowY[r0]), cells: []
+    };
+    if (page) { if (!page.tables) page.tables = []; page.tables.push({ obj: obj, frag: frag }); }
 
     for (var i = 0; i < grid.cells.length; i++) {
       var rect = grid.cells[i];
       var cell = rect.cell;
-      var w = textWidth(cell, rect.wHu);
+      var dy, ghost;
+      if (headN > 0 && cell.r < headN) { dy = 0; ghost = true; }
+      else if (cell.r >= r0 && cell.r < r1) { dy = shift; ghost = false; }
+      else continue;
 
-      var y0 = originY + rect.yHu + pad(cell, 'mt');
+      frag.cells.push({ cell: cell, xHu: rect.xHu, yHu: rect.yHu + dy, wHu: rect.wHu, hHu: rect.hHu });
+
+      var w = textWidth(cell, rect.wHu);
+      var y0 = originY + rect.yHu + dy + pad(cell, 'mt');
       var x0 = originX + rect.xHu + pad(cell, 'ml');
 
       /* 세로 맞춤 1=가운데 2=아래. ★ 남는 높이는 <b>격자가 정한 칸 높이</b>에서 재야 한다 —
@@ -156,14 +229,15 @@ var hwTable = (function () {
             /* ★ 파일에 적는 줄 정보는 <b>칸 기준</b>이다(실측 — table.hwp 의 칸 첫 줄이 전부 y=0).
                그리기·캐럿은 절대 좌표를 쓰므로, 뺄 기준점을 같이 들고 다닌다. */
             baseXHu: x0, baseYHu: y0,
-            pageIdx: pageIdx
+            pageIdx: pageIdx, ghost: ghost
           });
           y += lines[k].hHu;
         }
       }
     }
 
-    obj._at = { xHu: originX, yHu: originY, pageIdx: pageIdx };
+    /* 셀 블록 칠하기가 이걸 본다 — 쪽이 갈린 표는 <b>첫 조각</b>이 기준이다. */
+    if (r0 === 0) obj._at = { xHu: originX, yHu: originY, pageIdx: pageIdx };
     return grid;
   }
 
@@ -257,7 +331,7 @@ var hwTable = (function () {
     var pg = lines && lines.length ? hwPages[lines[0].pageIdx] : (hwPages.length ? hwPages[0] : null);
     if (!pg || !pg.page) return 42520;
     var p = pg.page;
-    return Math.max(2000, p.wHu - p.mlHu - p.mrHu - (p.gutHu || 0));
+    return Math.max(2000, hwPageW(p) - p.mlHu - p.mrHu - (p.gutHu || 0));
   }
 
   /* 표 넣기. 캐럿 문단 <b>다음</b>에 새 문단을 만들고 거기에 표 하나를 단다.
@@ -1038,7 +1112,8 @@ var hwTable = (function () {
   }
 
   return {
-    measure: measure, place: place, textWidth: textWidth, pad: pad,
+    measure: measure, place: place, placeRange: placeRange, textWidth: textWidth, pad: pad,
+    headRows: headRows, breakRow: breakRow, nextBreak: nextBreak,
     here: here, edgePara: edgePara, addRow: addRow, delRow: delRow, addCol: addCol, delCol: delCol,
     nextCell: nextCell, removeTable: removeTable, insertTable: insertTable,
     rowsOf: function (t) { return rowsOf(t); }, colsOf: function (t) { return colsOf(t); },

@@ -208,6 +208,7 @@ var hwCaret = (function () {
     var best = null, bestD = Infinity;
     for (var i = 0; i < lines.length; i++) {
       var it = lines[i], ln = it.line;
+      if (it.ghost) continue;   /* 다시 놓은 제목 줄은 색인에 없다 — 고르면 캐럿이 그릴 자리를 못 찾는다. */
       var dy = yHu < it.yHu ? it.yHu - yHu : (yHu > it.yHu + ln.hHu ? yHu - (it.yHu + ln.hHu) : 0);
       var dx = xHu < it.xHu ? it.xHu - xHu : (xHu > it.xHu + ln.availHu ? xHu - (it.xHu + ln.availHu) : 0);
       var d = dy * 1000 + dx;

@@ -542,14 +542,34 @@ namespace HwpEditor.Files
                             break;
 
                         case "secPr":
-                        case "ctrl":
                         case "colPr":
                             // 구역·단 정의는 화면에 그릴 개체가 아니다.
                             break;
 
+                        case "ctrl":
+                            {
+                                // ★ hwpx 는 머리말·꼬리말·쪽 번호를 <c>hp:ctrl</c> 안에 담는다 —
+                                //   ctrl 을 통째로 건너뛰면 그것들이 통째로 안 보인다.
+                                foreach (XmlNode kn in c.ChildNodes)
+                                {
+                                    XmlElement ke = kn as XmlElement;
+                                    if (ke == null) continue;
+                                    // ★ 인덱스에 담는 것은 <b>바깥 hp:ctrl</b> 이다 — 되쓰기가 그 자리에
+                                    //   이 요소를 다시 넣으므로, 안쪽 hp:header 를 담으면 ctrl 껍데기가 빈 채 남는다.
+                                    InlineObjModel band = ToBand(ke, c, pId, objIdx, pos, pIndex);
+                                    if (band == null) continue;
+                                    if (buf.Length > 0) { m.Runs.Add(NewRun(cs, buf)); }
+                                    m.Objs.Add(band);
+                                    objIdx++;
+                                    pos++;
+                                }
+                                break;
+                            }
+
                         default:
                             {
-                                InlineObjModel o = ToObject(c, pId, objIdx, pos, pIndex);
+                                InlineObjModel o = ToBand(c, c, pId, objIdx, pos, pIndex)
+                                                ?? ToObject(c, pId, objIdx, pos, pIndex);
                                 if (o != null)
                                 {
                                     if (buf.Length > 0) { m.Runs.Add(NewRun(cs, buf)); }
@@ -596,6 +616,8 @@ namespace HwpEditor.Files
                 o.HHu = Num(sz, "height", 0);
             }
 
+            o.Z = Num(pEl, "zOrder", 0);
+
             XmlElement om = Find(pEl, "outMargin");
             if (om != null)
             {
@@ -629,6 +651,99 @@ namespace HwpEditor.Files
             o.Ctrl = local;
             o.Label = OpaqueLabel(local);
             return o;
+        }
+
+        /// <summary>
+        /// 머리말·꼬리말·쪽 번호. 아니면 null 을 돌려준다(부르는 쪽이 보통 개체로 넘긴다).
+        /// ★ hwp 쪽 <c>cHwpReader.ToObject</c> 와 <b>같은 모델</b>을 채운다 — 갈리면 화면이 두 벌이 된다.
+        /// ★ hwpx 표본에 머리말·꼬리말이 하나도 없다 — 이 길은 OWPML 명세를 보고 세웠고
+        ///   우리 왕복(<c>addHeader</c> → 다시 읽기)으로만 검증했다.
+        /// </summary>
+        private static InlineObjModel ToBand(XmlElement pEl, XmlElement pOuter, string pParaId, int pIndex, int pPos, cHwpxIndex pMap)
+        {
+            string local = pEl.LocalName;
+            bool head = local == "header", foot = local == "footer", num = local == "pageNum";
+            if (!head && !foot && !num) return null;
+
+            InlineObjModel o = new InlineObjModel();
+            o.Pos = pPos;
+            o.Oid = pParaId + "#" + pIndex;
+            o.Kind = "ctrl";
+            o.Hidden = true;
+            o.Inline = true;
+            if (pMap != null) pMap.Objs[o.Oid] = pOuter ?? pEl;
+
+            if (num)
+            {
+                o.Ctrl = "pgnp";
+                o.Label = "쪽 번호";
+                o.NumPos = NumPosOf(Attr(pEl, "pos"));
+                o.NumShape = NumShapeOf(Attr(pEl, "formatType"));
+                string side = Attr(pEl, "sideChar");
+                if (!string.IsNullOrEmpty(side) && side != "NONE") { o.NumBefore = side; o.NumAfter = side; }
+                return o;
+            }
+
+            o.Ctrl = head ? "head" : "foot";
+            o.Label = head ? "머리말" : "꼬리말";
+            o.Apply = ApplyOf(Attr(pEl, "applyPageType"));
+            o.Paras = new List<ParagraphModel>();
+
+            // 문단은 subList 안에 있다. subList 없이 바로 hp:p 를 두는 문서도 있어 둘 다 본다.
+            XmlElement host = Kid(pEl, "subList") ?? pEl;
+            int hi = 0;
+            foreach (XmlNode n in host.ChildNodes)
+            {
+                XmlElement sp = n as XmlElement;
+                if (sp == null || sp.LocalName != "p") continue;
+                o.Paras.Add(ReadParagraph(sp, o.Oid + "h" + hi, pMap));
+                hi++;
+            }
+            return o;
+        }
+
+        private static string ApplyOf(string pText)
+        {
+            switch ((pText ?? "").ToUpperInvariant())
+            {
+                case "ODD": return "odd";
+                case "EVEN": return "even";
+                default: return "both";
+            }
+        }
+
+        /// <summary>번호 위치 — 값은 hwp <c>NumberPosition</c> 을 따른다(0 없음 … 10 안쪽 아래).</summary>
+        private static int NumPosOf(string pText)
+        {
+            switch ((pText ?? "").ToUpperInvariant())
+            {
+                case "TOP_LEFT": return 1;
+                case "TOP_CENTER": return 2;
+                case "TOP_RIGHT": return 3;
+                case "BOTTOM_LEFT": return 4;
+                case "BOTTOM_CENTER": return 5;
+                case "BOTTOM_RIGHT": return 6;
+                case "OUTSIDE_TOP": return 7;
+                case "OUTSIDE_BOTTOM": return 8;
+                case "INSIDE_TOP": return 9;
+                case "INSIDE_BOTTOM": return 10;
+                default: return 0;
+            }
+        }
+
+        /// <summary>번호 모양 — 값은 hwp <c>NumberShape</c> 을 따른다.</summary>
+        private static int NumShapeOf(string pText)
+        {
+            switch ((pText ?? "").ToUpperInvariant())
+            {
+                case "CIRCLE_DIGIT": return 1;
+                case "ROMAN_CAPITAL": return 2;
+                case "ROMAN_SMALL": return 3;
+                case "LATIN_CAPITAL": return 4;
+                case "LATIN_SMALL": return 5;
+                case "HANGUL_SYLLABLE": return 8;
+                default: return 0;
+            }
         }
 
         private static string RelName(string pRel)

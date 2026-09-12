@@ -37,7 +37,7 @@ namespace HwpEditor.Models
     /// </summary>
     public sealed class EditOp
     {
-        /// <summary>"replace" | "insertAfter" | "delete" | "addImage" | "cellFmt" | "tableFmt"</summary>
+        /// <summary>"replace" | "insertAfter" | "delete" | "addImage" | "cellFmt" | "tableFmt" | "secFmt"</summary>
         [JsonProperty("op")] public string Op;
 
         /// <summary>대상 문단 id. insertAfter 면 <b>새로 붙일</b> 문단의 id 다.</summary>
@@ -137,6 +137,53 @@ namespace HwpEditor.Models
         [JsonProperty("omB", NullValueHandling = NullValueHandling.Ignore)] public long? OmB;
 
         #endregion
+
+        #region addHeader · pageNum
+
+        /// <summary>
+        /// <c>addHeader</c> 가 만들 띠: "head" | "foot". 내용은 <see cref="Runs"/>·<see cref="Ps"/> 로 오고,
+        /// <see cref="WHu"/>·<see cref="HHu"/> 는 띠의 글 영역 크기다.
+        /// ★ 안 문단을 C# 이 만들므로 <see cref="SaveResult.Reload"/> 를 켠다(새 표와 같은 부류).
+        /// </summary>
+        [JsonProperty("kind", NullValueHandling = NullValueHandling.Ignore)] public string Kind;
+
+        /// <summary>"both" | "odd" | "even".</summary>
+        [JsonProperty("apply", NullValueHandling = NullValueHandling.Ignore)] public string Apply;
+
+        /// <summary><c>pageNum</c> — 이미 있는 쪽 번호 컨트롤(<see cref="Oid"/>)의 위치·모양·줄표.</summary>
+        [JsonProperty("numPos", NullValueHandling = NullValueHandling.Ignore)] public int? NumPos;
+        [JsonProperty("numShape", NullValueHandling = NullValueHandling.Ignore)] public int? NumShape;
+        [JsonProperty("numDash", NullValueHandling = NullValueHandling.Ignore)] public bool? NumDash;
+
+        #endregion
+
+        #region secFmt
+
+        /// <summary>
+        /// 구역 쪽 설정(<c>secFmt</c>). ★ 대상은 <b>구역 번호</b>다 — oid 가 아니다. hwpx 리더는
+        /// <c>secPr</c>·<c>colPr</c> 을 개체로 아예 안 만들어(자리를 안 차지한다) oid 를 줄 수 없다.
+        /// 나머지는 <c>cellFmt</c> 과 같은 규칙으로 전부 nullable(null 은 "안 바꿨다").
+        /// 문단이 안 바뀌므로 <see cref="SaveResult.Reload"/> 는 안 켠다.
+        /// </summary>
+        [JsonProperty("sec", NullValueHandling = NullValueHandling.Ignore)] public int? Sec;
+
+        [JsonProperty("pw", NullValueHandling = NullValueHandling.Ignore)] public long? Pw;
+        [JsonProperty("ph", NullValueHandling = NullValueHandling.Ignore)] public long? Ph;
+        [JsonProperty("ml", NullValueHandling = NullValueHandling.Ignore)] public long? Ml;
+        [JsonProperty("mr", NullValueHandling = NullValueHandling.Ignore)] public long? Mr;
+        [JsonProperty("mt", NullValueHandling = NullValueHandling.Ignore)] public long? Mt;
+        [JsonProperty("mb", NullValueHandling = NullValueHandling.Ignore)] public long? Mb;
+        [JsonProperty("mh", NullValueHandling = NullValueHandling.Ignore)] public long? Mh;
+        [JsonProperty("mf", NullValueHandling = NullValueHandling.Ignore)] public long? Mf;
+        [JsonProperty("gut", NullValueHandling = NullValueHandling.Ignore)] public long? Gut;
+
+        /// <summary>가로 방향. ★ 용지 크기는 <b>안 맞바꾼다</b> — 맞바꾸는 것은 배치다(실측 pagedefs.hwp).</summary>
+        [JsonProperty("landscape", NullValueHandling = NullValueHandling.Ignore)] public bool? Landscape;
+
+        [JsonProperty("colCount", NullValueHandling = NullValueHandling.Ignore)] public int? ColCount;
+        [JsonProperty("colGap", NullValueHandling = NullValueHandling.Ignore)] public long? ColGap;
+
+        #endregion
     }
 
     /// <summary>replace·insertAfter 가 들고 오는 개체 자리. 실물은 원본이거나(oid) 새 그림이다(tmpId).</summary>
@@ -168,10 +215,23 @@ namespace HwpEditor.Models
         /// </summary>
         [JsonProperty("inline", NullValueHandling = NullValueHandling.Ignore)] public bool? Inline;
 
+        /// <summary>
+        /// 본문과의 배치: "takePlace" | "fit" | "behind" | "front". null 이면 안 바꿨다.
+        /// ★ <see cref="Inline"/> 이 true 면 뜻이 없다 — 화면이 둘을 같이 안 보낸다(같이 오면 여는 쪽에서 깨진다).
+        /// </summary>
+        [JsonProperty("flow", NullValueHandling = NullValueHandling.Ignore)] public string Flow;
+
+        /// <summary>앞뒤 순서. 큰 값이 앞이다.</summary>
+        [JsonProperty("z", NullValueHandling = NullValueHandling.Ignore)] public long? Z;
+
         [JsonIgnore]
         public bool HasGeom
         {
-            get { return WHu.HasValue || HHu.HasValue || XOffHu.HasValue || YOffHu.HasValue || Inline.HasValue; }
+            get
+            {
+                return WHu.HasValue || HHu.HasValue || XOffHu.HasValue || YOffHu.HasValue
+                    || Inline.HasValue || Flow != null || Z.HasValue;
+            }
         }
     }
 

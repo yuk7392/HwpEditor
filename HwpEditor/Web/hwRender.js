@@ -28,8 +28,8 @@ var hwRenderer = (function () {
     for (var i = 0; i < hwPages.length; i++) {
       var pg = hwPages[i];
       var box = el('div', 'hw-page');
-      box.style.width = hwHu2Px(pg.page.wHu) + 'px';
-      box.style.height = hwHu2Px(pg.page.hHu) + 'px';
+      box.style.width = hwHu2Px(hwPageW(pg.page)) + 'px';
+      box.style.height = hwHu2Px(hwPageH(pg.page)) + 'px';
       box.setAttribute('data-page', String(i));
       cCanvas.appendChild(box);
       cPageEls.push(box);
@@ -65,8 +65,8 @@ var hwRenderer = (function () {
     var body = el('div', 'hw-body');
     body.style.left = hwHu2Px(p.mlHu + (p.gutHu || 0)) + 'px';
     body.style.top = hwHu2Px(p.mtHu + (p.mhHu || 0)) + 'px';
-    body.style.width = hwHu2Px(p.wHu - p.mlHu - p.mrHu - (p.gutHu || 0)) + 'px';
-    body.style.height = hwHu2Px(p.hHu - p.mtHu - p.mbHu - (p.mhHu || 0) - (p.mfHu || 0)) + 'px';
+    body.style.width = hwHu2Px(hwPageW(p) - p.mlHu - p.mrHu - (p.gutHu || 0)) + 'px';
+    body.style.height = hwHu2Px(hwPageH(p) - p.mtHu - p.mbHu - (p.mhHu || 0) - (p.mfHu || 0)) + 'px';
     box.appendChild(body);
 
     /* ★ 표 테두리를 <b>줄보다 먼저</b> 깔아 둔다. 뒤에 그리면 칸 배경이 글자를 덮는다. */
@@ -75,6 +75,19 @@ var hwRenderer = (function () {
     paraBoxes(body, pg);
 
     for (var i = 0; i < pg.lines.length; i++) body.appendChild(lineEl(pg.lines[i]));
+
+    if (pg.pnum) body.appendChild(pageNumEl(pg.pnum));
+  }
+
+  /* 쪽 번호. 문단이 아니라 컨트롤이 만든 한 자리라 줄 목록에 안 넣는다 — 캐럿이 설 곳이 아니다. */
+  function pageNumEl(n) {
+    var d = el('div', 'hw-pagenum');
+    d.style.left = hwHu2Px(n.xHu) + 'px';
+    d.style.top = hwHu2Px(n.yHu) + 'px';
+    d.style.width = hwHu2Px(n.widthHu) + 'px';
+    d.style.textAlign = n.align;
+    d.textContent = n.text;
+    return d;
   }
 
   /* 테두리 한 변 → CSS. 굵기는 mm 문자열이라 HWPUNIT 으로 바꿔 재고, 0px 로 접히면 안 보이므로 1px 을 바닥으로 둔다. */
@@ -133,8 +146,9 @@ var hwRenderer = (function () {
     return d;
   }
 
-  function tableEl(body, obj) {
-    var at = obj._at, grid = obj._grid;
+  /* 한 쪽에 놓인 표 조각 하나. 쪽 경계에서 나뉜 표는 쪽마다 조각이 따로 온다(`hwTable.placeRange`). */
+  function tableEl(body, entry) {
+    var obj = entry.obj, at = entry.frag, grid = entry.frag;
     if (!at || !grid) return;
 
     var box = el('div', 'hw-table');
@@ -379,6 +393,13 @@ var hwRenderer = (function () {
        표를 통째로 지운다(deleteRange 가 개체 한 자리를 지우는 것이 곧 표를 지우는 것이다). */
   function stamp(el, para, pos) {
     var o = objAt(para, pos);
+
+    /* "글 뒤로" 는 글 층 <b>아래</b>로 내려간다 — 그 자리에서는 그 개체를 마우스로 못 고른다(글이 위에 있다).
+       ★ "글 앞으로" 는 층을 <b>안 올린다</b>. 올려 봤더니 그 개체가 본문 클릭을 가로채,
+         그 아래 글의 우클릭과 표 칸 블록이 통째로 막혔다(실측 — aligns·matrix·textbox·
+         sample-5017-pics·multicolumns-in-common-controls 가 front 개체를 갖는다). 값은 저장·되읽기만 한다. */
+    if (o && !o.inline && o.flow === 'behind') el.style.zIndex = '-1';
+
     if (o && (o.table || o.kind === 'table')) return el;
 
     el.setAttribute('data-para', para.id);

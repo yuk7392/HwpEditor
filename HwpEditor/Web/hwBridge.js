@@ -771,6 +771,12 @@ function hwUiTest() {
     } catch (eS4) {
       ok('S4 세션 4 검사 중 예외', false, String(eS4 && eS4.stack ? eS4.stack : eS4).replace(/\s+/g, ' ').slice(0, 400));
     }
+    /* ★ S5 도 S4 <b>뒤</b>다 — 쪽 설정을 바꾸면 배치가 통째로 달라져 앞 단계의 쪽·좌표 판정이 흔들린다. */
+    try {
+      hwUiTestS5({ ok: ok, key: key, typeIn: typeIn, down: down, move: move, up: up, ime: ime });
+    } catch (eS5) {
+      ok('S5 세션 5 검사 중 예외', false, String(eS5 && eS5.stack ? eS5.stack : eS5).replace(/\s+/g, ' ').slice(0, 400));
+    }
     return hwWaitImages();
   }).then(function (r) {
     ok('20 그림이 실제로 그려짐', r.total === 0 || r.loaded === r.total, r.loaded + '/' + r.total + ' 장');
@@ -2233,6 +2239,362 @@ function hwUiTestS4(t) {
   if (window.hwObj) hwObj.clear();
 }
 
+/* 세션 5 — 쪽·구역. 단계 140~159. */
+function hwUiTestS5(t) {
+  var ok = t.ok, key = t.key, typeIn = t.typeIn;
+
+  function click(el) { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); return !!el; }
+  function dlgSet(k, v) {
+    var d = hwDialog.current(), e = d ? d.field(k) : null;
+    if (!e) return false;
+    if (e.type === 'checkbox') { e.checked = !!v; e.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+    e.value = String(v);
+    e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+    return true;
+  }
+  function dlgPress(label) {
+    var d = hwDialog.current(), b = d ? d.button(label) : null;
+    return click(b);
+  }
+
+  /* 표가 놓인 쪽 수 — 쪽마다 조각이 하나씩 들어간다. */
+  function spread(obj) {
+    var n = 0;
+    for (var i = 0; i < hwPages.length; i++) {
+      var tt = hwPages[i].tables || [];
+      for (var k = 0; k < tt.length; k++) if (tt[k].obj === obj) { n++; break; }
+    }
+    return n;
+  }
+
+  /* 본문 마지막 문단(검사가 만든 n… 문단이 아닌 것)으로 캐럿을 옮긴다. */
+  function toBody() {
+    var S = hwDoc.sections[0].paras, p = S[S.length - 1];
+    for (var i = S.length - 1; i >= 0; i--) if (S[i].id.charAt(0) !== 'n') { p = S[i]; break; }
+    hwCaret.set(p.id, p.len, false);
+    return p;
+  }
+
+  /* ⑧ 표의 쪽 넘김 — 쪽보다 <b>큰</b> 표를 만들어 본다. 표본에는 쪽을 넘는 표가 하나도 없다. */
+  toBody();
+  hwTable.clearBlock();
+  if (window.hwObj) hwObj.clear();
+  hwTable.insertTable(6, 2);
+  var at140 = hwTable.here(), o140 = at140 ? at140.obj : null;
+  var t140 = o140 ? o140.table : null;
+
+  var pg140 = hwPages[0].page;
+  var textH140 = pg140.hHu - pg140.mtHu - pg140.mbHu - (pg140.mhHu || 0) - (pg140.mfHu || 0);
+  for (var i140 = 0; t140 && i140 < t140.cells.length; i140++)
+    t140.cells[i140].hHu = Math.floor(textH140 * 0.45);
+
+  if (t140) { t140.divide = 2; t140.repeatHeader = false; }
+  hwLayout();
+  var n140 = o140 ? spread(o140) : 0;
+  ok('140 쪽보다 큰 표가 divide=2 면 쪽 경계에서 나뉜다', n140 >= 2, '조각이 놓인 쪽 ' + n140 + '개');
+
+  if (t140) t140.divide = 0;
+  hwLayout();
+  var n140b = o140 ? spread(o140) : 0;
+  ok('140-1 divide=0 이면 통째로 한 쪽에 놓인다', n140b === 1, '조각이 놓인 쪽 ' + n140b + '개');
+
+  if (t140) {
+    t140.divide = 2;
+    t140.repeatHeader = true;
+    for (var h141 = 0; h141 < t140.cells.length; h141++)
+      if (t140.cells[h141].r === 0) t140.cells[h141].head = true;
+  }
+  hwLayout();
+
+  /* 둘째 조각 맨 위에 첫 줄이 다시 있는가 — 그리고 그 줄은 색인에 <b>안</b> 들어가야 한다. */
+  var rep141 = false, ghost141 = 0;
+  for (var p141 = 0, seen141 = 0; p141 < hwPages.length; p141++) {
+    var tt141 = hwPages[p141].tables || [], mine = null;
+    for (var k141 = 0; k141 < tt141.length; k141++) if (tt141[k141].obj === o140) mine = tt141[k141];
+    if (!mine) continue;
+    seen141++;
+    if (seen141 >= 2) for (var c141 = 0; c141 < mine.frag.cells.length; c141++)
+      if (mine.frag.cells[c141].cell.r === 0) rep141 = true;
+  }
+  var head141 = null;
+  for (var c0141 = 0; t140 && c0141 < t140.cells.length; c0141++)
+    if (t140.cells[c0141].r === 0 && t140.cells[c0141].c === 0) head141 = t140.cells[c0141].paras[0];
+  for (var g141 = 0; g141 < hwPages.length; g141++) {
+    var ls141 = hwPages[g141].lines;
+    for (var q141 = 0; q141 < ls141.length; q141++) if (ls141[q141].ghost) ghost141++;
+  }
+  /* 제목 칸 문단은 빈 줄 하나다 — 조각마다 세면 색인이 2줄 이상이 된다. */
+  var idx141 = head141 ? (hwLineIndex[head141.id] || []).length : 0;
+  ok('141 repeatHeader 면 다음 쪽 맨 위에 제목 줄이 다시 놓이고 색인에는 한 번만 든다',
+     rep141 && ghost141 > 0 && idx141 === 1,
+     '다시 놓임 ' + rep141 + ', ghost 줄 ' + ghost141 + ', 색인 ' + idx141 + '줄');
+
+  /* 검사용으로 부풀린 줄 높이를 되돌린다 — 뒤 단계와 저장 요청이 이 표를 그대로 쓴다. */
+  if (t140) {
+    for (var r140 = 0; r140 < t140.cells.length; r140++) {
+      t140.cells[r140].hHu = 1000 + 141 * 2;
+      t140.cells[r140].head = false;
+    }
+    t140.repeatHeader = false;
+  }
+  hwLayout();
+
+  /* E4 쪽 설정 — 구역 0 을 바꿔 배치가 따라오는지 본다. 검사가 끝나면 원래 값으로 되돌린다. */
+  var sec0 = hwDoc.sections[0], pg = sec0.page;
+  var keep = {
+    pw: pg.wHu, ph: pg.hHu, ml: pg.mlHu, mr: pg.mrHu, mt: pg.mtHu, mb: pg.mbHu,
+    mh: pg.mhHu, mf: pg.mfHu, gut: pg.gutHu, landscape: pg.landscape,
+    colCount: sec0.cols.count, colGap: sec0.cols.gapHu
+  };
+  /* 구역 0 의 쪽만 센다 — 구역이 둘 이상인 문서(lists·pagedefs)는 뒤 구역이 안 바뀐다. */
+  function pagesOf0() {
+    var n = 0;
+    for (var i = 0; i < hwPages.length; i++) if (hwPages[i].secIdx === 0) n++;
+    return n;
+  }
+
+  /* 구역 0 본문 줄이 실제로 흐른 폭. ★ DOM 으로 재지 않는다 — 가상 스크롤이라 먼 쪽은 비어 있다. */
+  function bodyW() {
+    var w = 0;
+    for (var i = 0; i < hwPages.length; i++) {
+      if (hwPages[i].secIdx !== 0) continue;
+      for (var k = 0; k < hwPages[i].lines.length; k++) {
+        var it = hwPages[i].lines[k];
+        if (it.para._cell || it.ghost) continue;
+        if (it.colWHu > w) w = it.colWHu;
+      }
+    }
+    return Math.round(w);
+  }
+
+  /* 줄 폭은 <b>단 하나</b>의 폭이다 — 여백을 11340 늘리면 단마다 그 몫만 줄어든다. */
+  var cols142 = Math.max(1, hwDoc.sections[0].cols.count || 1);
+  var w142 = bodyW();
+  hwPage.setSection(0, { ml: keep.ml + 5670, mr: keep.mr + 5670 });
+  var w142b = bodyW();
+  ok('142 여백을 늘리면 본문 폭이 그만큼 줄어든다',
+     w142 > 0 && Math.abs((w142 - w142b) - 11340 / cols142) <= 1,
+     '본문 폭 ' + w142 + '→' + w142b + ' (단 ' + cols142 + ', −' + Math.round(11340 / cols142) + ' 이어야 한다)');
+  hwPage.setSection(0, { ml: keep.ml, mr: keep.mr });
+
+  var pgW143 = hwPages[0] ? hwPageW(hwPages[0].page) : 0;
+  hwPage.setSection(0, { landscape: true });
+  var pgW143b = hwPages[0] ? hwPageW(hwPages[0].page) : 0;
+  ok('143 가로 방향이면 쪽 폭이 용지 높이가 된다(용지 크기는 안 맞바뀐다)',
+     pgW143b === keep.ph && pgW143 === keep.pw && hwDoc.sections[0].page.wHu === keep.pw,
+     '쪽 폭 ' + pgW143 + '→' + pgW143b + ', 용지 w=' + hwDoc.sections[0].page.wHu);
+  hwPage.setSection(0, { landscape: keep.landscape });
+
+  var x144 = [];
+  hwPage.setSection(0, { colCount: 3, colGap: 2268 });
+  for (var i144 = 0; i144 < hwPages.length && x144.length < 3; i144++)
+    for (var k144 = 0; k144 < hwPages[i144].lines.length; k144++) {
+      var xv = Math.round(hwPages[i144].lines[k144].xHu);
+      if (x144.indexOf(xv) < 0 && x144.length < 9) x144.push(xv);
+    }
+  var cols144 = 0;
+  for (var q144 = 0; q144 < hwPages.length; q144++)
+    for (var z144 = 0; z144 < hwPages[q144].lines.length; z144++)
+      if (hwPages[q144].lines[z144].xHu > 1) { cols144 = 1; break; }
+  ok('144 단 개수를 3 으로 바꾸면 둘째 단부터 x 가 0 이 아니다',
+     hwDoc.sections[0].cols.count === 3 && cols144 === 1,
+     '단 ' + hwDoc.sections[0].cols.count + ', 0 아닌 x 있음 ' + (cols144 === 1));
+  hwPage.setSection(0, { colCount: keep.colCount, colGap: keep.colGap });
+
+  /* 145·146 — 저장 왕복. 여기서는 <b>요청이 제대로 실리는지</b>만 보고(형식마다 같은 op 다),
+     실제 파일 값은 --apply 뒤 --model 로 본다. */
+  hwPage.setSection(0, { mt: keep.mt + 1134, landscape: true, colCount: 2, colGap: 2268 });
+  var ops145 = hwBuildOps(), sf145 = null;
+  for (var s145 = 0; s145 < ops145.length; s145++) if (ops145[s145].op === 'secFmt') sf145 = ops145[s145];
+  ok('145 secFmt 요청에 바꾼 것만 실린다',
+     !!sf145 && sf145.sec === 0 && sf145.mt === keep.mt + 1134 && sf145.landscape === true
+       && sf145.colCount === 2 && sf145.ml === undefined,
+     sf145 ? 'sec=' + sf145.sec + ' mt=' + sf145.mt + ' landscape=' + sf145.landscape
+             + ' colCount=' + sf145.colCount + ' ml=' + sf145.ml : '요청 없음');
+
+  /* ★ 되돌리는 것도 op 로 한다 — 그래야 저장본이 원본 값 그대로다(검사 문서를 망가뜨리지 않는다). */
+  hwPage.setSection(0, {
+    pw: keep.pw, ph: keep.ph, ml: keep.ml, mr: keep.mr, mt: keep.mt, mb: keep.mb,
+    mh: keep.mh, mf: keep.mf, gut: keep.gut, landscape: keep.landscape,
+    colCount: keep.colCount, colGap: keep.colGap
+  });
+  var ops146 = hwBuildOps(), last146 = null;
+  for (var s146 = 0; s146 < ops146.length; s146++) if (ops146[s146].op === 'secFmt') last146 = ops146[s146];
+  ok('146 되돌린 요청이 원본 값을 그대로 싣는다(저장본이 안 망가진다)',
+     !!last146 && last146.mt === keep.mt && last146.landscape === keep.landscape
+       && last146.colCount === keep.colCount,
+     last146 ? 'mt=' + last146.mt + ' landscape=' + last146.landscape + ' colCount=' + last146.colCount : '요청 없음');
+
+  hwDialog.pageSetup();
+  var d147 = hwDialog.current();
+  var tabs147 = d147 ? d147.el.querySelectorAll('.hw-dlg-tab').length : 0;
+  var pw147 = d147 ? d147.get('pw') : null;
+  dlgPress('취소');
+  ok('147 페이지 설정이 2탭으로 열리고 지금 용지 크기가 실려 있다',
+     tabs147 === 2 && pw147 !== null && Math.abs(pw147 * 283.465 - keep.pw) < 300 && !hwDialog.isOpen(),
+     '탭 ' + tabs147 + '개, 너비 ' + pw147 + 'mm');
+
+  /* E10 머리말·꼬리말·쪽 번호. 문서마다 있고 없고가 달라 <b>있으면 값을, 없으면 만들어</b> 본다. */
+  function bandLinesOf(band) {
+    var n = 0, ids = {};
+    for (var b = 0; b < (band.paras || []).length; b++) ids[band.paras[b].id] = true;
+    for (var i = 0; i < hwPages.length; i++)
+      for (var k = 0; k < hwPages[i].lines.length; k++)
+        if (ids[hwPages[i].lines[k].para.id]) n++;
+    return n;
+  }
+
+  var head148 = hwPage.bandOf(0, 'head'), foot148 = hwPage.bandOf(0, 'foot');
+  var made148 = false;
+  if (!head148) {
+    hwPage.addBand(0, 'head', 'both', '머리말검사');
+    head148 = hwPage.bandOf(0, 'head');
+    made148 = true;
+  }
+  ok('148 머리말이 모델에 문단으로 실린다',
+     !!head148 && !!head148.paras && head148.paras.length > 0,
+     (made148 ? '새로 만듦, ' : '문서에 있던 것, ') + '문단 ' + (head148 && head148.paras ? head148.paras.length : 0) + '개');
+
+  ok('149 머리말 줄이 구역 0 의 쪽마다 놓이고 본문 위(음수 y)에 있다',
+     !!head148 && bandLinesOf(head148) >= pagesOf0()
+       && (function () {
+            for (var i = 0; i < hwPages.length; i++)
+              for (var k = 0; k < hwPages[i].lines.length; k++) {
+                var it = hwPages[i].lines[k];
+                if (it.para === head148.paras[0]) return it.yHu < 0;
+              }
+            return false;
+          })(),
+     '줄 ' + (head148 ? bandLinesOf(head148) : 0) + '개 / 구역 0 쪽 ' + pagesOf0() + '개');
+
+  /* 150 — 적용 쪽. 문서에 이미 꼬리말이 있으면 <b>그 문서의 값</b>으로 판정한다
+     (basicsReport 는 both, headerfooter 는 odd 다 — 하나로 못 박으면 문서마다 갈린다). */
+  if (!foot148) { hwPage.addBand(0, 'foot', 'odd', '꼬리말검사'); foot148 = hwPage.bandOf(0, 'foot'); }
+  var odd150 = 0, even150 = 0;
+  if (foot148 && foot148.paras && foot148.paras.length) {
+    for (var i150 = 0; i150 < hwPages.length; i150++) {
+      var has = false;
+      for (var k150 = 0; k150 < hwPages[i150].lines.length; k150++)
+        if (hwPages[i150].lines[k150].para === foot148.paras[0]) has = true;
+      if (has) { if ((i150 + 1) % 2 === 1) odd150++; else even150++; }
+    }
+  }
+  var want150 = foot148 ? foot148.apply : '?';
+  var okApply = want150 === 'odd' ? (odd150 > 0 && even150 === 0)
+              : want150 === 'even' ? (even150 > 0 && odd150 === 0)
+              : (odd150 + even150 === pagesOf0());
+  ok('150 꼬리말이 apply(양 쪽·홀수·짝수)대로만 놓인다', !!foot148 && okApply,
+     'apply=' + want150 + ', 홀수 ' + odd150 + '쪽 / 짝수 ' + even150 + '쪽 / 구역 0 ' + pagesOf0() + '쪽');
+
+  /* 151 — 머리말 글을 고치면 replace 요청에 실린다(문서에 원래 있던 머리말만 해당). */
+  var hp151 = head148 && head148.paras ? head148.paras[0] : null;
+  var rep151 = null;
+  if (hp151 && !hp151._bandNew) {
+    hwCaret.set(hp151.id, hp151.len, false);
+    typeIn('머');
+    var ops151 = hwBuildOps();
+    for (var s151 = 0; s151 < ops151.length; s151++)
+      if (ops151[s151].op === 'replace' && ops151[s151].id === hp151.id) rep151 = ops151[s151];
+  }
+  ok('151 머리말 글을 고치면 그 문단의 replace 요청이 실린다',
+     !hp151 || hp151._bandNew || !!rep151,
+     hp151 ? (hp151._bandNew ? '새로 만든 머리말이라 addHeader 꾸러미가 싣는다' : (rep151 ? '요청 있음' : '요청 없음'))
+           : '머리말 없음');
+
+  var add152 = null, ops152 = hwBuildOps();
+  for (var s152 = 0; s152 < ops152.length; s152++) if (ops152[s152].op === 'addHeader') add152 = ops152[s152];
+  ok('152 새 머리말·꼬리말은 addHeader 꾸러미로 통째로 실린다',
+     !made152Needed() || !!add152,
+     add152 ? 'kind=' + add152.kind + ' apply=' + add152.apply + ' runs=' + (add152.runs || []).length : '새로 만든 것 없음');
+  function made152Needed() { return made148 || (foot148 && foot148.tmpId); }
+
+  /* 153 — 쪽 번호. 컨트롤이 있는 문서만 값을 바꿔 본다. */
+  var num153 = hwPage.bandOf(0, 'pgnp');
+  var op153 = null;
+  if (num153) {
+    hwPage.setPageNum(0, { numPos: 2, numShape: 3, numDash: true });
+    var ops153 = hwBuildOps();
+    for (var s153 = 0; s153 < ops153.length; s153++) if (ops153[s153].op === 'pageNum') op153 = ops153[s153];
+  }
+  ok('153 쪽 번호 위치·모양을 바꾸면 요청에 실리고 화면에도 그려진다',
+     !num153 || (!!op153 && op153.numPos === 2 && op153.numShape === 3
+                 && !!hwPages[0].pnum && hwPages[0].pnum.text.indexOf('-') === 0),
+     num153 ? (op153 ? 'pos=' + op153.numPos + ' shape=' + op153.numShape
+                       + ' 그림 "' + (hwPages[0].pnum ? hwPages[0].pnum.text : '없음') + '"' : '요청 없음')
+            : '이 문서에는 쪽 번호 컨트롤이 없다');
+
+  hwDialog.pageNumber();
+  var d154 = hwDialog.current();
+  var opts154 = d154 && d154.field('numPos') ? d154.field('numPos').options.length : 0;
+  dlgPress('취소');
+  ok('154 쪽 번호 대화상자가 11가지 위치로 열린다', opts154 === 11 && !hwDialog.isOpen(),
+     '위치 ' + opts154 + '개');
+
+  /* E5 배치·순서. 고를 수 있는 개체(안 보이는 컨트롤·표 말고)가 있는 문서에서만 돈다. */
+  var sel155 = null;
+  var all155 = hwModel.allParas();
+  for (var a155 = 0; a155 < all155.length && !sel155; a155++) {
+    var objs155 = all155[a155].objs || [];
+    for (var o155 = 0; o155 < objs155.length; o155++) {
+      var oo = objs155[o155];
+      if (oo.hidden || oo.table || !oo.oid) continue;
+      sel155 = { para: all155[a155], obj: oo };
+      break;
+    }
+  }
+
+  var op155 = null;
+  if (sel155) {
+    hwObj.select(sel155.para.id, sel155.obj.pos);
+    hwObj.setFlow('behind');
+    var ops155 = hwBuildOps();
+    for (var s155 = 0; s155 < ops155.length; s155++) {
+      var objs = ops155[s155].objs || [];
+      for (var q155 = 0; q155 < objs.length; q155++)
+        if (objs[q155].oid === sel155.obj.oid && objs[q155].flow !== undefined) op155 = objs[q155];
+    }
+  }
+  ok('155 배치를 "글 뒤로" 로 바꾸면 그 개체의 요청에 flow 가 실린다',
+     !sel155 || (!!op155 && op155.flow === 'behind' && op155.inline === undefined),
+     !sel155 ? '고를 수 있는 개체가 없다 — 건너뜀'
+             : (op155 ? 'flow=' + op155.flow + ' inline=' + op155.inline : '요청 없음'));
+
+  var op156 = null;
+  if (sel155) {
+    var z156 = sel155.obj.z || 0;
+    hwObj.setZ(+2);
+    var ops156 = hwBuildOps();
+    for (var s156 = 0; s156 < ops156.length; s156++) {
+      var o2 = ops156[s156].objs || [];
+      for (var q156 = 0; q156 < o2.length; q156++)
+        if (o2[q156].oid === sel155.obj.oid && o2[q156].z !== undefined) op156 = o2[q156];
+    }
+    ok('156 "맨 앞으로" 는 그 문단 개체의 최대 z 보다 크게 실린다',
+       !!op156 && op156.z > z156 - 1, op156 ? 'z ' + z156 + '→' + op156.z : '요청 없음');
+  } else ok('156 "맨 앞으로" 는 그 문단 개체의 최대 z 보다 크게 실린다', true, '고를 수 있는 개체가 없다 — 건너뜀');
+
+  var dom157 = null;
+  if (sel155) {
+    hwRenderRefresh();
+    dom157 = document.querySelector('.hw-obj[data-para="' + sel155.para.id
+                                    + '"][data-pos="' + sel155.obj.pos + '"]');
+  }
+  ok('157 "글 뒤로" 개체는 글 층 아래(z-index −1)로 그려진다',
+     !sel155 || (!!dom157 && dom157.style.zIndex === '-1'),
+     !sel155 ? '건너뜀' : (dom157 ? 'z-index ' + (dom157.style.zIndex || '(없음)') : '요소 없음'));
+
+  var m158 = hwUi.contextItems('obj');
+  var has158 = 0;
+  for (var i158 = 0; i158 < m158.length; i158++) {
+    var lb = m158[i158] && m158[i158].label;
+    if (lb === '배치' || lb === '앞으로 가져오기' || lb === '맨 뒤로') has158++;
+  }
+  ok('158 우클릭에 "배치 ▸"·"앞으로 가져오기"·"맨 뒤로" 가 산다', has158 === 3, '찾은 항목 ' + has158 + '/3');
+
+  hwTable.clearBlock();
+  if (window.hwObj) hwObj.clear();
+}
+
 function firstCellPara() {
   for (var si = 0; si < hwDoc.sections.length; si++) {
     var paras = hwDoc.sections[si].paras;
@@ -2567,12 +2929,13 @@ document.addEventListener('DOMContentLoaded', function () {
       if (cmd === 'pdf') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         var pg = hwDoc.sections.length ? hwDoc.sections[0].page : null;
-        hwPost({ t: 'menu', cmd: 'pdf', wHu: pg ? pg.wHu : 59528, hHu: pg ? pg.hHu : 84188 });
+        /* ★ 가로 방향은 여기서 맞바꿔 보낸다 — 안 그러면 가로 문서가 세로 용지에 잘려 찍힌다. */
+        hwPost({ t: 'menu', cmd: 'pdf', wHu: pg ? hwPageW(pg) : 59528, hHu: pg ? hwPageH(pg) : 84188 });
         return;
       }
       if (cmd === 'saveAs') { hwSave(true); return; }
       if (cmd === 'find') { hwFind.open(true); return; }
-      if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap') {
+      if (cmd === 'charShape' || cmd === 'paraShape' || cmd === 'charMap' || cmd === 'pageSetup') {
         if (!hwDoc) { hwSetStatus({ text: '문서를 먼저 여세요' }); return; }
         hwDialog[cmd]();
         return;

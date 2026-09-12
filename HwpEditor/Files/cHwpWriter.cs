@@ -7,8 +7,13 @@ using HwpLib.Object;
 using HwpLib.Object.BodyText;
 using HwpLib.Object.BodyText.Control;
 using HwpLib.Object.BodyText.Control.CtrlHeader;
+using HwpLib.Object.BodyText.Control.CtrlHeader.ColumnDefine;
 using HwpLib.Object.BodyText.Control.CtrlHeader.Gso;
+using HwpLib.Object.BodyText.Control.CtrlHeader.Header;
+using HwpLib.Object.BodyText.Control.CtrlHeader.PageNumberPosition;
+using HwpLib.Object.BodyText.Control.HeaderFooter;
 using HwpLib.Object.BodyText.Control.Gso;
+using HwpLib.Object.BodyText.Control.SectionDefine;
 using HwpLib.Object.BodyText.Control.Gso.ShapeComponent;
 using HwpLib.Object.BodyText.Control.Gso.ShapeComponentEach;
 using HwpLib.Object.BodyText.Control.Table;
@@ -52,7 +57,8 @@ namespace HwpEditor.Files
             // 새 그림은 op 하나가 실물을, 다른 op 의 objs 가 자리를 들고 온다 — 먼저 짝을 지어 둔다.
             Dictionary<string, EditOp> images = new Dictionary<string, EditOp>();
             foreach (EditOp op in pOps)
-                if ((op.Op == "addImage" || op.Op == "addTable") && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
+                if ((op.Op == "addImage" || op.Op == "addTable" || op.Op == "addHeader")
+                    && !string.IsNullOrEmpty(op.TmpId)) images[op.TmpId] = op;
 
             // ★ 순서가 뜻을 갖는다: 내용 먼저(replace) → 지우기 → 넣기.
             //   넣기를 먼저 하면 insertAfter 의 기준 문단이 지워진 뒤일 수 있다.
@@ -67,6 +73,8 @@ namespace HwpEditor.Files
 
             // ★ 서식은 구조 <b>뒤</b>다 — 표를 다시 세우면 칸 객체가 새것이라 앞서 건 서식이 사라진다.
             ApplyFormatOps(pIndex, pOps);
+            ApplySecOps(pFile, pOps);
+            ApplyPageNumOps(pIndex, pOps);
 
             if (pResult != null)
             {
@@ -109,6 +117,85 @@ namespace HwpEditor.Files
                         if (op.CmB.HasValue) h.BottomMargin = (int)op.CmB.Value;
                     }
             }
+        }
+
+        /// <summary>
+        /// 구역 쪽 설정(<c>secFmt</c>). 용지·여백은 그 구역 문단에 붙은 <c>secd</c>, 단은 <c>cold</c> 컨트롤이
+        /// 들고 있다 — 읽기(<see cref="cHwpReader"/>)와 <b>같은 자리</b>를 고친다.
+        /// </summary>
+        private static void ApplySecOps(HWPFile pFile, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "secFmt" || !op.Sec.HasValue) continue;
+                int si = op.Sec.Value;
+                if (pFile.BodyText == null || si < 0 || si >= pFile.BodyText.SectionList.Count) continue;
+
+                Section sec = pFile.BodyText.SectionList[si];
+                for (int i = 0; i < sec.ParagraphCount; i++)
+                {
+                    Paragraph p = sec.GetParagraph(i);
+                    if (p.ControlList == null) continue;
+                    foreach (Control c in p.ControlList)
+                    {
+                        ControlSectionDefine sd = c as ControlSectionDefine;
+                        if (sd != null && sd.PageDef != null) { ApplyPageDef(sd.PageDef, op); continue; }
+
+                        ControlColumnDefine cd = c as ControlColumnDefine;
+                        if (cd != null) ApplyColumnDef(cd, op);
+                    }
+                }
+            }
+        }
+
+        /// <summary>쪽 번호 위치·모양(<c>pageNum</c>). 이미 있는 컨트롤만 고친다 — 새로 만드는 길은 아직 없다.</summary>
+        private static void ApplyPageNumOps(cHwpIndex pIndex, IList<EditOp> pOps)
+        {
+            foreach (EditOp op in pOps)
+            {
+                if (op.Op != "pageNum") continue;
+
+                cObjRef r;
+                if (string.IsNullOrEmpty(op.Oid) || !pIndex.Objs.TryGetValue(op.Oid, out r)) continue;
+                ControlPageNumberPosition pn = r.Control as ControlPageNumberPosition;
+                if (pn == null) continue;
+
+                CtrlHeaderPageNumberPosition h = pn.GetHeader();
+                if (h == null || h.Property == null) continue;
+
+                if (op.NumPos.HasValue) h.Property.NumberPosition = (NumberPosition)op.NumPos.Value;
+                if (op.NumShape.HasValue) h.Property.NumberShape = (NumberShape)op.NumShape.Value;
+                if (op.NumDash.HasValue)
+                {
+                    // ★ 줄표는 <b>앞뒤 두 글자</b>가 한 벌이다 — 한쪽만 채우면 한글이 "-1" 로 그린다.
+                    string dash = op.NumDash.Value ? "-" : "\0";
+                    if (h.BeforeDecorationLetter != null) h.BeforeDecorationLetter.FromUTF16LEString(dash);
+                    if (h.AfterDecorationLetter != null) h.AfterDecorationLetter.FromUTF16LEString(dash);
+                }
+            }
+        }
+
+        private static void ApplyPageDef(PageDef pDef, EditOp pOp)
+        {
+            if (pOp.Pw.HasValue) pDef.PaperWidth = pOp.Pw.Value;
+            if (pOp.Ph.HasValue) pDef.PaperHeight = pOp.Ph.Value;
+            if (pOp.Ml.HasValue) pDef.LeftMargin = pOp.Ml.Value;
+            if (pOp.Mr.HasValue) pDef.RightMargin = pOp.Mr.Value;
+            if (pOp.Mt.HasValue) pDef.TopMargin = pOp.Mt.Value;
+            if (pOp.Mb.HasValue) pDef.BottomMargin = pOp.Mb.Value;
+            if (pOp.Mh.HasValue) pDef.HeaderMargin = pOp.Mh.Value;
+            if (pOp.Mf.HasValue) pDef.FooterMargin = pOp.Mf.Value;
+            if (pOp.Gut.HasValue) pDef.GutterMargin = pOp.Gut.Value;
+            if (pOp.Landscape.HasValue && pDef.Property != null)
+                pDef.Property.PaperDirection = pOp.Landscape.Value ? PaperDirection.Landscape : PaperDirection.Portrait;
+        }
+
+        private static void ApplyColumnDef(ControlColumnDefine pDef, EditOp pOp)
+        {
+            CtrlHeaderColumnDefine h = pDef.GetHeader();
+            if (h == null || h.Property == null) return;
+            if (pOp.ColCount.HasValue) h.Property.SetColumnCount((short)Math.Max(1, pOp.ColCount.Value));
+            if (pOp.ColGap.HasValue) h.GapBetweenColumn = (int)pOp.ColGap.Value;
         }
 
         private static void ApplyTableFmt(ControlTable pTbl, EditOp pOp)
@@ -398,7 +485,13 @@ namespace HwpEditor.Files
             if (!string.IsNullOrEmpty(pObj.TmpId) && pImages.TryGetValue(pObj.TmpId, out img))
             {
                 Control ctl;
-                if (img.Op == "addTable")
+                if (img.Op == "addHeader")
+                {
+                    ctl = AddBand(pPara, pText, img);
+                    // ★ 머리말 안 문단을 <b>여기서</b> 만들었다 — 화면이 들고 있는 그 문단 id 는 문서에 없다.
+                    if (pResult != null) pResult.Reload = true;
+                }
+                else if (img.Op == "addTable")
                 {
                     ctl = AddTable(pFile, pPara, pText, img);
                     // ★ 새 표도 문서를 다시 읽어야 한다 — 칸 문단을 <b>여기서</b> 만들었으므로 화면이 들고 있는
@@ -594,6 +687,46 @@ namespace HwpEditor.Files
             return tbl;
         }
 
+        /// <summary>
+        /// 머리말·꼬리말 하나를 문단에 붙인다 — 컨트롤 생성 → 안 문단 → 확장 제어문자.
+        /// ★ 새 그림·새 표와 같은 세 벌이다. 제어문자가 빠지면 컨트롤이 붕 떠서 아예 안 나온다.
+        /// </summary>
+        private static Control AddBand(Paragraph pPara, ParaText pText, EditOp pOp)
+        {
+            bool head = pOp.Kind != "foot";
+            Control ctl = pPara.AddNewControl(head ? ControlType.Header : ControlType.Footer);
+            if (ctl == null) throw new InvalidOperationException("머리말 컨트롤을 만들지 못했다");
+
+            HeaderFooterApplyPage ap = pOp.Apply == "odd" ? HeaderFooterApplyPage.OddPage
+                                     : pOp.Apply == "even" ? HeaderFooterApplyPage.EvenPage
+                                     : HeaderFooterApplyPage.BothPage;
+
+            ControlHeader hd = ctl as ControlHeader;
+            ControlFooter ft = ctl as ControlFooter;
+            ParagraphList list;
+            ListHeaderForHeaderFooter lh;
+            if (hd != null) { hd.Header.ApplyPage = ap; list = hd.ParagraphList; lh = hd.ListHeader; }
+            else { ft.Header.ApplyPage = ap; list = ft.ParagraphList; lh = ft.ListHeader; }
+
+            ParagraphModel pm = new ParagraphModel();
+            pm.Ps = pOp.Ps;
+            pm.Runs = pOp.Runs;
+            NewListParagraph(list, pm, Math.Max(200L, pOp.WHu));
+
+            Paragraph[] all = list.GetParagraphs();
+            for (int q = 0; q < all.Length; q++) all[q].Header.LastInList = q == all.Length - 1;
+
+            if (lh != null)
+            {
+                lh.ParaCount = all.Length;
+                lh.TextWidth = Math.Max(0, pOp.WHu);
+                lh.TextHeight = Math.Max(0, pOp.HHu);
+            }
+
+            if (head) pText.AddExtendCharForHeader(); else pText.AddExtendCharForFooter();
+            return ctl;
+        }
+
         private static void NewCell(Row pRow, CellModel pModel, int pBorderFill)
         {
             Cell cell = pRow.AddNewCell();
@@ -627,7 +760,13 @@ namespace HwpEditor.Files
 
         private static void NewCellParagraph(Cell pCell, ParagraphModel pModel, long pInner)
         {
-            Paragraph p = pCell.ParagraphList.AddNewParagraph();
+            NewListParagraph(pCell.ParagraphList, pModel, pInner);
+        }
+
+        /// <summary>목록(표 칸·머리말·꼬리말) 안에 문단 하나를 새로 만든다.</summary>
+        private static void NewListParagraph(ParagraphList pList, ParagraphModel pModel, long pInner)
+        {
+            Paragraph p = pList.AddNewParagraph();
             if (p.Text == null) p.CreateText();
             if (p.CharShape == null) p.CreateCharShape();
 
@@ -786,6 +925,18 @@ namespace HwpEditor.Files
         /// ★ 오프셋은 <b>부호 있는</b> 값이다. 리더가 <c>unchecked((int))</c> 로 읽으므로 쓰는 쪽도
         ///   짝을 맞춘다 — 안 맞추면 -2835 가 4,294,964,461 이 되고 PDF 가 19,926쪽이 된다.
         /// </summary>
+        /// <summary>모델 이름 → hwp 값. 리더의 <c>FlowName</c> 과 짝이어야 한다.</summary>
+        private static TextFlowMethod FlowOf(string pFlow)
+        {
+            switch (pFlow)
+            {
+                case "takePlace": return TextFlowMethod.TakePlace;
+                case "behind": return TextFlowMethod.BehindText;
+                case "front": return TextFlowMethod.InFrontOfText;
+                default: return TextFlowMethod.FitWithText;
+            }
+        }
+
         private static void ApplyGeom(Control pCtl, EditObj pObj)
         {
             if (pCtl == null || pObj == null || !pObj.HasGeom) return;
@@ -811,6 +962,16 @@ namespace HwpEditor.Files
                 h.Property.SetHorzRelTo(HorzRelTo.Para);
                 h.Property.SetVertRelTo(VertRelTo.Para);
             }
+
+            // ★ 어울림 방식은 <b>글자처럼 취급을 끈 다음</b>에만 뜻이 있다 — 화면이 둘을 같이 안 보내고,
+            //   여기서도 flow 를 걸 때 LikeWord 를 끈다(둘이 어긋나면 저장은 되고 여는 쪽에서만 깨진다).
+            if (pObj.Flow != null && h.Property != null)
+            {
+                h.Property.SetLikeWord(false);
+                h.Property.SetTextFlowMethod(FlowOf(pObj.Flow));
+            }
+
+            if (pObj.Z.HasValue) h.ZOrder = (int)pObj.Z.Value;
 
             if (!pObj.WHu.HasValue && !pObj.HHu.HasValue) return;
 

@@ -15,6 +15,10 @@ var hwModel = (function () {
   /* 표 구조를 바꾼 요청. 저장할 때 맨 뒤에 붙여 보낸다. */
   var cTableOps = [];
 
+  /* 문서·구역 단위 요청(secFmt 등). ★ 표 구조 요청과 <b>따로</b> 담는다 — 표 요청은 맨 뒤라야
+     하는데(칸 객체가 새로 생긴다) 구역 요청은 문단과 무관해서 순서에 매이지 않는다. */
+  var cSecOps = [];
+
   /* 새 문단·새 개체에 붙일 일련번호. id 는 n1, n2 … 이고 C# 이 그 이름 그대로 표에 등록한다. */
   var cSeq = 0;
 
@@ -48,6 +52,17 @@ var hwModel = (function () {
     if (!para.objs) return;
     for (var i = 0; i < para.objs.length; i++) {
       var o = para.objs[i];
+      /* 머리말·꼬리말 안 문단도 칸과 <b>같은 규칙</b>으로 색인한다 — 안 하면 그 글자를 고쳐도
+         저장 요청에 안 실리고(dirty 로 못 잡는다) 찾기·바꾸기도 못 본다. */
+      for (var h = 0; o.paras && h < o.paras.length; h++) {
+        var b = o.paras[h];
+        b._sec = si;
+        b._cell = null;
+        b._band = o;
+        cById[b.id] = b;
+        cOrder[b.id] = at.n++;
+        indexCells(b, si, at);
+      }
       if (!o.table || !o.table.cells) continue;
       for (var c = 0; c < o.table.cells.length; c++) {
         var cell = o.table.cells[c];
@@ -83,6 +98,10 @@ var hwModel = (function () {
 
   function withCells(p, out) {
     out.push(p);
+    for (var b = 0; b < (p.objs || []).length; b++) {
+      var bp = p.objs[b].paras || [];
+      for (var k2 = 0; k2 < bp.length; k2++) withCells(bp[k2], out);
+    }
     eachTableOf(p, function (t) {
       for (var c = 0; c < t.cells.length; c++)
         for (var k = 0; k < t.cells[c].paras.length; k++) withCells(t.cells[c].paras[k], out);
@@ -322,6 +341,8 @@ var hwModel = (function () {
       for (var k = 0; k < list.length; k++) imageOps(list[k], ops);
     }
 
+    for (var so = 0; so < cSecOps.length; so++) ops.push(cSecOps[so]);
+
     /* ★ 표 구조는 맨 뒤다. 표를 다시 세우면 셀 문단 객체가 전부 새것이 되므로,
        그 앞의 셀 문단 요청이 먼저 반영돼야 한다. */
     for (var tt = 0; tt < cTableOps.length; tt++) ops.push(cTableOps[tt]);
@@ -334,6 +355,9 @@ var hwModel = (function () {
     pushOp(paras, pi, ops);
 
     for (var o = 0; o < (p.objs || []).length; o++) {
+      var bp = p.objs[o].paras || [];
+      for (var h = 0; h < bp.length; h++) opsForList(bp, h, ops);
+
       var t = p.objs[o].table;
       if (!t) continue;
       for (var c = 0; c < t.cells.length; c++)
@@ -351,6 +375,9 @@ var hwModel = (function () {
        id 라 replace 를 보내면 저장이 통째로 <b>예외로 끝나고</b> 다른 문단의 고침까지 다 날아간다.
        이 칸은 C# 이 표를 다시 세우면서 자기가 만든다. */
     if (p._tblNew) { if (p.len > 0 && !p._tblOwner) cDropped += p.len; return; }
+
+    /* 새 머리말·꼬리말의 안 문단도 같다 — 그 문단은 addHeader 꾸러미가 통째로 들고 간다. */
+    if (p._bandNew) return;
 
     var isNew = !!cFresh[p.id];
     if (!isNew && !cDirty[p.id]) return;
@@ -439,7 +466,13 @@ var hwModel = (function () {
          읽어 온 값이 바깥 개체에 써질 수 있다. */
       if (o._resized) { r.wHu = o.wHu; r.hHu = o.hHu; }
       if (o._moved) { r.xOffHu = o.xOffHu || 0; r.yOffHu = o.yOffHu || 0; }
-      if (o._flowed) { r.inline = !!o.inline; }
+      /* ★ 어울림 방식과 글자처럼 취급을 <b>같이 보내지 않는다</b> — 둘이 싸우면 저장은 되고
+         여는 쪽에서만 깨진다. 배치를 바꿨으면 그쪽이 이긴다(되쓰기가 flow 를 걸 때 글자처럼 취급을 끈다).
+         ★ 글자처럼 취급하던 개체를 "글 뒤로" 로 바꾸면 <b>둘 다</b> 찍히는데, 그때 inline 을 보내면
+           되쓰기가 그것을 나중에 덮어 배치가 조용히 안 써진다. */
+      if (o._flowSet) r.flow = o.flow;
+      else if (o._flowed) r.inline = !!o.inline;
+      if (o._zSet) r.z = o.z || 0;
       out.push(r);
     }
     return out;
@@ -450,6 +483,7 @@ var hwModel = (function () {
     cDeleted = [];
     cFresh = {};
     cTableOps = [];
+    cSecOps = [];
 
     /* ★ 대기 중인 서식도 버린다. 저장하면 모양 번호가 다시 매겨지는데(csMap), 대기 값은
        옛 번호라 그대로 두면 <b>문서에 없는 번호</b>로 글자를 넣게 된다. */
@@ -538,11 +572,13 @@ var hwModel = (function () {
       cDeleted = [];
       cFresh = {};
       cTableOps = [];
+      cSecOps = [];
       cSeq = 0;
       index(doc);
       return doc;
     },
     pushTableOp: function (op) { cTableOps.push(op); },
+    pushSecOp: function (op) { cSecOps.push(op); },
     isFresh: function (id) { return !!cFresh[id]; },
     allParas: allParas,
     allCells: allCells,
@@ -573,7 +609,7 @@ var hwModel = (function () {
 
     /* 아직 안 보낸 표 구조 요청 수. 창을 닫을 때 물어야 할지 판정하는 데 쓴다 —
        문단 dirty 만 세면 행을 넣고 그냥 닫아도 아무것도 안 묻는다. */
-    tableOpCount: function () { return cTableOps.length; },
+    tableOpCount: function () { return cTableOps.length + cSecOps.length; },
 
     /* 실행취소가 되돌려야 하는 것은 문단 내용만이 아니다 — 무엇이 dirty 이고 무엇을 지웠는지도
        같이 돌려놔야 저장 요청이 되살아난 문단을 다시 지우려 들지 않는다. */

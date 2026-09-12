@@ -230,7 +230,58 @@ namespace HwpEditor
             Console.WriteLine();
 
             int structOk = Report(Path.GetFileName(src) + " (구조)", b4, cSnapshot.Of(re.Model), null, 0, 0);
+
+            // ★ 배치(flow)·앞뒤(z)는 <b>따로</b> 한 번 더 태운다 — flow 와 글자처럼 취급은 한 벌이라
+            //   같은 요청에 실으면 되쓰기가 flow 를 걸며 취급을 끈다(둘을 한 번에 재면 뭐가 이겼는지 못 가린다).
+            ok &= FlowRound(re, dst + ".flow" + Path.GetExtension(dst), host.Id, pos, got.Z + 3);
+
             return (ok && structOk == 0) ? 0 : 1;
+        }
+
+        /// <summary>배치·앞뒤 저장 왕복. 개체를 "글 뒤로" 로 바꾸고 z 를 올려 다시 읽는다.</summary>
+        private static bool FlowRound(cDocument pDoc, string pOut, string pParaId, int pPos, long pWantZ)
+        {
+            ParagraphModel host = ParaById(pDoc.Model, pParaId);
+            if (host == null) { Console.WriteLine("배치 검사: 문단을 못 찾았다 " + pParaId); return false; }
+
+            EditOp rep = new EditOp();
+            rep.Op = "replace";
+            rep.Id = host.Id;
+            rep.Ps = host.Ps;
+            rep.Runs = host.Runs;
+            rep.Seg = host.Seg;
+            rep.Objs = new List<EditObj>();
+            foreach (InlineObjModel o in host.Objs)
+            {
+                EditObj e = new EditObj();
+                e.Pos = o.Pos;
+                e.Oid = o.Oid;
+                if (o.Pos == pPos) { e.Flow = "behind"; e.Z = pWantZ; }
+                rep.Objs.Add(e);
+            }
+
+            SaveResult r = pDoc.Save(pOut, new List<EditOp> { rep });
+            if (!r.Ok) { Console.WriteLine("배치 저장 실패: " + r.Msg); return false; }
+
+            cDocument re2 = cDocument.Open(pOut);
+            InlineObjModel got = ObjAt(re2.Model, pParaId, pPos);
+            if (got == null) { Console.WriteLine("배치 검사: 저장본에서 개체를 못 찾았다"); return false; }
+
+            bool flowOk = got.Flow == "behind", zOk = got.Z == pWantZ, inlineOk = !got.Inline;
+            Console.WriteLine("| {0} | {1} | {2} | {3} |", "배치(flow)", got.Flow ?? "(없음)", "behind", flowOk ? "OK" : "다름");
+            Console.WriteLine("| {0} | {1} | {2} | {3} |", "앞뒤(z)", got.Z, pWantZ, zOk ? "OK" : "다름");
+            Console.WriteLine("| {0} | {1} | {2} | {3} |", "flow 를 걸면 글자처럼 취급이 꺼진다",
+                got.Inline ? "켜짐" : "꺼짐", "꺼짐", inlineOk ? "OK" : "다름");
+            Console.WriteLine();
+            return flowOk && zOk && inlineOk;
+        }
+
+        private static ParagraphModel ParaById(DocModel pDoc, string pId)
+        {
+            foreach (SectionModel sec in pDoc.Sections)
+                foreach (ParagraphModel p in sec.Paras)
+                    if (p.Id == pId) return p;
+            return null;
         }
 
         private static bool Row2(string pName, long pGot, long pWant)

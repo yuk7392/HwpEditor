@@ -528,8 +528,8 @@ namespace HwpEditor
                 DocModel m = cDoc.Model;
                 if (m.Sections.Count > 0)
                 {
-                    wIn = m.Sections[0].Page.WHu / 7200.0;
-                    hIn = m.Sections[0].Page.HHu / 7200.0;
+                    wIn = m.Sections[0].Page.LayoutWHu / 7200.0;
+                    hIn = m.Sections[0].Page.LayoutHHu / 7200.0;
                 }
 
                 bool ok = await cWeb.PrintToPdfAsync(path, wIn, hIn);

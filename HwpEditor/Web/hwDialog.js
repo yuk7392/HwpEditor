@@ -647,6 +647,133 @@ var hwDialog = (function () {
     });
   }
 
+  /* 용지 크기 목록(덤프 5-3). 값은 mm — 고른 순간 너비·높이 칸을 채운다. */
+  var cPapers = [
+    { t: 'A4', w: 210, h: 297 }, { t: 'A3', w: 297, h: 420 }, { t: 'A5', w: 148, h: 210 },
+    { t: 'A6', w: 105, h: 148 }, { t: 'B4', w: 257, h: 364 }, { t: 'B5', w: 182, h: 257 },
+    { t: 'Letter', w: 215.9, h: 279.4 }, { t: 'Legal', w: 215.9, h: 355.6 },
+    { t: 'Executive', w: 184.15, h: 266.7 }
+  ];
+
+  function paperOptions() {
+    var out = [{ v: '', t: '사용자 지정' }];
+    for (var i = 0; i < cPapers.length; i++) out.push({ v: String(i), t: cPapers[i].t });
+    return out;
+  }
+
+  /* ★ 방향은 용지 크기를 안 건드린다 — 맞바꾸는 것은 배치다(hwPageW·hwPageH). 여기서 w·h 를
+     맞바꾸면 저장본의 용지 크기가 한글이 적는 값과 달라진다. */
+  function pageSetup() {
+    if (!hwDoc) return null;
+    var si = hwPage.caretSection();
+    var pg = hwDoc.sections[si].page, cols = hwDoc.sections[si].cols;
+
+    function mm(v) { return Math.round((v || 0) / cMm * 10) / 10; }
+
+    return open({
+      title: '페이지 설정', width: 470,
+      tabs: [
+        { label: '페이지', rows: [
+          { type: 'radio', key: 'dir', label: '용지 방향', value: pg.landscape ? '1' : '0',
+            options: [{ v: '0', t: '세로' }, { v: '1', t: '가로' }] },
+          { type: 'select', key: 'paper', label: '용지 종류', width: 150, value: '', options: paperOptions(),
+            onChange: function (v, st) {
+              var d = cPapers[parseInt(v, 10)];
+              if (!d) return;
+              st.set('pw', d.w); st.set('ph', d.h);
+            } },
+          { type: 'group', label: '용지 크기', items: [
+            { type: 'number', key: 'pw', unit: 'mm 너비', value: mm(pg.wHu), min: 10, step: 1, dec: 1, width: 70 },
+            { type: 'number', key: 'ph', unit: 'mm 높이', value: mm(pg.hHu), min: 10, step: 1, dec: 1, width: 70 }
+          ] },
+          { type: 'group', label: '여백', items: [
+            { type: 'number', key: 'mt', unit: 'mm 위쪽', value: mm(pg.mtHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'mb', unit: 'mm 아래쪽', value: mm(pg.mbHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'ml', unit: 'mm 왼쪽', value: mm(pg.mlHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'mr', unit: 'mm 오른쪽', value: mm(pg.mrHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'mh', unit: 'mm 머리말', value: mm(pg.mhHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'mf', unit: 'mm 꼬리말', value: mm(pg.mfHu), min: 0, step: 1, dec: 1, width: 60 },
+            { type: 'number', key: 'gut', unit: 'mm 제본용', value: mm(pg.gutHu), min: 0, step: 1, dec: 1, width: 60 }
+          ] }
+        ] },
+        { label: '레이아웃', rows: [
+          { type: 'number', key: 'colCount', label: '단 개수', value: cols.count || 1, min: 1, max: 8, step: 1, dec: 0, width: 60 },
+          { type: 'number', key: 'colGap', unit: 'mm 단 사이', value: mm(cols.gapHu), min: 0, step: 1, dec: 1, width: 60 }
+        ] }
+      ],
+      onOk: function (st) {
+        var v = {}, keys = ['ml', 'mr', 'mt', 'mb', 'mh', 'mf', 'gut'];
+        if (st.touched.dir && st.get('dir') !== null) v.landscape = st.get('dir') === '1';
+        /* 용지 종류를 고르면 너비·높이 칸이 바뀌지만 touched 는 그 칸에 안 찍힌다 — 같이 본다. */
+        if (st.touched.pw || st.touched.ph || st.touched.paper) {
+          v.pw = Math.round(Math.max(10, st.get('pw') || 0) * cMm);
+          v.ph = Math.round(Math.max(10, st.get('ph') || 0) * cMm);
+        }
+        for (var i = 0; i < keys.length; i++)
+          if (st.touched[keys[i]]) v[keys[i]] = Math.round(Math.max(0, st.get(keys[i]) || 0) * cMm);
+        if (st.touched.colCount) v.colCount = Math.max(1, Math.round(st.get('colCount') || 1));
+        if (st.touched.colGap) v.colGap = Math.round(Math.max(0, st.get('colGap') || 0) * cMm);
+
+        if (any(v)) hwPage.setSection(si, v);
+      }
+    });
+  }
+
+  /* 쪽 번호 매기기(덤프 3·5-11). 위치 11가지 + 번호 모양 + 줄표. */
+  var cNumPos = [
+    { v: '0', t: '쪽 번호 없음' }, { v: '1', t: '왼쪽 위' }, { v: '2', t: '가운데 위' }, { v: '3', t: '오른쪽 위' },
+    { v: '4', t: '왼쪽 아래' }, { v: '5', t: '가운데 아래' }, { v: '6', t: '오른쪽 아래' },
+    { v: '9', t: '안쪽 위' }, { v: '7', t: '바깥쪽 위' }, { v: '10', t: '안쪽 아래' }, { v: '8', t: '바깥쪽 아래' }
+  ];
+  var cNumShape = [
+    { v: '0', t: '1, 2, 3' }, { v: '2', t: 'I, II, III' }, { v: '3', t: 'i, ii, iii' },
+    { v: '4', t: 'A, B, C' }, { v: '5', t: 'a, b, c' }, { v: '8', t: '가, 나, 다' }
+  ];
+
+  function pageNumber() {
+    if (!hwDoc) return null;
+    var si = hwPage.caretSection();
+    var num = hwPage.bandOf(si, 'pgnp');
+
+    return open({
+      title: '쪽 번호 매기기', width: 340,
+      rows: [
+        { type: 'select', key: 'numPos', label: '번호 위치', width: 150,
+          value: String(num && num.numPos ? num.numPos : 0), options: cNumPos },
+        { type: 'select', key: 'numShape', label: '번호 모양', width: 150,
+          value: String(num && num.numShape ? num.numShape : 0), options: cNumShape },
+        { type: 'check', key: 'numDash', label: '줄표 넣기', value: !!(num && num.numBefore === '-') },
+        num ? { type: 'note', text: '' }
+            : { type: 'note', text: '이 문서에는 쪽 번호 컨트롤이 없습니다 — 위치를 바꿀 수 없습니다.' }
+      ],
+      onOk: function (st) {
+        var v = {};
+        if (st.touched.numPos && st.get('numPos') !== null) v.numPos = parseInt(st.get('numPos'), 10);
+        if (st.touched.numShape && st.get('numShape') !== null) v.numShape = parseInt(st.get('numShape'), 10);
+        if (st.touched.numDash) v.numDash = !!st.get('numDash');
+        if (any(v)) hwPage.setPageNum(si, v);
+      }
+    });
+  }
+
+  /* 머리말·꼬리말 편집. 새로 만드는 것만 여기서 한다 — 이미 있는 것은 띠를 눌러 본문처럼 고친다. */
+  function bandInsert(kind) {
+    if (!hwDoc) return null;
+    var si = hwPage.caretSection();
+
+    return open({
+      title: (kind === 'foot' ? '꼬리말' : '머리말') + ' 넣기', width: 380,
+      rows: [
+        { type: 'text', key: 'text', label: '내용', width: 230, value: '' },
+        { type: 'radio', key: 'apply', label: '적용 쪽', value: 'both',
+          options: [{ v: 'both', t: '양 쪽' }, { v: 'odd', t: '홀수 쪽' }, { v: 'even', t: '짝수 쪽' }] }
+      ],
+      onOk: function (st) {
+        hwPage.addBand(si, kind, st.get('apply') || 'both', st.get('text') || '');
+      }
+    });
+  }
+
   /* 문자표 분류는 덤프 5-5 의 18종. "자주 쓰는 기호" 는 여기서 넣은 것이 앞에 온다(프로그램을 닫으면 사라진다 — 1차). */
 
   var cRecentSyms = [];
@@ -821,6 +948,9 @@ var hwDialog = (function () {
     paraShape: paraShape,
     cellBorder: cellBorder,
     tableProps: tableProps,
+    pageSetup: pageSetup,
+    pageNumber: pageNumber,
+    bandInsert: bandInsert,
     charMap: charMap,
     tableLines: tableLines,
     tableInsert: tableInsert,

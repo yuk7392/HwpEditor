@@ -52,11 +52,20 @@ namespace HwpEditor.Models
         [JsonProperty("gutHu")] public long GutHu;
         [JsonProperty("landscape")] public bool Landscape;
 
+        /// <summary>
+        /// 배치·인쇄가 쓰는 쪽 크기. ★ 가로 방향은 <b>용지 크기를 맞바꾸지 않는다</b> — 파일은 w·h 를
+        /// 그대로 두고 플래그만 세우고, 맞바꾸는 것은 배치하는 쪽이다(실측 pagedefs.hwp: 가로 구역도
+        /// w=59528 h=84188 인데 lineseg 폭이 84188−8504−8504=67180 이다).
+        /// 화면 쪽 짝은 <c>hwPage.js</c> 의 <c>hwPageW</c>·<c>hwPageH</c> 다.
+        /// </summary>
+        [JsonIgnore] public long LayoutWHu { get { return Landscape ? HHu : WHu; } }
+        [JsonIgnore] public long LayoutHHu { get { return Landscape ? WHu : HHu; } }
+
         /// <summary>본문이 실제로 흐르는 폭. lineseg 의 SegmentWidth 와 맞아야 한다.</summary>
-        [JsonIgnore] public long TextWidthHu { get { return WHu - MlHu - MrHu - GutHu; } }
+        [JsonIgnore] public long TextWidthHu { get { return LayoutWHu - MlHu - MrHu - GutHu; } }
 
         /// <summary>본문이 실제로 흐르는 높이(머리말·꼬리말 띠를 뺀 값이 아니라 여백만 뺀 값).</summary>
-        [JsonIgnore] public long TextHeightHu { get { return HHu - MtHu - MbHu; } }
+        [JsonIgnore] public long TextHeightHu { get { return LayoutHHu - MtHu - MbHu; } }
     }
 
     public sealed class ColsModel
@@ -149,6 +158,9 @@ namespace HwpEditor.Models
         /// <summary>본문과의 배치: "takePlace"(자리 차지) | "fit"(어울림) | "behind" | "front".</summary>
         [JsonProperty("flow", NullValueHandling = NullValueHandling.Ignore)] public string Flow;
 
+        /// <summary>앞뒤 순서. 큰 값이 앞이다. 글자처럼 취급하는 개체에는 뜻이 없다.</summary>
+        [JsonProperty("z")] public long Z;
+
         [JsonProperty("src", NullValueHandling = NullValueHandling.Ignore)] public string Src;
 
         /// <summary>opaque 일 때 원본 컨트롤 종류(eqed·secd 등)와 화면에 띄울 라벨.</summary>
@@ -162,6 +174,29 @@ namespace HwpEditor.Models
         [JsonProperty("omBHu")] public long OmBHu;
 
         [JsonProperty("table", NullValueHandling = NullValueHandling.Ignore)] public TableModel Table;
+
+        /// <summary>
+        /// 머리말·꼬리말(<c>ctrl</c> 이 "head"·"foot")의 내용 문단. 표 칸과 <b>같은 규칙</b>으로
+        /// 문단 id 를 매기고 인덱스에 넣는다 — 그래야 <c>replace</c> 로 고칠 수 있다.
+        /// ★ 이 개체는 본문 흐름에서 <c>hidden</c>·<c>inline</c> 그대로다. 줄의 폭도 높이도 안 먹는다.
+        /// </summary>
+        [JsonProperty("paras", NullValueHandling = NullValueHandling.Ignore)] public List<ParagraphModel> Paras;
+
+        /// <summary>머리말·꼬리말을 어느 쪽에 그리나: "both" | "odd" | "even".</summary>
+        [JsonProperty("apply", NullValueHandling = NullValueHandling.Ignore)] public string Apply;
+
+        /// <summary>
+        /// 쪽 번호 위치(<c>ctrl</c> 이 "pgnp"). 0=없음 1~6=왼·가운데·오른 위/아래,
+        /// 7=바깥 위 8=바깥 아래 9=안쪽 위 10=안쪽 아래(덤프 5-11, hwplibsharp <c>NumberPosition</c>).
+        /// </summary>
+        [JsonProperty("numPos", NullValueHandling = NullValueHandling.Ignore)] public int? NumPos;
+
+        /// <summary>번호 모양(hwplibsharp <c>NumberShape</c>). 0=1,2,3 · 2=I,II · 3=i,ii · 4=A,B · 5=a,b.</summary>
+        [JsonProperty("numShape", NullValueHandling = NullValueHandling.Ignore)] public int? NumShape;
+
+        /// <summary>번호 앞뒤 줄표. 한글의 "줄표 넣기" 가 이 둘을 <c>-</c> 로 채운다.</summary>
+        [JsonProperty("numBefore", NullValueHandling = NullValueHandling.Ignore)] public string NumBefore;
+        [JsonProperty("numAfter", NullValueHandling = NullValueHandling.Ignore)] public string NumAfter;
     }
 
     public sealed class TableModel

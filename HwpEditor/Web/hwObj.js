@@ -469,7 +469,60 @@ var hwObj = (function () {
     });
   }
 
+  /* 본문과의 배치(어울림·자리 차지·글 뒤로·글 앞으로). ★ 글자처럼 취급은 여기서 <b>끈다</b> —
+     둘은 한 벌이라 따로 두면 저장은 되고 여는 쪽에서만 깨진다(toggleInline 과 같은 이유).
+     ★ 글자처럼 취급하던 개체를 어울림으로 바꿀 때 자리를 옮겨 담는 일은 toggleInline 이 한다. */
+  function setFlow(flow) {
+    var cur = current();
+    if (!cur) { hwSetStatus({ text: '개체를 먼저 고르세요' }); return false; }
+    if (cur.obj.inline) toggleInline();
+
+    var p = cur.para, o = cur.obj;
+    hwInput.run(function () {
+      o.flow = flow;
+      o._flowSet = true;
+      hwModel.markDirty(p.id);
+      return null;
+    }, null, [p.id]);
+
+    hwRelayout();
+    paint();
+    hwSetStatus({ text: '배치를 "' + cFlowName[flow] + '" 로 바꿨습니다' });
+    return true;
+  }
+
+  var cFlowName = { fit: '어울림', takePlace: '자리 차지', behind: '글 뒤로', front: '글 앞으로' };
+
+  /* 앞뒤 순서. dir 은 +1 앞으로 · −1 뒤로 · +2 맨 앞 · −2 맨 뒤. */
+  function setZ(dir) {
+    var cur = current();
+    if (!cur) { hwSetStatus({ text: '개체를 먼저 고르세요' }); return false; }
+
+    var p = cur.para, o = cur.obj;
+    var lo = 0, hi = 0;
+    for (var i = 0; i < (p.objs || []).length; i++) {
+      var z = p.objs[i].z || 0;
+      if (i === 0 || z < lo) lo = z;
+      if (i === 0 || z > hi) hi = z;
+    }
+
+    var want = dir === 2 ? hi + 1 : dir === -2 ? lo - 1 : (o.z || 0) + dir;
+    hwInput.run(function () {
+      o.z = want;
+      o._zSet = true;
+      hwModel.markDirty(p.id);
+      return null;
+    }, null, [p.id]);
+
+    hwRelayout();
+    paint();
+    hwSetStatus({ text: '앞뒤 순서를 ' + want + ' 로 바꿨습니다' });
+    return true;
+  }
+
   return {
+    setFlow: setFlow,
+    setZ: setZ,
     select: select,
     clear: clear,
     current: current,

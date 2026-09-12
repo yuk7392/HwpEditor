@@ -438,6 +438,8 @@ var hwInput = (function () {
     on(['A+l'], function () { hwDialog.charShape(); });
     on(['A+t'], function () { hwDialog.paraShape(); });
     on(['C+F10'], function () { hwDialog.charMap(); });
+    /* ★ WebView2 의 F7 은 캐럿 브라우징 물음이다 — keys() 가 기본 동작을 막아야 그 창이 안 뜬다. */
+    on(['+F7'], function () { hwDialog.pageSetup(); });
     on(['C+g'], function () { startChord('C+g', 'Ctrl+G'); });
     on(['C+n'], function () { startChord('C+n', 'Ctrl+N'); });
     on(['S+NumAdd'], function () { hwUi.stepZoom(+1); });

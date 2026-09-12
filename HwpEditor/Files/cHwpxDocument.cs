@@ -304,6 +304,9 @@ namespace HwpEditor.Files
 
         internal XmlDocument Header { get { return cHeader; } }
 
+        /// <summary>구역 번호로 여는 길. <c>secFmt</c> 가 <c>secPr</c>·<c>colPr</c> 을 구역 번호로 찾는다.</summary>
+        internal IList<XmlDocument> SectionDocs { get { return cSectionDocs; } }
+
         public void Save(string pPath)
         {
             if (string.IsNullOrEmpty(pPath)) throw new ArgumentNullException("pPath");
